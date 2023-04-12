@@ -6,8 +6,21 @@ import (
 )
 
 const PaddedSignatureLength = 73
-const MarkerPad byte = 0xff
-const ZeroPad byte = 0x00
+const MarkerByte byte = 0xff
+const ZeroByte byte = 0x00
+
+// A DER encoded secp256k1 signature does not have a fixed length. Its length varies between 70 and 72 bytes depending
+// on the values of r and s.
+// As go-perun requires a fixed length signature, we pad the signature. We Pad the signature to a fixed length of
+// PaddedSignatureLength bytes by appending one MarkerByte and then appending ZeroBytes until the signature is of length
+// PaddedSignatureLength (possibly no ZeroBytes are needed).
+//
+// Examples:
+// Input: <DER encoded signature of length 70 bytes>
+// Output: <DER encoded signature of length 70 byte> | MarkerByte | ZeroByte | ZeroByte
+//
+// Input: <DER encoded signature of length 72 bytes>
+// Output: <DER encoded signature of length 72 byte> | MarkerByte
 
 // PadDEREncodedSignature pads the DER encoded signature to a length of PaddedSignatureLength bytes.
 func PadDEREncodedSignature(sig []byte) ([]byte, error) {
@@ -16,9 +29,9 @@ func PadDEREncodedSignature(sig []byte) ([]byte, error) {
 	}
 	paddedSignature := make([]byte, PaddedSignatureLength)
 	copy(paddedSignature[:len(sig)], sig)
-	paddedSignature[len(sig)] = MarkerPad
+	paddedSignature[len(sig)] = MarkerByte
 	for i := len(sig) + 1; i < PaddedSignatureLength; i++ {
-		paddedSignature[i] = ZeroPad
+		paddedSignature[i] = ZeroByte
 	}
 	return paddedSignature, nil
 }
@@ -29,10 +42,10 @@ func RemovePadding(sig []byte) ([]byte, error) {
 		return nil, fmt.Errorf("signature is of wrong length. Expected %d bytes, got %d bytes", PaddedSignatureLength, len(sig))
 	}
 	for i := len(sig) - 1; i >= 0; i-- {
-		if sig[i] == MarkerPad {
+		if sig[i] == MarkerByte {
 			return sig[:i], nil
 		}
-		if sig[i] != ZeroPad {
+		if sig[i] != ZeroByte {
 			return nil, fmt.Errorf("invalid padding")
 		}
 	}
