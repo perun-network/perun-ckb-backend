@@ -2,10 +2,8 @@ package wallet_test
 
 import (
 	"github.com/stretchr/testify/require"
-	"math/rand"
 	gptest "perun.network/go-perun/wallet/test"
 	"perun.network/perun-ckb-backend/wallet"
-	pkgtest "polycry.pt/poly-go/test"
 	"testing"
 )
 
@@ -28,7 +26,7 @@ func TestEphemeralWallet(t *testing.T) {
 	require.True(t, valid)
 }
 
-func setup(rng *rand.Rand) *gptest.Setup {
+func setup() *gptest.Setup {
 	w := wallet.NewEphemeralWallet()
 	acc, err := w.AddNewAccount()
 	if err != nil {
@@ -53,13 +51,13 @@ func setup(rng *rand.Rand) *gptest.Setup {
 }
 
 func TestAddress(t *testing.T) {
-	gptest.TestAddress(t, setup(pkgtest.Prng(t)))
+	gptest.TestAddress(t, setup())
 }
 
 func TestGenericSignatureSizeTest(t *testing.T) {
-	gptest.GenericSignatureSizeTest(t, setup(pkgtest.Prng(t)))
+	gptest.GenericSignatureSizeTest(t, setup())
 }
 
 func TestAccountWithWalletAndBackend(t *testing.T) {
-	gptest.TestAccountWithWalletAndBackend(t, setup(pkgtest.Prng(t)))
+	gptest.TestAccountWithWalletAndBackend(t, setup())
 }
