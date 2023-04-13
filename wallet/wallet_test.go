@@ -9,21 +9,27 @@ import (
 	"testing"
 )
 
-func TestWallet(t *testing.T) {
-	w := wallet.NewWallet()
+func TestEphemeralWallet(t *testing.T) {
+	w := wallet.NewEphemeralWallet()
 
 	acc, err := w.AddNewAccount()
 	require.NoError(t, err)
-	msg := []byte("hello world")
-	sig, err := acc.SignData(msg)
+
+	unlockedAccount, err := w.Unlock(acc.Address())
 	require.NoError(t, err)
+	require.Equal(t, acc.Address(), unlockedAccount.Address())
+
+	msg := []byte("hello world")
+	sig, err := unlockedAccount.SignData(msg)
+	require.NoError(t, err)
+
 	valid, err := wallet.Backend.VerifySignature(msg, sig, acc.Address())
 	require.NoError(t, err)
 	require.True(t, valid)
 }
 
 func setup(rng *rand.Rand) *gptest.Setup {
-	w := wallet.NewWallet()
+	w := wallet.NewEphemeralWallet()
 	acc, err := w.AddNewAccount()
 	if err != nil {
 		panic(err)

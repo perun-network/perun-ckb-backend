@@ -6,48 +6,48 @@ import (
 	"sync"
 )
 
-type Wallet struct {
+type EphemeralWallet struct {
 	lock     sync.Mutex
 	accounts map[string]*Account
 }
 
-func (w *Wallet) Unlock(address wallet.Address) (wallet.Account, error) {
+func (e *EphemeralWallet) Unlock(address wallet.Address) (wallet.Account, error) {
 	addr, ok := address.(*Address)
 	if !ok {
 		return nil, errors.New("address is not of type Address")
 	}
-	w.lock.Lock()
-	defer w.lock.Unlock()
-	account, ok := w.accounts[addr.String()]
+	e.lock.Lock()
+	defer e.lock.Unlock()
+	account, ok := e.accounts[addr.String()]
 	if !ok {
 		return nil, errors.New("account not found")
 	}
 	return account, nil
 }
 
-func (w *Wallet) LockAll() {}
+func (e *EphemeralWallet) LockAll() {}
 
-func (w *Wallet) IncrementUsage(address wallet.Address) {}
+func (e *EphemeralWallet) IncrementUsage(address wallet.Address) {}
 
-func (w *Wallet) DecrementUsage(address wallet.Address) {}
+func (e *EphemeralWallet) DecrementUsage(address wallet.Address) {}
 
-func (w *Wallet) AddNewAccount() (wallet.Account, error) {
+func (e *EphemeralWallet) AddNewAccount() (wallet.Account, error) {
 	acc, err := NewAccount()
 	if err != nil {
 		return nil, err
 	}
-	w.lock.Lock()
-	defer w.lock.Unlock()
-	_, ok := w.accounts[acc.Address().String()]
+	e.lock.Lock()
+	defer e.lock.Unlock()
+	_, ok := e.accounts[acc.Address().String()]
 	if ok {
 		return nil, errors.New("account already exists")
 	}
-	w.accounts[acc.Address().String()] = acc
+	e.accounts[acc.Address().String()] = acc
 	return acc, nil
 }
 
-func NewWallet() *Wallet {
-	return &Wallet{
+func NewEphemeralWallet() *EphemeralWallet {
+	return &EphemeralWallet{
 		accounts: make(map[string]*Account),
 	}
 }
