@@ -4,6 +4,7 @@ import (
 	"github.com/stretchr/testify/require"
 	gptest "perun.network/go-perun/wallet/test"
 	"perun.network/perun-ckb-backend/wallet"
+	"perun.network/perun-ckb-backend/wallet/address"
 	"testing"
 )
 
@@ -44,7 +45,7 @@ func setup() *gptest.Setup {
 		Backend:           wallet.Backend,
 		Wallet:            w,
 		AddressInWallet:   acc.Address(),
-		ZeroAddress:       wallet.GetZeroAddress(),
+		ZeroAddress:       address.GetZeroAddress(),
 		DataToSign:        []byte("pls sign me"),
 		AddressMarshalled: binAddr2,
 	}

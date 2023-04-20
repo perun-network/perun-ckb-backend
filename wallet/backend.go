@@ -6,6 +6,7 @@ import (
 	"golang.org/x/crypto/blake2b"
 	"io"
 	"perun.network/go-perun/wallet"
+	"perun.network/perun-ckb-backend/wallet/address"
 )
 
 type backend struct {
@@ -18,7 +19,7 @@ func init() {
 }
 
 func (b backend) NewAddress() wallet.Address {
-	return &Address{}
+	return &address.Address{}
 }
 
 func (b backend) DecodeSig(reader io.Reader) (wallet.Sig, error) {
@@ -30,7 +31,7 @@ func (b backend) DecodeSig(reader io.Reader) (wallet.Sig, error) {
 }
 
 func (b backend) VerifySignature(msg []byte, sig wallet.Sig, a wallet.Address) (bool, error) {
-	addr, ok := a.(*Address)
+	addr, ok := a.(*address.Address)
 	if !ok {
 		return false, errors.New("address is not of type Address")
 	}
@@ -43,5 +44,5 @@ func (b backend) VerifySignature(msg []byte, sig wallet.Sig, a wallet.Address) (
 	if err != nil {
 		return false, err
 	}
-	return signature.Verify(hash[:], addr.pubKey), nil
+	return signature.Verify(hash[:], addr.PubKey), nil
 }

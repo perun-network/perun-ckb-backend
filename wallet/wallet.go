@@ -3,6 +3,7 @@ package wallet
 import (
 	"errors"
 	"perun.network/go-perun/wallet"
+	"perun.network/perun-ckb-backend/wallet/address"
 	"sync"
 )
 
@@ -11,8 +12,8 @@ type EphemeralWallet struct {
 	accounts map[string]*Account
 }
 
-func (e *EphemeralWallet) Unlock(address wallet.Address) (wallet.Account, error) {
-	addr, ok := address.(*Address)
+func (e *EphemeralWallet) Unlock(a wallet.Address) (wallet.Account, error) {
+	addr, ok := a.(*address.Address)
 	if !ok {
 		return nil, errors.New("address is not of type Address")
 	}

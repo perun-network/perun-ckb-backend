@@ -5,6 +5,7 @@ import (
 	"github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
 	"golang.org/x/crypto/blake2b"
 	"perun.network/go-perun/wallet"
+	"perun.network/perun-ckb-backend/wallet/address"
 )
 
 type Account struct {
@@ -12,7 +13,11 @@ type Account struct {
 }
 
 func (a Account) Address() wallet.Address {
-	return &Address{pubKey: a.key.PubKey()}
+	addr, err := address.NewDefaultAddress(a.key.PubKey())
+	if err != nil {
+		return &address.Address{PubKey: a.key.PubKey()}
+	}
+	return addr
 }
 
 func (a Account) SignData(data []byte) ([]byte, error) {
