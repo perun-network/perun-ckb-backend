@@ -12,5 +12,4 @@ func NewDEREncodedSignatureFromPadded(paddedSignature []byte) (*molecule.Bytes, 
 		return nil, err
 	}
 	return types.PackBytes(sig), nil
-
 }
