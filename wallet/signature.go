@@ -9,8 +9,8 @@ const PaddedSignatureLength = 73
 const MarkerByte byte = 0xff
 const ZeroByte byte = 0x00
 
-// A DER encoded secp256k1 signature does not have a fixed length. Its length varies between 70 and 72 bytes depending
-// on the values of r and s.
+// A DER encoded secp256k1 signature does not have a fixed length. Its length varies depending on the values of r and s.
+// The maximum length of a DER encoded signature is 72 bytes.
 // As go-perun requires a fixed length signature, we pad the signature. We Pad the signature to a fixed length of
 // PaddedSignatureLength bytes by appending one MarkerByte and then appending ZeroBytes until the signature is of length
 // PaddedSignatureLength (possibly no ZeroBytes are needed).
