@@ -13,8 +13,9 @@ import (
 
 const (
 	UncompressedPublicKeyLength = 65
+	CompressedPublicKeyLength   = 33
 	Uint64Length                = 8
-	SerializedAddressLength     = UncompressedPublicKeyLength + types.HashLength + types.HashLength + Uint64Length
+	SerializedAddressLength     = CompressedPublicKeyLength + types.HashLength + types.HashLength + Uint64Length
 )
 
 type Address struct {
@@ -55,10 +56,10 @@ func (a Address) MarshalBinary() (data []byte, err error) {
 		return nil, errors.New("public key is nil")
 	}
 	data = make([]byte, SerializedAddressLength)
-	copy(data[:UncompressedPublicKeyLength], a.PubKey.SerializeUncompressed())
-	copy(data[UncompressedPublicKeyLength:UncompressedPublicKeyLength+types.HashLength], a.PaymentScriptHash[:])
-	copy(data[UncompressedPublicKeyLength+types.HashLength:UncompressedPublicKeyLength+types.HashLength+types.HashLength], a.UnlockScriptHash[:])
-	binary.LittleEndian.PutUint64(data[UncompressedPublicKeyLength+types.HashLength+types.HashLength:], a.PaymentMinCapacity)
+	copy(data[:CompressedPublicKeyLength], a.PubKey.SerializeCompressed())
+	copy(data[CompressedPublicKeyLength:CompressedPublicKeyLength+types.HashLength], a.PaymentScriptHash[:])
+	copy(data[CompressedPublicKeyLength+types.HashLength:CompressedPublicKeyLength+types.HashLength+types.HashLength], a.UnlockScriptHash[:])
+	binary.LittleEndian.PutUint64(data[CompressedPublicKeyLength+types.HashLength+types.HashLength:], a.PaymentMinCapacity)
 	return data, nil
 }
 
@@ -66,19 +67,19 @@ func (a *Address) UnmarshalBinary(data []byte) error {
 	if len(data) != SerializedAddressLength {
 		return errors.New("invalid address length")
 	}
-	pubKey, err := secp256k1.ParsePubKey(data[:UncompressedPublicKeyLength])
+	pubKey, err := secp256k1.ParsePubKey(data[:CompressedPublicKeyLength])
 	if err != nil {
 		return err
 	}
 	a.PubKey = pubKey
-	copy(a.PaymentScriptHash[:], data[UncompressedPublicKeyLength:UncompressedPublicKeyLength+types.HashLength])
-	copy(a.UnlockScriptHash[:], data[UncompressedPublicKeyLength+types.HashLength:UncompressedPublicKeyLength+types.HashLength+types.HashLength])
-	a.PaymentMinCapacity = binary.LittleEndian.Uint64(data[UncompressedPublicKeyLength+types.HashLength+types.HashLength:])
+	copy(a.PaymentScriptHash[:], data[CompressedPublicKeyLength:CompressedPublicKeyLength+types.HashLength])
+	copy(a.UnlockScriptHash[:], data[CompressedPublicKeyLength+types.HashLength:CompressedPublicKeyLength+types.HashLength+types.HashLength])
+	a.PaymentMinCapacity = binary.LittleEndian.Uint64(data[CompressedPublicKeyLength+types.HashLength+types.HashLength:])
 	return nil
 }
 
 func (a Address) String() string {
-	return hex.EncodeToString(a.PubKey.SerializeUncompressed())
+	return hex.EncodeToString(a.PubKey.SerializeCompressed())
 }
 
 func (a Address) Equal(address wallet.Address) bool {
@@ -89,9 +90,15 @@ func (a Address) Equal(address wallet.Address) bool {
 	return a.PubKey.IsEqual(addr.PubKey)
 }
 
-func (a Address) GetUncompressedSEC1() [65]byte {
-	var sec1 [65]byte
+func (a Address) GetUncompressedSEC1() [UncompressedPublicKeyLength]byte {
+	var sec1 [UncompressedPublicKeyLength]byte
 	copy(sec1[:], a.PubKey.SerializeUncompressed())
+	return sec1
+}
+
+func (a Address) GetCompressedSEC1() [CompressedPublicKeyLength]byte {
+	var sec1 [CompressedPublicKeyLength]byte
+	copy(sec1[:], a.PubKey.SerializeCompressed())
 	return sec1
 }
 
@@ -115,8 +122,8 @@ func (a Address) Pack() (molecule.Participant, error) {
 }
 
 func PackSEC1EncodedPubKey(key *secp256k1.PublicKey) molecule.SEC1EncodedPubKey {
-	sec1 := key.SerializeUncompressed()
-	var bytes [65]molecule.Byte
+	sec1 := key.SerializeCompressed()
+	var bytes [CompressedPublicKeyLength]molecule.Byte
 	for i, b := range sec1 {
 		bytes[i] = molecule.NewByte(b)
 	}

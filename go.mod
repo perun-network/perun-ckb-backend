@@ -12,4 +12,4 @@ require (
 
 require github.com/stretchr/testify v1.7.0
 
-replace github.com/nervosnetwork/ckb-sdk-go/v2 v2.2.0 => github.com/perun-network/ckb-sdk-go/v2 v2.2.1-0.20230418120821-40552c4983f3
+replace github.com/nervosnetwork/ckb-sdk-go/v2 v2.2.0 => github.com/perun-network/ckb-sdk-go/v2 v2.2.1-0.20230427093811-05bc15078e36
