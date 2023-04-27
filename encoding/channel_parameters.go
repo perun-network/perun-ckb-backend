@@ -49,9 +49,9 @@ func PackChannelParameters(params *channel.Params) (molecule.ChannelParameters, 
 }
 
 func PackAddress(addr gpwallet.Address) (molecule.Participant, error) {
-	a, ok := addr.(*address.Address)
+	a, ok := addr.(*address.Participant)
 	if !ok {
-		return molecule.Participant{}, errors.New("address is not of type wallet.Address")
+		return molecule.Participant{}, errors.New("address is not of type wallet.Participant")
 	}
 	return a.Pack()
 }
