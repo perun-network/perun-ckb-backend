@@ -18,8 +18,9 @@ func init() {
 	wallet.SetBackend(Backend)
 }
 
+// NewAddress returns an empty address.Participant to marshal into.
 func (b backend) NewAddress() wallet.Address {
-	return &address.Address{}
+	return &address.Participant{}
 }
 
 // DecodeSig expects to read a DER encoded signature from the reader of length PaddedSignatureLength.
@@ -37,9 +38,9 @@ func (b backend) DecodeSig(reader io.Reader) (wallet.Sig, error) {
 // It expects to receive the plain message, not the message hash.
 // It expects a padded signature (see PadDEREncodedSignature / RemovePadding).
 func (b backend) VerifySignature(msg []byte, sig wallet.Sig, a wallet.Address) (bool, error) {
-	addr, ok := a.(*address.Address)
+	addr, ok := a.(*address.Participant)
 	if !ok {
-		return false, errors.New("address is not of type Address")
+		return false, errors.New("address is not of type Participant")
 	}
 	hash := blake2b.Sum256(msg)
 	sigWithoutPadding, err := RemovePadding(sig)

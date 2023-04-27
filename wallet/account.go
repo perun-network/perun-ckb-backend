@@ -12,10 +12,12 @@ type Account struct {
 	key *secp256k1.PrivateKey
 }
 
+// Address returns an address.Participant with the public key belonging to this account and the default payment and
+// unlock script hashes (secp256k1_blake160_sighash_all).
 func (a Account) Address() wallet.Address {
-	addr, err := address.NewDefaultAddress(a.key.PubKey())
+	addr, err := address.NewDefaultParticipant(a.key.PubKey())
 	if err != nil {
-		return &address.Address{PubKey: a.key.PubKey()}
+		return &address.Participant{PubKey: a.key.PubKey()}
 	}
 	return addr
 }

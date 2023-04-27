@@ -13,9 +13,9 @@ type EphemeralWallet struct {
 }
 
 func (e *EphemeralWallet) Unlock(a wallet.Address) (wallet.Account, error) {
-	addr, ok := a.(*address.Address)
+	addr, ok := a.(*address.Participant)
 	if !ok {
-		return nil, errors.New("address is not of type Address")
+		return nil, errors.New("address is not of type Participant")
 	}
 	e.lock.Lock()
 	defer e.lock.Unlock()
