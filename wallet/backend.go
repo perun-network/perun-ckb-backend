@@ -22,6 +22,9 @@ func (b backend) NewAddress() wallet.Address {
 	return &address.Address{}
 }
 
+// DecodeSig expects to read a DER encoded signature from the reader of length PaddedSignatureLength.
+// The padding used is defined by PadDEREncodedSignature / RemovePadding.
+// The signature is then returned (still padded, as VerifySignature also expects a padded signature).
 func (b backend) DecodeSig(reader io.Reader) (wallet.Sig, error) {
 	sig := make([]byte, PaddedSignatureLength)
 	if _, err := io.ReadFull(reader, sig); err != nil {
@@ -30,6 +33,9 @@ func (b backend) DecodeSig(reader io.Reader) (wallet.Sig, error) {
 	return sig, nil
 }
 
+// VerifySignature returns whether given signature is valid for given message and public key of the given address.
+// It expects to receive the plain message, not the message hash.
+// It expects a padded signature (see PadDEREncodedSignature / RemovePadding).
 func (b backend) VerifySignature(msg []byte, sig wallet.Sig, a wallet.Address) (bool, error) {
 	addr, ok := a.(*address.Address)
 	if !ok {
