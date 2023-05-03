@@ -1,4 +1,4 @@
-package channel
+package defaults
 
 import "github.com/nervosnetwork/ckb-sdk-go/v2/types"
 

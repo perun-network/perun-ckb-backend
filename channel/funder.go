@@ -9,6 +9,7 @@ import (
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types/molecule"
 	"perun.network/go-perun/channel"
 	"perun.network/go-perun/wallet"
+	"perun.network/perun-ckb-backend/channel/defaults"
 	"perun.network/perun-ckb-backend/client"
 	"perun.network/perun-ckb-backend/encoding"
 	"perun.network/perun-ckb-backend/wallet/address"
@@ -45,11 +46,11 @@ func NewDefaultFunder(client client.CKBClient) *Funder {
 		PollingInterval:         DefaultPollingInterval,
 		MaxIterationsUntilAbort: DefaultMaxIterationsUntilAbort,
 		Constants: ValidChannelConstants{
-			PCLSCodeHash:    DefaultPCLSCodeHash,
-			PCLSHashType:    DefaultPCLSHashType,
-			PFLSCodeHash:    DefaultPFLSCodeHash,
-			PFLSHashType:    DefaultPFLSHashType,
-			PFLSMinCapacity: DefaultPFLSMinCapacity,
+			PCLSCodeHash:    defaults.DefaultPCLSCodeHash,
+			PCLSHashType:    defaults.DefaultPCLSHashType,
+			PFLSCodeHash:    defaults.DefaultPFLSCodeHash,
+			PFLSHashType:    defaults.DefaultPFLSHashType,
+			PFLSMinCapacity: defaults.DefaultPFLSMinCapacity,
 		},
 	}
 }
