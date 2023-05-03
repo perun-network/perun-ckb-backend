@@ -66,7 +66,7 @@ polling:
 		case <-ctx.Done():
 			return f.client.Abort(ctx, token)
 		case <-time.After(f.PollingInterval):
-			cs, err := f.client.GetChannelStatus(ctx, token)
+			_, cs, err := f.client.GetChannelWithToken(ctx, token)
 			if err != nil {
 				continue polling
 			}
