@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/systemscript"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types/molecule"
+	"math"
 	"perun.network/go-perun/channel"
 	"perun.network/go-perun/wallet"
 	"perun.network/perun-ckb-backend/channel/defaults"
@@ -66,7 +68,7 @@ polling:
 		case <-ctx.Done():
 			return f.client.Abort(ctx, script)
 		case <-time.After(f.PollingInterval):
-			cs, err := f.client.GetChannelWithExactPCTS(ctx, script)
+			_, cs, err := f.client.GetChannelWithExactPCTS(ctx, script)
 			if err != nil {
 				continue polling
 			}
@@ -85,7 +87,7 @@ polling:
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-time.After(f.PollingInterval):
-			script, channelConstants, channelStatus, err := f.client.GetChannelWithID(ctx, req.Params.ID())
+			_, script, channelConstants, channelStatus, err := f.client.GetChannelWithID(ctx, req.Params.ID())
 			if err != nil {
 				continue polling
 			}
@@ -141,6 +143,10 @@ func (f Funder) verifyChannelIntegrity(req channel.FundingReq, constants *molecu
 		onchainPFLSHashType != f.Constants.PFLSHashType ||
 		encoding.UnpackUint64(constants.PflsMinCapacity()) != f.Constants.PFLSMinCapacity {
 		return errors.New("invalid channel constants")
+	}
+	challengeDuration := encoding.UnpackUint64(constants.Params().ChallengeDuration())
+	if challengeDuration > math.MaxInt64 {
+		return fmt.Errorf("challenge duration %d is too large, max: %d", challengeDuration, math.MaxInt64)
 	}
 
 	// Now we verify the integrity of the channel state in the channel status.
