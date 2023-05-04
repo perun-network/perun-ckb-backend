@@ -11,7 +11,10 @@ import (
 	"math"
 	"perun.network/go-perun/channel"
 	"perun.network/perun-ckb-backend/channel/defaults"
+	"time"
 )
+
+type BlockNumber = uint64
 
 type CKBClient interface {
 	// Start starts a new channel on-chain with the given parameters and initial state.
@@ -32,10 +35,13 @@ type CKBClient interface {
 	// field upon channel start (i.e. that it is equal to the hash of the channel parameters).
 	// If there are multiple channels with the same ID, the implementation can return any of them, but the returned
 	// constants and status must belong to the same channel.
-	GetChannelWithID(ctx context.Context, id channel.ID) (*types.Script, *molecule.ChannelConstants, *molecule.ChannelStatus, error)
+	GetChannelWithID(ctx context.Context, id channel.ID) (BlockNumber, *types.Script, *molecule.ChannelConstants, *molecule.ChannelStatus, error)
 
 	// GetChannelWithExactPCTS return the on-chain channel status for the given type script.
-	GetChannelWithExactPCTS(ctx context.Context, pcts *types.Script) (*molecule.ChannelStatus, error)
+	GetChannelWithExactPCTS(ctx context.Context, pcts *types.Script) (BlockNumber, *molecule.ChannelStatus, error)
+
+	// GetBlockTime returns the timestamp of the block with the given block number.
+	GetBlockTime(ctx context.Context, blockNumber BlockNumber) (time.Time, error)
 }
 
 type Client struct {
@@ -55,22 +61,22 @@ func (c Client) Abort(ctx context.Context, script *types.Script) error {
 	panic("implement me")
 }
 
-func (c Client) GetChannelWithExactPCTS(ctx context.Context, pcts *types.Script) (*molecule.ChannelStatus, error) {
+func (c Client) GetChannelWithExactPCTS(ctx context.Context, pcts *types.Script) (BlockNumber, *molecule.ChannelStatus, error) {
 	cells, err := c.getExactChannelLiveCell(ctx, pcts)
 	if err != nil {
-		return nil, err
+		return 0, nil, err
 	}
 	if cells == nil {
-		return nil, errors.New("unable to get channel live cell")
+		return 0, nil, errors.New("unable to get channel live cell")
 	}
 	if len(cells.Objects) != 1 {
-		return nil, fmt.Errorf("expected exactly 1 live channel cell, got: %d", len(cells.Objects))
+		return 0, nil, fmt.Errorf("expected exactly 1 live channel cell, got: %d", len(cells.Objects))
 	}
 	channelStatus, err := molecule.ChannelStatusFromSlice(cells.Objects[0].OutputData, false)
 	if err != nil {
-		return nil, err
+		return 0, nil, err
 	}
-	return channelStatus, nil
+	return cells.Objects[0].BlockNumber, channelStatus, nil
 }
 
 func NewDefaultClient(rpcClient rpc.Client) *Client {
@@ -87,30 +93,29 @@ func (c Client) Fund(ctx context.Context, pcts *types.Script) error {
 	panic("implement me")
 }
 
-func (c Client) GetChannelWithID(ctx context.Context, id channel.ID) (*types.Script, *molecule.ChannelConstants, *molecule.ChannelStatus, error) {
+func (c Client) GetChannelWithID(ctx context.Context, id channel.ID) (BlockNumber, *types.Script, *molecule.ChannelConstants, *molecule.ChannelStatus, error) {
 	script, cached := c.cache[id]
 	if cached {
-		channelStatus, err := c.GetChannelWithExactPCTS(ctx, script)
+		blockNumber, channelStatus, err := c.GetChannelWithExactPCTS(ctx, script)
 		if err != nil {
-			return nil, nil, nil, err
+			return 0, nil, nil, nil, err
 		}
 		channelConstants, err := molecule.ChannelConstantsFromSlice(script.Args, false)
-		return script, channelConstants, channelStatus, err
+		return blockNumber, script, channelConstants, channelStatus, err
 	}
 
 	liveChannelCells, err := c.getAllChannelLiveCells(ctx)
 	if err != nil {
-		return nil, nil, nil, err
+		return 0, nil, nil, nil, err
 	}
 	return c.getFirstChannelWithID(liveChannelCells, id)
 }
 
-func (c Client) getFirstChannelWithID(channels *indexer.LiveCells, id channel.ID) (*types.Script, *molecule.ChannelConstants, *molecule.ChannelStatus, error) {
+func (c Client) getFirstChannelWithID(channels *indexer.LiveCells, id channel.ID) (BlockNumber, *types.Script, *molecule.ChannelConstants, *molecule.ChannelStatus, error) {
 	for _, cell := range channels.Objects {
 		if !c.isValidChannelLiveCell(cell) {
 			continue
 		}
-		// TODO: What does `compatible` do?
 		channelStatus, err := molecule.ChannelStatusFromSlice(cell.OutputData, false)
 		if err != nil {
 			continue
@@ -120,11 +125,11 @@ func (c Client) getFirstChannelWithID(channels *indexer.LiveCells, id channel.ID
 		}
 		channelConstants, err := molecule.ChannelConstantsFromSlice(cell.Output.Type.Args, false)
 		if err != nil {
-			return nil, nil, nil, err
+			return 0, nil, nil, nil, err
 		}
-		return cell.Output.Type, channelConstants, channelStatus, nil
+		return cell.BlockNumber, cell.Output.Type, channelConstants, channelStatus, nil
 	}
-	return nil, nil, nil, errors.New("channel for channel id not found")
+	return 0, nil, nil, nil, errors.New("channel for channel id not found")
 }
 
 func (c Client) getAllChannelLiveCells(ctx context.Context) (*indexer.LiveCells, error) {
@@ -162,4 +167,15 @@ func (c Client) isValidChannelLiveCell(cell *indexer.LiveCell) bool {
 		return false
 	}
 	return true
+}
+
+func (c Client) GetBlockTime(ctx context.Context, blockNumber BlockNumber) (time.Time, error) {
+	block, err := c.client.GetBlockByNumber(ctx, blockNumber)
+	if err != nil {
+		return time.Time{}, err
+	}
+	if block.Header.Timestamp > math.MaxInt64 {
+		return time.Time{}, errors.New("block timestamp is too large")
+	}
+	return time.UnixMilli(int64(block.Header.Timestamp)), nil
 }
