@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/nervosnetwork/ckb-sdk-go/v2/systemscript"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types/molecule"
 	"math"
@@ -169,8 +168,7 @@ func (f Funder) knownPayoutPreimage(addr wallet.Address) (KnownPayoutScripts, er
 	if !ok {
 		return -1, errors.New("invalid participant")
 	}
-	pubkey := participant.GetCompressedSEC1()
-	script, err := systemscript.Secp256K1Blake160SignhashAllByPublicKey(pubkey[:])
+	script, err := participant.GetSecp256k1Blake160SighashAll()
 	if err != nil {
 		return -1, err
 	}
