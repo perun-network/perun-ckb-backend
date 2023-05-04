@@ -20,6 +20,9 @@ const (
 	DefaultSubscriptionPollingInterval = time.Duration(4) * time.Second
 )
 
+var ErrSubscriptionClosedByContext = errors.New("subscription closed by context")
+var ErrChannelConcluded = errors.New("channel concluded")
+
 type PollingSubscription struct {
 	PollingInterval   time.Duration
 	client            client.CKBClient
@@ -30,6 +33,7 @@ type PollingSubscription struct {
 	cancel            context.CancelFunc
 	foundLiveCellOnce bool
 	concluded         chan struct{}
+	fatalErrors       chan error
 }
 
 func NewAdjudicatorSubFromChannelID(ctx context.Context, ckbClient client.CKBClient, id channel.ID) *PollingSubscription {
@@ -39,6 +43,7 @@ func NewAdjudicatorSubFromChannelID(ctx context.Context, ckbClient client.CKBCli
 		id:              id,
 		events:          make(chan channel.AdjudicatorEvent, DefaultBufferSize),
 		concluded:       make(chan struct{}, 1),
+		fatalErrors:     make(chan error, 1),
 	}
 	ctx, sub.cancel = context.WithCancel(ctx)
 	go sub.run(ctx)
@@ -46,18 +51,21 @@ func NewAdjudicatorSubFromChannelID(ctx context.Context, ckbClient client.CKBCli
 }
 
 func (a *PollingSubscription) run(ctx context.Context) {
-	finish := func() {
-		a.err = fmt.Errorf("subscription closed by context: %w", ctx.Err())
+	finish := func(err error) {
+		a.err = err
 		close(a.events)
 	}
 	var oldStatus *molecule.ChannelStatus
 	for {
 		select {
+		case err := <-a.fatalErrors:
+			finish(err)
+			return
 		case <-a.concluded:
-			finish()
+			finish(ErrChannelConcluded)
 			return
 		case <-ctx.Done():
-			finish()
+			finish(ErrSubscriptionClosedByContext)
 			return
 		case <-time.After(a.PollingInterval):
 			blockNumber, newStatus, err := a.pollStatus(ctx)
@@ -111,7 +119,8 @@ func (a *PollingSubscription) emitEventIfNecessary(
 		return true
 	}
 	if newStatus == nil {
-		panic("adjudicator_sub: a live cell was found but newStatus is nil")
+		a.fatalErrors <- fmt.Errorf("a live cell was found but newStatus is nil")
+		return false
 	}
 	if oldStatus != nil && bytes.Equal(oldStatus.AsSlice(), newStatus.AsSlice()) {
 		return false
@@ -120,21 +129,24 @@ func (a *PollingSubscription) emitEventIfNecessary(
 		return true
 	}
 	if !encoding.ToBool(*newStatus.Disputed()) {
-		panic(fmt.Sprintf(
+		a.fatalErrors <- fmt.Errorf(
 			"adjudicator_sub: channel received update but is not disputed. oldStatus: %s, newStatus: %s",
 			hex.EncodeToString(oldStatus.AsSlice()),
 			hex.EncodeToString(newStatus.AsSlice()),
-		))
+		)
+		return false
 	}
 	// TODO: Handle conclude event.
 	challengeDurationStart, err := a.getChallengeDurationStart(ctx, newBlockNumber)
 	if err != nil {
-		panic(fmt.Sprintf("adjudicator_sub: could not get challenge duration start: %v", err))
+		a.fatalErrors <- fmt.Errorf("could not get challenge duration start: %v", err)
+		return false
 	}
 
 	challengeDuration, err := a.getChallengeDuration()
 	if err != nil {
-		panic(fmt.Sprintf("adjudicator_sub: could not get challenge duration: %v", err))
+		a.fatalErrors <- fmt.Errorf("could not get challenge duration: %v", err)
+		return false
 	}
 
 	event := channel.NewRegisteredEvent(
@@ -148,13 +160,21 @@ func (a *PollingSubscription) emitEventIfNecessary(
 	return true
 }
 
-func (a *PollingSubscription) EventStream() <-chan channel.AdjudicatorEvent {
-	return a.events
+// Next returns the next event from the subscription.
+// It blocks until an event is available or the subscription is closed.
+// It returns nil if the subscription is closed. or an error occurs
+func (a *PollingSubscription) Next() channel.AdjudicatorEvent {
+	return <-a.events
 }
 
+// Err returns the error that caused the subscription to close.
+// The returned error is ErrChannelConcluded, iff the channel was concluded.
+// The returned error is ErrSubscriptionClosedByContext, iff the subscription was closed by the context or via Close.
 func (a *PollingSubscription) Err() error {
 	return a.err
 }
+
+// Close closes the subscription.
 func (a *PollingSubscription) Close() error {
 	a.cancel()
 	return nil
