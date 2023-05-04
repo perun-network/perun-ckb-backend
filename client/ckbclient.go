@@ -48,7 +48,7 @@ type Client struct {
 	client       rpc.Client
 	PCTSCodeHash types.Hash
 	PCTSHashType types.ScriptHashType
-	cache        map[channel.ID]*types.Script
+	cache        StableScriptCache
 }
 
 func (c Client) Start(ctx context.Context, params *channel.Params, state *channel.State) (*types.Script, error) {
@@ -84,7 +84,7 @@ func NewDefaultClient(rpcClient rpc.Client) *Client {
 		client:       rpcClient,
 		PCTSCodeHash: defaults.DefaultPCTSCodeHash,
 		PCTSHashType: defaults.DefaultPCTSHashType,
-		cache:        map[channel.ID]*types.Script{},
+		cache:        NewStableScriptCache(),
 	}
 }
 
@@ -94,7 +94,7 @@ func (c Client) Fund(ctx context.Context, pcts *types.Script) error {
 }
 
 func (c Client) GetChannelWithID(ctx context.Context, id channel.ID) (BlockNumber, *types.Script, *molecule.ChannelConstants, *molecule.ChannelStatus, error) {
-	script, cached := c.cache[id]
+	script, cached := c.cache.Get(id)
 	if cached {
 		blockNumber, channelStatus, err := c.GetChannelWithExactPCTS(ctx, script)
 		if err != nil {
@@ -108,7 +108,16 @@ func (c Client) GetChannelWithID(ctx context.Context, id channel.ID) (BlockNumbe
 	if err != nil {
 		return 0, nil, nil, nil, err
 	}
-	return c.getFirstChannelWithID(liveChannelCells, id)
+	b, s, channelConstants, channelStatus, err := c.getFirstChannelWithID(liveChannelCells, id)
+	if err != nil {
+		return b, s, channelConstants, channelStatus, err
+	}
+	err = c.cache.Set(id, s)
+	if err != nil {
+		// This will return the channel value for the consistent, cached result.
+		return c.GetChannelWithID(ctx, id)
+	}
+	return b, s, channelConstants, channelStatus, err
 }
 
 func (c Client) getFirstChannelWithID(channels *indexer.LiveCells, id channel.ID) (BlockNumber, *types.Script, *molecule.ChannelConstants, *molecule.ChannelStatus, error) {
