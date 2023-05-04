@@ -56,7 +56,7 @@ func NewDefaultFunder(client client.CKBClient) *Funder {
 }
 
 func (f Funder) fundPartyA(ctx context.Context, req channel.FundingReq) error {
-	token, err := f.client.Start(ctx, req.Params, req.State)
+	script, err := f.client.Start(ctx, req.Params, req.State)
 	if err != nil {
 		return err
 	}
@@ -64,9 +64,9 @@ polling:
 	for i := 0; i < f.MaxIterationsUntilAbort; i++ {
 		select {
 		case <-ctx.Done():
-			return f.client.Abort(ctx, token)
+			return f.client.Abort(ctx, script)
 		case <-time.After(f.PollingInterval):
-			_, cs, err := f.client.GetChannelWithToken(ctx, token)
+			cs, err := f.client.GetChannelWithExactPCTS(ctx, script)
 			if err != nil {
 				continue polling
 			}
@@ -75,7 +75,7 @@ polling:
 			}
 		}
 	}
-	return f.client.Abort(ctx, token)
+	return f.client.Abort(ctx, script)
 }
 
 func (f Funder) fundPartyB(ctx context.Context, req channel.FundingReq) error {
@@ -85,18 +85,18 @@ polling:
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-time.After(f.PollingInterval):
-			channelConstants, channelStatus, err := f.client.GetChannelWithID(ctx, req.Params.ID())
+			script, channelConstants, channelStatus, err := f.client.GetChannelWithID(ctx, req.Params.ID())
 			if err != nil {
 				continue polling
 			}
-			token, err := f.verifyChannelIntegrity(req, channelConstants, channelStatus)
+			err = f.verifyChannelIntegrity(req, channelConstants, channelStatus)
 			if err != nil {
 				return err
 			}
 			if encoding.ToBool(*channelStatus.Funded()) {
 				return nil
 			}
-			return f.client.Fund(ctx, token)
+			return f.client.Fund(ctx, script)
 		}
 	}
 }
@@ -122,37 +122,37 @@ func (f Funder) Fund(ctx context.Context, req channel.FundingReq) error {
 }
 
 // verifyChannelIntegrity needs to verify everything that is not covered by the channel id.
-func (f Funder) verifyChannelIntegrity(req channel.FundingReq, constants *molecule.ChannelConstants, status *molecule.ChannelStatus) (*molecule.ChannelToken, error) {
+func (f Funder) verifyChannelIntegrity(req channel.FundingReq, constants *molecule.ChannelConstants, status *molecule.ChannelStatus) error {
 	// Verify everything in channel constants besides Params.
 	// The Params are already implicitly verified because:
 	// 1. We queried for a channel with the given channel ID.
 	// 2. The pcts does not allow creation of a channel where the channel id is not the hash of the channel params.
 	onchainPCLSHashType, err := encoding.ToHashType(constants.PclsHashType())
 	if err != nil {
-		return nil, err
+		return err
 	}
 	onchainPFLSHashType, err := encoding.ToHashType(constants.PflsHashType())
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if types.UnpackHash(constants.PclsCodeHash()) != f.Constants.PCLSCodeHash ||
 		onchainPCLSHashType != f.Constants.PCLSHashType ||
 		types.UnpackHash(constants.PflsCodeHash()) != f.Constants.PFLSCodeHash ||
 		onchainPFLSHashType != f.Constants.PFLSHashType ||
 		encoding.UnpackUint64(constants.PflsMinCapacity()) != f.Constants.PFLSMinCapacity {
-		return nil, errors.New("invalid channel constants")
+		return errors.New("invalid channel constants")
 	}
 
 	// Now we verify the integrity of the channel state in the channel status.
 	// All other parameters in the channel status are implicitly verified by the pcts.
 	reqState, err := encoding.PackChannelState(req.State)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if !bytes.Equal(reqState.AsSlice(), status.State().AsSlice()) {
-		return nil, errors.New("invalid channel state")
+		return errors.New("invalid channel state")
 	}
-	return constants.ThreadToken(), nil
+	return nil
 }
 
 // knownPayoutPreimage verifies that we know a preimage of the payout script hash. We currently only support
