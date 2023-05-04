@@ -299,33 +299,18 @@ func (c Client) createChannelToken(ctx context.Context) (backend.Token, error) {
 }
 
 func (c Client) GetChannelWithID(ctx context.Context, id channel.ID) (BlockNumber, *types.Script, *molecule.ChannelConstants, *molecule.ChannelStatus, error) {
-	script, cached := c.cache.Get(id)
-	if cached {
-		blockNumber, channelStatus, err := c.GetChannelWithExactPCTS(ctx, script)
-		if err != nil {
-			return 0, nil, nil, nil, err
-		}
-		channelConstants, err := molecule.ChannelConstantsFromSlice(script.Args, false)
-		return blockNumber, script, channelConstants, channelStatus, err
-	}
-
-	liveChannelCells, err := c.getAllChannelLiveCells(ctx)
+	cell, status, err := c.getChannelLiveCellWithCache(ctx, id)
 	if err != nil {
 		return 0, nil, nil, nil, err
 	}
-	b, s, channelConstants, channelStatus, err := c.getFirstChannelWithID(liveChannelCells, id)
+	channelConstants, err := molecule.ChannelConstantsFromSlice(cell.Output.Type.Args, false)
 	if err != nil {
-		return b, s, channelConstants, channelStatus, err
+		return 0, nil, nil, nil, err
 	}
-	err = c.cache.Set(id, s)
-	if err != nil {
-		// This will return the channel value for the consistent, cached result.
-		return c.GetChannelWithID(ctx, id)
-	}
-	return b, s, channelConstants, channelStatus, err
+	return cell.BlockNumber, cell.Output.Type, channelConstants, status, nil
 }
 
-func (c Client) getFirstChannelWithID(channels *indexer.LiveCells, id channel.ID) (BlockNumber, *types.Script, *molecule.ChannelConstants, *molecule.ChannelStatus, error) {
+func (c Client) getFirstChannelLiveCellWithID(channels *indexer.LiveCells, id channel.ID) (*indexer.LiveCell, *molecule.ChannelStatus, error) {
 	for _, cell := range channels.Objects {
 		if !c.isValidChannelLiveCell(cell) {
 			continue
@@ -337,13 +322,9 @@ func (c Client) getFirstChannelWithID(channels *indexer.LiveCells, id channel.ID
 		if types.UnpackHash(channelStatus.State().ChannelId()) != id {
 			continue
 		}
-		channelConstants, err := molecule.ChannelConstantsFromSlice(cell.Output.Type.Args, false)
-		if err != nil {
-			return 0, nil, nil, nil, err
-		}
-		return cell.BlockNumber, cell.Output.Type, channelConstants, channelStatus, nil
+		return cell, channelStatus, nil
 	}
-	return 0, nil, nil, nil, ErrNoChannelLiveCell
+	return nil, nil, ErrNoChannelLiveCell
 }
 
 func (c Client) getAllChannelLiveCells(ctx context.Context) (*indexer.LiveCells, error) {
@@ -392,4 +373,39 @@ func (c Client) GetBlockTime(ctx context.Context, blockNumber BlockNumber) (time
 		return time.Time{}, errors.New("block timestamp is too large")
 	}
 	return time.UnixMilli(int64(block.Header.Timestamp)), nil
+}
+
+func (c Client) getChannelLiveCellWithCache(ctx context.Context, id channel.ID) (*indexer.LiveCell, *molecule.ChannelStatus, error) {
+	script, cached := c.cache.Get(id)
+	if cached {
+		cells, err := c.getExactChannelLiveCell(ctx, script)
+		if err != nil {
+			return nil, nil, err
+		}
+		if len(cells.Objects) > 1 {
+			return nil, nil, errors.New("more than one live cell found for channel")
+		}
+		if len(cells.Objects) == 0 {
+			return nil, nil, ErrNoChannelLiveCell
+		}
+		status, err := molecule.ChannelStatusFromSlice(cells.Objects[0].OutputData, false)
+		return cells.Objects[0], status, nil
+	}
+	liveChannelCells, err := c.getAllChannelLiveCells(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	cell, status, err := c.getFirstChannelLiveCellWithID(liveChannelCells, id)
+	if err != nil {
+		return nil, nil, err
+	}
+	errCache := c.cache.Set(id, cell.Output.Type)
+	if errCache != nil {
+		return c.getChannelLiveCellWithCache(ctx, id)
+	}
+	return cell, status, err
+}
+
+func (c Client) getFeeInputs(ctx context.Context, participant *address.Participant) ([]molecule.CellInput, backend.CKBOutput, error) {
+	panic("implement me")
 }
