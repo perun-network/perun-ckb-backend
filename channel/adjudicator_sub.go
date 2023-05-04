@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types/molecule"
@@ -20,13 +21,15 @@ const (
 )
 
 type PollingSubscription struct {
-	PollingInterval time.Duration
-	client          client.CKBClient
-	id              channel.ID
-	pcts            *types.Script
-	events          chan channel.AdjudicatorEvent
-	err             error
-	cancel          context.CancelFunc
+	PollingInterval   time.Duration
+	client            client.CKBClient
+	id                channel.ID
+	pcts              *types.Script
+	events            chan channel.AdjudicatorEvent
+	err               error
+	cancel            context.CancelFunc
+	foundLiveCellOnce bool
+	concluded         chan struct{}
 }
 
 func NewAdjudicatorSubFromChannelID(ctx context.Context, ckbClient client.CKBClient, id channel.ID) *PollingSubscription {
@@ -35,6 +38,7 @@ func NewAdjudicatorSubFromChannelID(ctx context.Context, ckbClient client.CKBCli
 		client:          ckbClient,
 		id:              id,
 		events:          make(chan channel.AdjudicatorEvent, DefaultBufferSize),
+		concluded:       make(chan struct{}, 1),
 	}
 	ctx, sub.cancel = context.WithCancel(ctx)
 	go sub.run(ctx)
@@ -49,16 +53,22 @@ func (a *PollingSubscription) run(ctx context.Context) {
 	var oldStatus *molecule.ChannelStatus
 	for {
 		select {
+		case <-a.concluded:
+			finish()
+			return
 		case <-ctx.Done():
 			finish()
 			return
 		case <-time.After(a.PollingInterval):
 			blockNumber, newStatus, err := a.pollStatus(ctx)
+			foundLiveCell := true
 			if err != nil {
-				// TODO: What happens if the channel is closed on-chain?
-				continue
+				if !errors.Is(err, client.ErrNoChannelLiveCell) {
+					continue
+				}
+				foundLiveCell = false
 			}
-			statusDidChange := a.emitEventIfNecessary(ctx, oldStatus, newStatus, blockNumber)
+			statusDidChange := a.emitEventIfNecessary(ctx, oldStatus, newStatus, blockNumber, foundLiveCell)
 			if statusDidChange {
 				oldStatus = newStatus
 			}
@@ -82,10 +92,26 @@ func (a *PollingSubscription) pollStatus(ctx context.Context) (client.BlockNumbe
 // emitEventIfNecessary emits an event if the difference between oldStatus and newStatus indicates an event.
 // It returns ture, iff the status has changed.
 // Note: The status can change without warranting emission of an event!
-func (a *PollingSubscription) emitEventIfNecessary(ctx context.Context, oldStatus *molecule.ChannelStatus, newStatus *molecule.ChannelStatus, newBlockNumber client.BlockNumber) bool {
-	if newStatus == nil {
-		// TODO: How can this happen?
+func (a *PollingSubscription) emitEventIfNecessary(
+	ctx context.Context,
+	oldStatus *molecule.ChannelStatus,
+	newStatus *molecule.ChannelStatus,
+	newBlockNumber client.BlockNumber,
+	foundLiveCell bool,
+) bool {
+	a.foundLiveCellOnce = a.foundLiveCellOnce || foundLiveCell
+	if !a.foundLiveCellOnce {
 		return false
+	}
+	if !foundLiveCell {
+		// TODO: figure out how to set the timeout and version for concluded events.
+		// TODO: Do we want to verify that the channel is actually concluded here?
+		a.events <- channel.NewConcludedEvent(a.id, &channel.ElapsedTimeout{}, 0)
+		close(a.concluded)
+		return true
+	}
+	if newStatus == nil {
+		panic("adjudicator_sub: a live cell was found but newStatus is nil")
 	}
 	if oldStatus != nil && bytes.Equal(oldStatus.AsSlice(), newStatus.AsSlice()) {
 		return false
@@ -95,7 +121,7 @@ func (a *PollingSubscription) emitEventIfNecessary(ctx context.Context, oldStatu
 	}
 	if !encoding.ToBool(*newStatus.Disputed()) {
 		panic(fmt.Sprintf(
-			"channel received update but is not disputed. oldStatus: %s, newStatus: %s",
+			"adjudicator_sub: channel received update but is not disputed. oldStatus: %s, newStatus: %s",
 			hex.EncodeToString(oldStatus.AsSlice()),
 			hex.EncodeToString(newStatus.AsSlice()),
 		))
@@ -103,12 +129,12 @@ func (a *PollingSubscription) emitEventIfNecessary(ctx context.Context, oldStatu
 	// TODO: Handle conclude event.
 	challengeDurationStart, err := a.getChallengeDurationStart(ctx, newBlockNumber)
 	if err != nil {
-		panic(fmt.Sprintf("could not get challenge duration start: %v", err))
+		panic(fmt.Sprintf("adjudicator_sub: could not get challenge duration start: %v", err))
 	}
 
 	challengeDuration, err := a.getChallengeDuration()
 	if err != nil {
-		panic(fmt.Sprintf("could not get challenge duration: %v", err))
+		panic(fmt.Sprintf("adjudicator_sub: could not get challenge duration: %v", err))
 	}
 
 	event := channel.NewRegisteredEvent(
@@ -146,7 +172,7 @@ func (a *PollingSubscription) getChallengeDuration() (time.Duration, error) {
 
 	duration := encoding.UnpackUint64(channelConstants.Params().ChallengeDuration())
 	if duration > math.MaxInt64 {
-		panic(fmt.Sprintf("challenge duration %d is too large, max: %d", duration, math.MaxInt64))
+		panic(fmt.Sprintf("adjudicator_sub: challenge duration %d is too large, max: %d", duration, math.MaxInt64))
 	}
 	return time.Duration(duration) * time.Millisecond, nil
 }
