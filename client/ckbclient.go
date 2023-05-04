@@ -10,6 +10,7 @@ import (
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types/molecule"
 	"math"
 	"perun.network/go-perun/channel"
+	"perun.network/go-perun/wallet"
 	"perun.network/perun-ckb-backend/channel/defaults"
 	"time"
 )
@@ -31,6 +32,20 @@ type CKBClient interface {
 	// Fund funds the channel with the given channel token. The implementation can assume that Fund will only ever
 	// be performed by Party B.
 	Fund(ctx context.Context, pcts *types.Script) error
+
+	// Dispute registers a dispute for the channel with the given channel ID on chain.
+	// It should register the given state with the given signatures as witness.
+	Dispute(ctx context.Context, id channel.ID, state *channel.State, sigs []wallet.Sig) error
+
+	// Close closes the channel with the given channel ID on chain.
+	// The implementation can assume that the given state is final.
+	Close(ctx context.Context, id channel.ID, state *channel.State, sigs []wallet.Sig) error
+
+	// ForceClose closes the channel with the given channel ID on chain.
+	// The implementation can assume that the channel has already been disputed and that the challenge duration
+	// is expired in real-time, though it may be necessary to wait until a block is produced with a timestamp strictly
+	// later than the expiration of the challenge duration.
+	ForceClose(ctx context.Context, id channel.ID, state *channel.State) error
 
 	// GetChannelWithID returns an on-chain channel with the given channel ID.
 	// Note: Only the channel ID field in the state must be checked, as the pcts verifies the integrity of said
@@ -55,6 +70,21 @@ type Client struct {
 	PCTSCodeHash types.Hash
 	PCTSHashType types.ScriptHashType
 	cache        StableScriptCache
+}
+
+func (c Client) Dispute(ctx context.Context, id channel.ID, state *channel.State, sigs []wallet.Sig) error {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (c Client) Close(ctx context.Context, id channel.ID, state *channel.State, sigs []wallet.Sig) error {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (c Client) ForceClose(ctx context.Context, id channel.ID, state *channel.State) error {
+	//TODO implement me
+	panic("implement me")
 }
 
 func (c Client) Start(ctx context.Context, params *channel.Params, state *channel.State) (*types.Script, error) {
