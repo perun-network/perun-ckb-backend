@@ -34,6 +34,7 @@ type PollingSubscription struct {
 	foundLiveCellOnce bool
 	concluded         chan struct{}
 	fatalErrors       chan error
+	challengeDuration *time.Duration
 }
 
 func NewAdjudicatorSubFromChannelID(ctx context.Context, ckbClient client.CKBClient, id channel.ID) *PollingSubscription {
@@ -180,8 +181,10 @@ func (a *PollingSubscription) Close() error {
 	return nil
 }
 
-// TODO: Maybe cache this information.
 func (a *PollingSubscription) getChallengeDuration() (time.Duration, error) {
+	if a.challengeDuration != nil {
+		return *a.challengeDuration, nil
+	}
 	if a.pcts == nil {
 		return 0, fmt.Errorf("cannot get challenge duration: pcts not set")
 	}
@@ -194,7 +197,9 @@ func (a *PollingSubscription) getChallengeDuration() (time.Duration, error) {
 	if duration > math.MaxInt64 {
 		panic(fmt.Sprintf("adjudicator_sub: challenge duration %d is too large, max: %d", duration, math.MaxInt64))
 	}
-	return time.Duration(duration) * time.Millisecond, nil
+	a.challengeDuration = new(time.Duration)
+	*a.challengeDuration = time.Duration(duration) * time.Millisecond
+	return *a.challengeDuration, nil
 }
 
 func (a *PollingSubscription) getChallengeDurationStart(ctx context.Context, blockNumber client.BlockNumber) (time.Time, error) {
