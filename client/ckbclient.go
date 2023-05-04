@@ -14,6 +14,8 @@ import (
 	"time"
 )
 
+var ErrNoChannelLiveCell = errors.New("no channel live cell found")
+
 type BlockNumber = uint64
 
 type CKBClient interface {
@@ -31,13 +33,17 @@ type CKBClient interface {
 	Fund(ctx context.Context, pcts *types.Script) error
 
 	// GetChannelWithID returns an on-chain channel with the given channel ID.
-	// Note: Only the channel ID field in the state must be verified checked, as the pcts verifies the integrity of said
+	// Note: Only the channel ID field in the state must be checked, as the pcts verifies the integrity of said
 	// field upon channel start (i.e. that it is equal to the hash of the channel parameters).
 	// If there are multiple channels with the same ID, the implementation can return any of them, but the returned
 	// constants and status must belong to the same channel.
+	// Iff all RPC calls succeed but no live cell for the given channel ID is found, the returned error is
+	// ErrNoChannelLiveCell.
 	GetChannelWithID(ctx context.Context, id channel.ID) (BlockNumber, *types.Script, *molecule.ChannelConstants, *molecule.ChannelStatus, error)
 
-	// GetChannelWithExactPCTS return the on-chain channel status for the given type script.
+	// GetChannelWithExactPCTS returns the on-chain channel status for the given type script.
+	// Iff all RPC calls succeed but no live cell for the given channel ID is found, the returned error is
+	// ErrNoChannelLiveCell.
 	GetChannelWithExactPCTS(ctx context.Context, pcts *types.Script) (BlockNumber, *molecule.ChannelStatus, error)
 
 	// GetBlockTime returns the timestamp of the block with the given block number.
@@ -68,6 +74,9 @@ func (c Client) GetChannelWithExactPCTS(ctx context.Context, pcts *types.Script)
 	}
 	if cells == nil {
 		return 0, nil, errors.New("unable to get channel live cell")
+	}
+	if len(cells.Objects) == 0 {
+		return 0, nil, ErrNoChannelLiveCell
 	}
 	if len(cells.Objects) != 1 {
 		return 0, nil, fmt.Errorf("expected exactly 1 live channel cell, got: %d", len(cells.Objects))
@@ -138,7 +147,7 @@ func (c Client) getFirstChannelWithID(channels *indexer.LiveCells, id channel.ID
 		}
 		return cell.BlockNumber, cell.Output.Type, channelConstants, channelStatus, nil
 	}
-	return 0, nil, nil, nil, errors.New("channel for channel id not found")
+	return 0, nil, nil, nil, ErrNoChannelLiveCell
 }
 
 func (c Client) getAllChannelLiveCells(ctx context.Context) (*indexer.LiveCells, error) {
