@@ -7,14 +7,16 @@ import (
 	"math"
 	"time"
 
+	"github.com/decred/dcrd/dcrec/secp256k1/v4"
+	"github.com/nervosnetwork/ckb-sdk-go/v2/collector"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/indexer"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/rpc"
+	"github.com/nervosnetwork/ckb-sdk-go/v2/systemscript"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types/molecule"
 	"perun.network/go-perun/channel"
 	"perun.network/go-perun/wallet"
 	"perun.network/perun-ckb-backend/backend"
-	"perun.network/perun-ckb-backend/channel/asset"
 	"perun.network/perun-ckb-backend/channel/defaults"
 	"perun.network/perun-ckb-backend/encoding"
 )
@@ -71,14 +73,12 @@ type CKBClient interface {
 
 type Client struct {
 	client       rpc.Client
-	index        channel.Index
 	PCTSCodeHash types.Hash
 	PCTSHashType types.ScriptHashType
 	PCLSCodeHash types.Hash
 	PCLSHashType types.ScriptHashType
 	PFLSCodeHash types.Hash
 	PFLSHashType types.ScriptHashType
-	lockOutPoint types.OutPoint
 	cache        StableScriptCache
 }
 
@@ -123,10 +123,9 @@ func (c Client) GetChannelWithExactPCTS(ctx context.Context, pcts *types.Script)
 	return cells.Objects[0].BlockNumber, channelStatus, nil
 }
 
-func NewDefaultClient(rpcClient rpc.Client, index channel.Index) *Client {
+func NewDefaultClient(rpcClient rpc.Client) *Client {
 	return &Client{
 		client:       rpcClient,
-		index:        index,
 		PCTSCodeHash: defaults.DefaultPCTSCodeHash,
 		PCTSHashType: defaults.DefaultPCTSHashType,
 		PCLSCodeHash: defaults.DefaultPCLSCodeHash,
@@ -143,43 +142,34 @@ func (c Client) Fund(ctx context.Context, pcts *types.Script) error {
 }
 
 func (c Client) Start(ctx context.Context, params *channel.Params, state *channel.State) (*molecule.ChannelToken, error) {
-	channelToken, err := c.createChannelToken(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("creating channel token: %w", err)
-	}
-
-	inputs, funds, change := c.mkFundingFromAllocation(ctx, state.Allocation)
-	inputs = append(inputs, channelToken.AsCellInput())
-	channelCell := c.mkInitialChannel(params, state, channelToken)
-	ckboutputs := backend.CKBOutputs{}.Append(channelCell).Extend(funds).Extend(change)
-	outputs, data := ckboutputs.AsOutputAndData()
-	rawTx := molecule.NewRawTransactionBuilder().
-		Inputs(molecule.NewCellInputVecBuilder().Extend(inputs).Build()).
-		Outputs(outputs).
-		OutputsData(data).
-		Build()
-	mtx := molecule.NewTransactionBuilder().Raw(rawTx).Build()
-	tx := types.UnpackTransaction(&mtx)
-
-	if err := c.sendAndAwait(ctx, tx); err != nil {
-		return nil, err
-	}
-
-	return &channelToken.Token, nil
-}
-
-func (c Client) mkInitialChannel(params *channel.Params, state *channel.State, token backend.Token) backend.CKBOutput {
-	channelLockScript := c.mkChannelLockScript(params, state)
-	channelTypeScript := c.mkChannelTypeScript(params, state, token.Token)
-	channelData := c.mkInitialChannelState(params, state)
-	channelOutput := molecule.NewCellOutputBuilder().
-		Lock(channelLockScript).
-		Type(molecule.NewScriptOptBuilder().Set(channelTypeScript).Build()).
-		Build()
-	return backend.CKBOutput{
-		Output: channelOutput,
-		Data:   channelData,
-	}
+	panic("implement me")
+	// channelToken, err := c.createChannelToken(ctx)
+	//
+	//	if err != nil {
+	//		return nil, fmt.Errorf("creating channel token: %w", err)
+	//	}
+	//
+	// partyA := channel.Index(0)
+	// inputs, funds, change := c.mkFunding(ctx, *params, *state, partyA)
+	// inputs = append(inputs, channelToken.AsSerializedCellInput())
+	// channelCell := c.mkInitialChannel(params, state, channelToken)
+	// ckboutputs := backend.CKBOutputs{}.Append(channelCell).Extend(funds).Extend(change)
+	// outputs, data := ckboutputs.AsOutputAndData()
+	// rawTx := molecule.NewRawTransactionBuilder().
+	//
+	//	Inputs(molecule.NewCellInputVecBuilder().Extend(inputs).Build()).
+	//	Outputs(outputs).
+	//	OutputsData(data).
+	//	Build()
+	//
+	// mtx := molecule.NewTransactionBuilder().Raw(rawTx).Build()
+	// tx := types.UnpackTransaction(&mtx)
+	//
+	//	if err := c.sendAndAwait(ctx, tx); err != nil {
+	//		return nil, err
+	//	}
+	//
+	// return &channelToken.Token, nil
 }
 
 func (c Client) mkChannelLockScript(params *channel.Params, state *channel.State) molecule.Script {
@@ -223,46 +213,41 @@ func (c Client) mkChannelConstants(params *channel.Params, token molecule.Channe
 		Build()
 }
 
-func (c Client) mkInitialChannelState(params *channel.Params, state *channel.State) molecule.Bytes {
-	packedState, err := encoding.PackChannelState(state)
-	if err != nil {
-		panic(err)
-	}
-	partyA := channel.Index(0)
-	balances := c.mkBalancesForParty(state, partyA)
-	status := molecule.NewChannelStatusBuilder().
-		State(packedState).
-		Funded(encoding.False).
-		Disputed(encoding.False).
-		Funding(balances).
-		Build()
-	return *types.PackBytes(status.AsSlice())
-}
-
-func (c Client) mkBalancesForParty(state *channel.State, index channel.Index) molecule.Balances {
-	balances := molecule.NewBalancesBuilder()
-	if index == channel.Index(0) {
-		balances = balances.Nth0(*types.PackUint64(state.Allocation.Balance(index, asset.Asset).Uint64()))
-	} else { // channel.Index(1), we only have two party channels.
-		balances = balances.Nth1(*types.PackUint64(state.Allocation.Balance(index, asset.Asset).Uint64()))
-	}
-	return balances.Build()
-}
-
-func (c Client) mkFundingFromAllocation(ctx context.Context, alloc channel.Allocation) ([]molecule.CellInput, backend.CKBOutputs, backend.CKBOutputs) {
-	wanted := alloc.Balance(c.index, asset.Asset).Uint64()
-	liveCells, err := c.findLiveCells(ctx, wanted)
-	if err != nil {
-		panic(err)
-	}
-	panic("implement me")
-}
-
-// findLiveCells finds one or more live cells containing at least the given
+// findLiveCKBCells finds one or more live cells containing at least the given
 // capacity belonging to this client.
-func (c Client) findLiveCells(ctx context.Context, wanted uint64) ([]molecule.CellInput, error) {
-	// c.client.GetCells(ctx, searchKey, indexer.SearchOrderAsc, indexer.SearchLimit, indexer)
-	panic("implement me")
+func (c Client) findLiveCKBCells(ctx context.Context, wanted uint64, pubkey *secp256k1.PublicKey) ([]molecule.CellInput, error) {
+	defaultLockscript, err := systemscript.Secp256K1Blake160SignhashAllByPublicKey(pubkey.SerializeCompressed())
+	if err != nil {
+		return nil, fmt.Errorf("generating default lockscript: %w", err)
+	}
+	searchKey := &indexer.SearchKey{
+		Script:           defaultLockscript,
+		ScriptType:       types.ScriptTypeType,
+		ScriptSearchMode: types.ScriptSearchModeExact,
+		Filter:           nil,
+	}
+
+	iter := collector.NewLiveCellIterator(c.client, searchKey)
+	return cellsContainingAtLeastValue(wanted, iter)
+}
+
+func cellsContainingAtLeastValue(value uint64, iter collector.CellIterator) ([]molecule.CellInput, error) {
+	cells := make([]molecule.CellInput, 0, 1)
+	accumulatedCapacity := uint64(0)
+	for iter.HasNext() {
+		cell := iter.Next()
+		accumulatedCapacity += cell.Output.Capacity
+		cells = append(cells, molecule.NewCellInputBuilder().PreviousOutput(*cell.OutPoint.Pack()).Build())
+		if accumulatedCapacity >= value {
+			break
+		}
+	}
+
+	if accumulatedCapacity < value {
+		return nil, fmt.Errorf("not enough capacity, wanted %d, got %d", value, accumulatedCapacity)
+	}
+
+	return cells, nil
 }
 
 const defaultPollingInterval = 4 * time.Second
@@ -278,8 +263,8 @@ func (c Client) sendAndAwait(ctx context.Context, tx *types.Transaction) error {
 	// Wait for the transaction to be committed on-chain.
 	txWithStatus := &types.TransactionWithStatus{}
 	ticker := time.NewTicker(defaultPollingInterval)
-	for txWithStatus.TxStatus.Status != types.TransactionStatusCommitted ||
-		txWithStatus.TxStatus.Status != types.TransactionStatusRejected {
+	for !(txWithStatus.TxStatus.Status == types.TransactionStatusCommitted ||
+		txWithStatus.TxStatus.Status == types.TransactionStatusRejected) {
 		select {
 		case <-ctx.Done():
 			return fmt.Errorf("context done: %w", ctx.Err())
