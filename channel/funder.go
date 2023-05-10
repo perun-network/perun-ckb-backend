@@ -9,18 +9,10 @@ import (
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types/molecule"
 	"math"
 	"perun.network/go-perun/channel"
-	"perun.network/go-perun/wallet"
 	"perun.network/perun-ckb-backend/channel/defaults"
 	"perun.network/perun-ckb-backend/client"
 	"perun.network/perun-ckb-backend/encoding"
-	"perun.network/perun-ckb-backend/wallet/address"
 	"time"
-)
-
-type KnownPayoutScripts int
-
-const (
-	Secp256k1Blake160SighashAll KnownPayoutScripts = iota
 )
 
 const DefaultPollingInterval = time.Duration(5) * time.Second
@@ -104,11 +96,11 @@ polling:
 
 // Fund funds the channel with the given funding request.
 func (f Funder) Fund(ctx context.Context, req channel.FundingReq) error {
-	_, err := f.knownPayoutPreimage(req.Params.Parts[0])
+	_, err := defaults.KnownPayoutPreimage(req.Params.Parts[0])
 	if err != nil {
 		return err
 	}
-	_, err = f.knownPayoutPreimage(req.Params.Parts[1])
+	_, err = defaults.KnownPayoutPreimage(req.Params.Parts[1])
 	if err != nil {
 		return err
 	}
@@ -158,26 +150,4 @@ func (f Funder) verifyChannelIntegrity(req channel.FundingReq, constants *molecu
 		return errors.New("invalid channel state")
 	}
 	return nil
-}
-
-// knownPayoutPreimage verifies that we know a preimage of the payout script hash. We currently only support
-// secp256k1_blake160_sighash_all, so we can just check if the payment script for the given participant is a
-// secp256k1_blake160_sighash_all script to their public key.
-func (f Funder) knownPayoutPreimage(addr wallet.Address) (KnownPayoutScripts, error) {
-	participant, ok := addr.(*address.Participant)
-	if !ok {
-		return -1, errors.New("invalid participant")
-	}
-	script, err := participant.GetSecp256k1Blake160SighashAll()
-	if err != nil {
-		return -1, err
-	}
-	if script.Hash() == participant.PaymentScriptHash {
-		return Secp256k1Blake160SighashAll, nil
-	}
-	if script.OccupiedCapacity() != participant.PaymentMinCapacity {
-		return -1, errors.New("invalid payment script capacity")
-	}
-
-	return -1, errors.New("unknown payout script")
 }
