@@ -39,10 +39,12 @@ type CKBClient interface {
 
 	// Dispute registers a dispute for the channel with the given channel ID on chain.
 	// It should register the given state with the given signatures as witness.
+	// Note: The given signatures are padded (see encoding.NewDEREncodedSignatureFromPadded).
 	Dispute(ctx context.Context, id channel.ID, state *channel.State, sigs []wallet.Sig) error
 
 	// Close closes the channel with the given channel ID on chain.
 	// The implementation can assume that the given state is final.
+	// Note: The given signatures are padded (see encoding.NewDEREncodedSignatureFromPadded).
 	Close(ctx context.Context, id channel.ID, state *channel.State, sigs []wallet.Sig) error
 
 	// ForceClose closes the channel with the given channel ID on chain.
