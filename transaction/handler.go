@@ -64,6 +64,13 @@ func (psh *PerunScriptHandler) BuildTransaction(builder collector.TransactionBui
 			abortInfo = &v
 		}
 		return psh.buildAbortTransaction(builder, group, abortInfo)
+	case FundInfo, *FundInfo:
+		var fundInfo *FundInfo
+		if fundInfo, ok = context.(*FundInfo); !ok {
+			v, _ := context.(FundInfo)
+			fundInfo = &v
+		}
+		return psh.buildFundTransaction(builder, group, fundInfo)
 	case DisputeInfo, *DisputeInfo:
 		var disputeInfo *DisputeInfo
 		if disputeInfo, ok = context.(*DisputeInfo); !ok {
@@ -100,8 +107,8 @@ func (psh *PerunScriptHandler) buildOpenTransaction(builder collector.Transactio
 	/// Create outputs containing channel cell and channel funds cell.
 
 	// Channel funds cell output.
-	pcts := psh.mkChannelTypeScript(openInfo.Params, openInfo.ChannelToken)
-	fundsLockScript := psh.mkFundsLockScript(pcts)
+	channelTypeScript := psh.mkChannelTypeScript(openInfo.Params, openInfo.ChannelToken)
+	fundsLockScript := psh.mkFundsLockScript(channelTypeScript)
 	channelFundsCell, fundsData := backend.CKBOutput{
 		Output: molecule.NewCellOutputBuilder().
 			Capacity(*types.PackUint64(openInfo.MinFunding())).
@@ -113,7 +120,6 @@ func (psh *PerunScriptHandler) buildOpenTransaction(builder collector.Transactio
 
 	// Channel cell output.
 	channelLockScript := psh.mkChannelLockScript()
-	channelTypeScript := psh.mkChannelTypeScript(openInfo.Params, openInfo.ChannelToken)
 	channelCell, channelData := openInfo.MkInitialChannelCell(*channelLockScript, *channelTypeScript).AsOutputAndData()
 	builder.AddOutput(&channelCell, channelData)
 
@@ -167,8 +173,72 @@ func (psh *PerunScriptHandler) buildForceCloseTransaction(builder collector.Tran
 	return psh.buildSettleTransaction(builder, group, info)
 }
 
-func (psh *PerunScriptHandler) buildDisputeTransaction(builder collector.TransactionBuilder, group *transaction.ScriptGroup, abortInfo *DisputeInfo) (bool, error) {
-	panic("implement me")
+func (psh *PerunScriptHandler) buildFundTransaction(builder collector.TransactionBuilder, group *transaction.ScriptGroup, fundInfo *FundInfo) (bool, error) {
+	builder.AddCellDep(&psh.pclsDep)
+	builder.AddCellDep(&psh.pctsDep)
+
+	// Channel cell input.
+	channelInputIndex := builder.AddInput(&types.CellInput{
+		Since:          0,
+		PreviousOutput: &fundInfo.ChannelCell,
+	})
+	builder.SetWitness(uint(channelInputIndex), types.WitnessTypeInputType, psh.mkWitnessFund())
+
+	// Channel cell output.
+	channelLockScript := psh.mkChannelLockScript()
+	channelTypeScript := psh.mkChannelTypeScript(fundInfo.Params, fundInfo.Token)
+	channelData := fundInfo.AddFundingToStatus()
+	channelCell := types.CellOutput{
+		Capacity: 0,
+		Lock:     channelLockScript,
+		Type:     channelTypeScript,
+	}
+	channelCell.Capacity = channelCell.OccupiedCapacity(channelData.AsSlice())
+	builder.AddOutput(&channelCell, channelData.AsSlice())
+
+	// Channel funds cell output.
+	fundsLockScript := psh.mkFundsLockScript(channelTypeScript)
+	builder.AddOutput(fundInfo.MkFundsCell(fundsLockScript), []byte{})
+	return true, nil
+}
+
+func (psh *PerunScriptHandler) mkWitnessFund() []byte {
+	party := molecule.ParticipantIndexUnionFromB(molecule.BDefault())
+	partyIndex := molecule.NewParticipantIndexBuilder().Set(party).Build()
+	fundRedeemer := molecule.NewFundBuilder().Index(partyIndex).Build()
+	witnessArgs := molecule.ChannelWitnessUnionFromFund(fundRedeemer)
+	witness := molecule.NewChannelWitnessBuilder().Set(witnessArgs).Build()
+	return witness.AsSlice()
+}
+
+func (psh *PerunScriptHandler) buildDisputeTransaction(builder collector.TransactionBuilder, group *transaction.ScriptGroup, disputeInfo *DisputeInfo) (bool, error) {
+	builder.AddCellDep(&psh.pclsDep)
+	builder.AddCellDep(&psh.pctsDep)
+
+	// Channel cell input.
+	channelInputIndex := builder.AddInput(&types.CellInput{
+		Since:          0,
+		PreviousOutput: &disputeInfo.ChannelCell,
+	})
+	builder.SetWitness(uint(channelInputIndex), types.WitnessTypeInputType, psh.mkWitnessDispute(disputeInfo.SigA, disputeInfo.SigB))
+
+	// Channel cell output.
+	channelLockScript := psh.mkChannelLockScript()
+	channelTypeScript := psh.mkChannelTypeScript(disputeInfo.Params, disputeInfo.Token)
+	channelCell := types.CellOutput{
+		Capacity: 0,
+		Lock:     channelLockScript,
+		Type:     channelTypeScript,
+	}
+	channelCell.Capacity = channelCell.OccupiedCapacity(disputeInfo.Status.AsSlice())
+	builder.AddOutput(&channelCell, disputeInfo.Status.AsSlice())
+	return true, nil
+}
+
+func (psh PerunScriptHandler) mkWitnessDispute(sigA, sigB molecule.Bytes) []byte {
+	disputeRedeemer := molecule.NewDisputeBuilder().SigA(sigA).SigB(sigB).Build()
+	witness := molecule.ChannelWitnessUnionFromDispute(disputeRedeemer)
+	return witness.AsSlice()
 }
 
 func (psh PerunScriptHandler) mkChannelLockScript() *types.Script {
