@@ -2,34 +2,29 @@ package defaults
 
 import (
 	"errors"
+	"github.com/nervosnetwork/ckb-sdk-go/v2/types"
 	"perun.network/go-perun/wallet"
 	"perun.network/perun-ckb-backend/wallet/address"
 )
 
-type KnownPayoutScripts int
-
-const (
-	Secp256k1Blake160SighashAll KnownPayoutScripts = iota
-)
-
-// KnownPayoutPreimage verifies that we know a preimage of the payout script hash. We currently only support
-// secp256k1_blake160_sighash_all, so we can just check if the payment script for the given participant is a
-// secp256k1_blake160_sighash_all script to their public key.
-func KnownPayoutPreimage(addr wallet.Address) (KnownPayoutScripts, error) {
+// VerifyAndGetPayoutScript verifies that the given address provides a valid payout script for this backend.
+// Currently only address.Participant with secp256k1_blake160_sighash_all is supported.
+// It returns the payout script and the payment minimum capacity if the verification is successful, otherwise an error.
+func VerifyAndGetPayoutScript(addr wallet.Address) (*types.Script, uint64, error) {
 	participant, ok := addr.(*address.Participant)
 	if !ok {
-		return -1, errors.New("invalid participant")
+		return nil, 0, errors.New("invalid participant")
 	}
 	script, err := participant.GetSecp256k1Blake160SighashAll()
 	if err != nil {
-		return -1, err
+		return nil, 0, err
 	}
-	if script.Hash() == participant.PaymentScriptHash {
-		return Secp256k1Blake160SighashAll, nil
+	if script.Hash() != participant.PaymentScriptHash {
+		return nil, 0, errors.New("invalid payment script hash (only secp256k1_blake160_sighash_all supported)")
 	}
 	if script.OccupiedCapacity() != participant.PaymentMinCapacity {
-		return -1, errors.New("invalid payment script capacity")
+		return nil, 0, errors.New("invalid payment script capacity")
 	}
 
-	return -1, errors.New("unknown payout script")
+	return script, participant.PaymentMinCapacity, nil
 }

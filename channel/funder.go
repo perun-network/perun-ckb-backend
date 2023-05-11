@@ -96,11 +96,11 @@ polling:
 
 // Fund funds the channel with the given funding request.
 func (f Funder) Fund(ctx context.Context, req channel.FundingReq) error {
-	_, err := defaults.KnownPayoutPreimage(req.Params.Parts[0])
+	_, _, err := defaults.VerifyAndGetPayoutScript(req.Params.Parts[0])
 	if err != nil {
 		return err
 	}
-	_, err = defaults.KnownPayoutPreimage(req.Params.Parts[1])
+	_, _, err = defaults.VerifyAndGetPayoutScript(req.Params.Parts[1])
 	if err != nil {
 		return err
 	}
