@@ -4,15 +4,19 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
+	"time"
+
+	"github.com/decred/dcrd/dcrec/secp256k1/v4"
+	"github.com/nervosnetwork/ckb-sdk-go/v2/collector"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/indexer"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/rpc"
+	"github.com/nervosnetwork/ckb-sdk-go/v2/systemscript"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types/molecule"
-	"math"
 	"perun.network/go-perun/channel"
 	"perun.network/go-perun/wallet"
 	"perun.network/perun-ckb-backend/channel/defaults"
-	"time"
 )
 
 var ErrNoChannelLiveCell = errors.New("no channel live cell found")
@@ -69,7 +73,22 @@ type Client struct {
 	client       rpc.Client
 	PCTSCodeHash types.Hash
 	PCTSHashType types.ScriptHashType
+	PCLSCodeHash types.Hash
+	PCLSHashType types.ScriptHashType
+	PFLSCodeHash types.Hash
+	PFLSHashType types.ScriptHashType
 	cache        StableScriptCache
+}
+
+var _ CKBClient = (*Client)(nil)
+
+func (c Client) Start(ctx context.Context, params *channel.Params, state *channel.State) (*types.Script, error) {
+	panic("implement me")
+}
+
+func (c Client) Fund(ctx context.Context, pcts *types.Script) error {
+	//TODO implement me
+	panic("implement me")
 }
 
 func (c Client) Dispute(ctx context.Context, id channel.ID, state *channel.State, sigs []wallet.Sig) error {
@@ -83,11 +102,6 @@ func (c Client) Close(ctx context.Context, id channel.ID, state *channel.State, 
 }
 
 func (c Client) ForceClose(ctx context.Context, id channel.ID, state *channel.State) error {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (c Client) Start(ctx context.Context, params *channel.Params, state *channel.State) (*types.Script, error) {
 	//TODO implement me
 	panic("implement me")
 }
@@ -123,43 +137,93 @@ func NewDefaultClient(rpcClient rpc.Client) *Client {
 		client:       rpcClient,
 		PCTSCodeHash: defaults.DefaultPCTSCodeHash,
 		PCTSHashType: defaults.DefaultPCTSHashType,
+		PCLSCodeHash: defaults.DefaultPCLSCodeHash,
+		PCLSHashType: defaults.DefaultPCLSHashType,
+		PFLSCodeHash: defaults.DefaultPFLSCodeHash,
+		PFLSHashType: defaults.DefaultPFLSHashType,
 		cache:        NewStableScriptCache(),
 	}
 }
 
-func (c Client) Fund(ctx context.Context, pcts *types.Script) error {
-	//TODO implement me
-	panic("implement me")
+// findLiveCKBCells finds one or more live cells containing at least the given
+// capacity belonging to this client.
+func (c Client) findLiveCKBCells(ctx context.Context, wanted uint64, pubkey *secp256k1.PublicKey) ([]molecule.CellInput, error) {
+	defaultLockscript, err := systemscript.Secp256K1Blake160SignhashAllByPublicKey(pubkey.SerializeCompressed())
+	if err != nil {
+		return nil, fmt.Errorf("generating default lockscript: %w", err)
+	}
+	searchKey := &indexer.SearchKey{
+		Script:           defaultLockscript,
+		ScriptType:       types.ScriptTypeType,
+		ScriptSearchMode: types.ScriptSearchModeExact,
+		Filter:           nil,
+	}
+
+	iter := collector.NewLiveCellIterator(c.client, searchKey)
+	return cellsContainingAtLeastValue(wanted, iter)
+}
+
+func cellsContainingAtLeastValue(value uint64, iter collector.CellIterator) ([]molecule.CellInput, error) {
+	cells := make([]molecule.CellInput, 0, 1)
+	accumulatedCapacity := uint64(0)
+	for iter.HasNext() {
+		cell := iter.Next()
+		accumulatedCapacity += cell.Output.Capacity
+		cells = append(cells, molecule.NewCellInputBuilder().PreviousOutput(*cell.OutPoint.Pack()).Build())
+		if accumulatedCapacity >= value {
+			break
+		}
+	}
+
+	if accumulatedCapacity < value {
+		return nil, fmt.Errorf("not enough capacity, wanted %d, got %d", value, accumulatedCapacity)
+	}
+
+	return cells, nil
+}
+
+const defaultPollingInterval = 4 * time.Second
+
+// sendAndAwait sends the given transaction and waits for it to be committed
+// on-chain.
+func (c Client) sendAndAwait(ctx context.Context, tx *types.Transaction) error {
+	txHash, err := c.client.SendTransaction(ctx, tx)
+	if err != nil {
+		return fmt.Errorf("sending transaction: %w", err)
+	}
+
+	// Wait for the transaction to be committed on-chain.
+	txWithStatus := &types.TransactionWithStatus{}
+	ticker := time.NewTicker(defaultPollingInterval)
+	for !(txWithStatus.TxStatus.Status == types.TransactionStatusCommitted ||
+		txWithStatus.TxStatus.Status == types.TransactionStatusRejected) {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("context done: %w", ctx.Err())
+		case <-ticker.C:
+			txWithStatus, err = c.client.GetTransaction(ctx, *txHash)
+			if err != nil {
+				return fmt.Errorf("polling transaction: %w", err)
+			}
+		}
+	}
+
+	return nil
 }
 
 func (c Client) GetChannelWithID(ctx context.Context, id channel.ID) (BlockNumber, *types.Script, *molecule.ChannelConstants, *molecule.ChannelStatus, error) {
-	script, cached := c.cache.Get(id)
-	if cached {
-		blockNumber, channelStatus, err := c.GetChannelWithExactPCTS(ctx, script)
-		if err != nil {
-			return 0, nil, nil, nil, err
-		}
-		channelConstants, err := molecule.ChannelConstantsFromSlice(script.Args, false)
-		return blockNumber, script, channelConstants, channelStatus, err
-	}
-
-	liveChannelCells, err := c.getAllChannelLiveCells(ctx)
+	cell, status, err := c.getChannelLiveCellWithCache(ctx, id)
 	if err != nil {
 		return 0, nil, nil, nil, err
 	}
-	b, s, channelConstants, channelStatus, err := c.getFirstChannelWithID(liveChannelCells, id)
+	channelConstants, err := molecule.ChannelConstantsFromSlice(cell.Output.Type.Args, false)
 	if err != nil {
-		return b, s, channelConstants, channelStatus, err
+		return 0, nil, nil, nil, err
 	}
-	err = c.cache.Set(id, s)
-	if err != nil {
-		// This will return the channel value for the consistent, cached result.
-		return c.GetChannelWithID(ctx, id)
-	}
-	return b, s, channelConstants, channelStatus, err
+	return cell.BlockNumber, cell.Output.Type, channelConstants, status, nil
 }
 
-func (c Client) getFirstChannelWithID(channels *indexer.LiveCells, id channel.ID) (BlockNumber, *types.Script, *molecule.ChannelConstants, *molecule.ChannelStatus, error) {
+func (c Client) getFirstChannelLiveCellWithID(channels *indexer.LiveCells, id channel.ID) (*indexer.LiveCell, *molecule.ChannelStatus, error) {
 	for _, cell := range channels.Objects {
 		if !c.isValidChannelLiveCell(cell) {
 			continue
@@ -171,13 +235,9 @@ func (c Client) getFirstChannelWithID(channels *indexer.LiveCells, id channel.ID
 		if types.UnpackHash(channelStatus.State().ChannelId()) != id {
 			continue
 		}
-		channelConstants, err := molecule.ChannelConstantsFromSlice(cell.Output.Type.Args, false)
-		if err != nil {
-			return 0, nil, nil, nil, err
-		}
-		return cell.BlockNumber, cell.Output.Type, channelConstants, channelStatus, nil
+		return cell, channelStatus, nil
 	}
-	return 0, nil, nil, nil, ErrNoChannelLiveCell
+	return nil, nil, ErrNoChannelLiveCell
 }
 
 func (c Client) getAllChannelLiveCells(ctx context.Context) (*indexer.LiveCells, error) {
@@ -226,4 +286,35 @@ func (c Client) GetBlockTime(ctx context.Context, blockNumber BlockNumber) (time
 		return time.Time{}, errors.New("block timestamp is too large")
 	}
 	return time.UnixMilli(int64(block.Header.Timestamp)), nil
+}
+
+func (c Client) getChannelLiveCellWithCache(ctx context.Context, id channel.ID) (*indexer.LiveCell, *molecule.ChannelStatus, error) {
+	script, cached := c.cache.Get(id)
+	if cached {
+		cells, err := c.getExactChannelLiveCell(ctx, script)
+		if err != nil {
+			return nil, nil, err
+		}
+		if len(cells.Objects) > 1 {
+			return nil, nil, errors.New("more than one live cell found for channel")
+		}
+		if len(cells.Objects) == 0 {
+			return nil, nil, ErrNoChannelLiveCell
+		}
+		status, err := molecule.ChannelStatusFromSlice(cells.Objects[0].OutputData, false)
+		return cells.Objects[0], status, nil
+	}
+	liveChannelCells, err := c.getAllChannelLiveCells(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	cell, status, err := c.getFirstChannelLiveCellWithID(liveChannelCells, id)
+	if err != nil {
+		return nil, nil, err
+	}
+	errCache := c.cache.Set(id, cell.Output.Type)
+	if errCache != nil {
+		return c.getChannelLiveCellWithCache(ctx, id)
+	}
+	return cell, status, err
 }

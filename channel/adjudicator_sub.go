@@ -137,7 +137,6 @@ func (a *PollingSubscription) emitEventIfNecessary(
 		)
 		return false
 	}
-	// TODO: Handle conclude event.
 	challengeDurationStart, err := a.getChallengeDurationStart(ctx, newBlockNumber)
 	if err != nil {
 		a.fatalErrors <- fmt.Errorf("could not get challenge duration start: %v", err)

@@ -157,3 +157,18 @@ func PackSEC1EncodedPubKey(key *secp256k1.PublicKey) molecule.SEC1EncodedPubKey 
 	}
 	return molecule.NewSEC1EncodedPubKeyBuilder().Set(bytes).Build()
 }
+
+func (p Participant) GetSecp256k1Blake160SighashAll() (*types.Script, error) {
+	if p.PubKey == nil {
+		return nil, errors.New("public key is nil")
+	}
+	return systemscript.Secp256K1Blake160SignhashAllByPublicKey(p.PubKey.SerializeCompressed())
+}
+
+func AsParticipant(address wallet.Address) *Participant {
+	p, ok := address.(*Participant)
+	if !ok {
+		panic("address is not participant")
+	}
+	return p
+}

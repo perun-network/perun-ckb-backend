@@ -10,7 +10,7 @@ import (
 )
 
 func PackChannelState(state *channel.State) (molecule.ChannelState, error) {
-	balA, balB, err := RestrictBalances(state.Allocation)
+	balA, balB, err := RestrictedBalances(state)
 	if err != nil {
 		return molecule.ChannelState{}, err
 	}
@@ -24,29 +24,28 @@ func PackChannelState(state *channel.State) (molecule.ChannelState, error) {
 		Build(), nil
 }
 
-func RestrictBalances(alloc channel.Allocation) (uint64, uint64, error) {
-	if len(alloc.Balances) < 1 {
+func RestrictedBalances(state *channel.State) (uint64, uint64, error) {
+	if len(state.Allocation.Balances) < 1 {
 		return 0, 0, errors.New("state has invalid balance")
 	}
-	if len(alloc.Assets) != len(alloc.Balances) {
+	if len(state.Allocation.Assets) != len(state.Allocation.Balances) {
 		return 0, 0, errors.New("number of assets does not match number of balances")
 	}
 	// Necessary because this backend currently only supports a single (native) asset and no sub-channels.
-	if len(alloc.Assets) != 1 || len(alloc.Balances) != 1 || len(alloc.Locked) != 0 {
+	if len(state.Allocation.Assets) != 1 || len(state.Allocation.Balances) != 1 || len(state.Allocation.Locked) != 0 {
 		return 0, 0, errors.New("allocation incompatible with this backend")
 	}
-	if !alloc.Assets[0].Equal(asset.Asset) {
+	if !state.Allocation.Assets[0].Equal(asset.Asset) {
 		return 0, 0, errors.New("allocation has asset other than native asset")
 	}
-
-	if len(alloc.Balances[0]) != 2 {
+	if len(state.Allocation.Balances[0]) != 2 {
 		return 0, 0, errors.New("allocation does not have exactly two participants")
 	}
-	balA, err := RestrictBalance(alloc.Balances[0][0])
+	balA, err := RestrictedBalance(state.Balance(0, asset.Asset))
 	if err != nil {
 		return 0, 0, err
 	}
-	balB, err := RestrictBalance(alloc.Balances[0][1])
+	balB, err := RestrictedBalance(state.Balance(1, asset.Asset))
 	if err != nil {
 		return 0, 0, err
 	}
@@ -54,7 +53,7 @@ func RestrictBalances(alloc channel.Allocation) (uint64, uint64, error) {
 
 }
 
-func RestrictBalance(b *big.Int) (uint64, error) {
+func RestrictedBalance(b *big.Int) (uint64, error) {
 	if !b.IsUint64() {
 		return 0, errors.New("invalid balance")
 	}
