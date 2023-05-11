@@ -1,7 +1,6 @@
 package transaction
 
 import (
-	"errors"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/collector"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/transaction"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types"
@@ -9,7 +8,6 @@ import (
 	"perun.network/go-perun/channel"
 	"perun.network/go-perun/wallet"
 	"perun.network/perun-ckb-backend/backend"
-	"perun.network/perun-ckb-backend/channel/asset"
 	"perun.network/perun-ckb-backend/channel/defaults"
 	"perun.network/perun-ckb-backend/encoding"
 )
@@ -80,6 +78,13 @@ func (psh *PerunScriptHandler) BuildTransaction(builder collector.TransactionBui
 			closeInfo = &v
 		}
 		return psh.buildCloseTransaction(builder, group, closeInfo)
+	case ForceCloseInfo, *ForceCloseInfo:
+		var forceCloseInfo *ForceCloseInfo
+		if forceCloseInfo, ok = context.(*ForceCloseInfo); !ok {
+			v, _ := context.(ForceCloseInfo)
+			forceCloseInfo = &v
+		}
+		return psh.buildForceCloseTransaction(builder, group, forceCloseInfo)
 	default:
 	}
 	return ok, nil
@@ -116,77 +121,47 @@ func (psh *PerunScriptHandler) buildOpenTransaction(builder collector.Transactio
 }
 
 func (psh *PerunScriptHandler) buildCloseTransaction(builder collector.TransactionBuilder, group *transaction.ScriptGroup, closeInfo *CloseInfo) (bool, error) {
-	// TODO: How do we make sure that we unlock the channel?
-	// Add required cell dependencies for Perun scripts.
-	builder.AddCellDep(&psh.pctsDep)
-	builder.AddCellDep(&psh.pclsDep)
-	builder.AddCellDep(&psh.pflsDep)
-	// Add the live channel cell as input.
-	builder.AddInput(&closeInfo.ChannelInput)
-	// Add all the funds locked in this channel as inputs.
-	for _, assetInput := range closeInfo.AssetInputs {
-		builder.AddInput(&assetInput)
-	}
-	// Add the payment output for each participant.
-	for i, addr := range closeInfo.Params.Parts {
-		payoutScript, paymentMinCapacity, err := defaults.VerifyAndGetPayoutScript(addr)
-		if err != nil {
-			return false, err
-		}
-		balance := closeInfo.State.Balance(channel.Index(i), asset.Asset)
-		if !balance.IsUint64() {
-			return false, errors.New("balance is not a uint64")
-		}
-		bal := balance.Uint64()
-		// The capacity of the channel's live cell is added to the balance of the first party.
-		if i == 0 {
-			bal += closeInfo.ChannelCapacity
-		}
-		if bal >= paymentMinCapacity {
-			paymentOutput := psh.mkPaymentOutput(payoutScript, bal)
-			builder.AddOutput(paymentOutput, nil)
-		}
-	}
-	// TODO: What index to use? We use 0 for now, because we add the channel input first.
-	err := builder.SetWitness(0, types.WitnessTypeInputType, psh.mkWitnessClose(closeInfo.State, closeInfo.PaddedSignatures))
+	balA, balB, err := encoding.RestrictedBalances(closeInfo.State)
 	if err != nil {
 		return false, err
 	}
-	return true, nil
+	info := &settleInfo{
+		channelInput:    closeInfo.ChannelInput,
+		assetInputs:     closeInfo.AssetInputs,
+		parties:         closeInfo.Params.Parts,
+		payout:          [2]uint64{balA, balB},
+		channelCapacity: closeInfo.ChannelCapacity,
+		witness:         psh.mkWitnessClose(closeInfo.State, closeInfo.PaddedSignatures),
+	}
+	return psh.buildSettleTransaction(builder, group, info)
 }
 
 func (psh *PerunScriptHandler) buildAbortTransaction(builder collector.TransactionBuilder, group *transaction.ScriptGroup, abortInfo *AbortInfo) (bool, error) {
-	// TODO: How do we make sure that we unlock the channel?
+	info := &settleInfo{
+		channelInput:    abortInfo.ChannelInput,
+		assetInputs:     abortInfo.AssetInputs,
+		parties:         abortInfo.Params.Parts,
+		payout:          abortInfo.FundingStatus,
+		channelCapacity: abortInfo.ChannelCapacity,
+		witness:         psh.mkWitnessAbort(),
+	}
+	return psh.buildSettleTransaction(builder, group, info)
+}
 
-	builder.AddCellDep(&psh.pctsDep)
-	builder.AddCellDep(&psh.pclsDep)
-	builder.AddCellDep(&psh.pflsDep)
-	builder.AddInput(&abortInfo.ChannelInput)
-	for _, assetInput := range abortInfo.AssetInputs {
-		builder.AddInput(&assetInput)
-	}
-	// Add the payment output for each participant.
-	for i, addr := range abortInfo.Params.Parts {
-		payoutScript, paymentMinCapacity, err := defaults.VerifyAndGetPayoutScript(addr)
-		if err != nil {
-			return false, err
-		}
-		balance := abortInfo.FundingStatus[i]
-		// The capacity of the channel's live cell is added to the balance of the first party.
-		if i == 0 {
-			balance += abortInfo.ChannelCapacity
-		}
-		if balance >= paymentMinCapacity {
-			paymentOutput := psh.mkPaymentOutput(payoutScript, balance)
-			builder.AddOutput(paymentOutput, nil)
-		}
-	}
-	// TODO: What index to use? We use 0 for now, because we add the channel input first.
-	err := builder.SetWitness(0, types.WitnessTypeInputType, psh.mkWitnessAbort())
+func (psh *PerunScriptHandler) buildForceCloseTransaction(builder collector.TransactionBuilder, group *transaction.ScriptGroup, forceCloseInfo *ForceCloseInfo) (bool, error) {
+	balA, balB, err := encoding.RestrictedBalances(forceCloseInfo.State)
 	if err != nil {
 		return false, err
 	}
-	return true, nil
+	info := &settleInfo{
+		channelInput:    forceCloseInfo.ChannelInput,
+		assetInputs:     forceCloseInfo.AssetInputs,
+		parties:         forceCloseInfo.Params.Parts,
+		payout:          [2]uint64{balA, balB},
+		channelCapacity: forceCloseInfo.ChannelCapacity,
+		witness:         psh.mkWitnessForceClose(),
+	}
+	return psh.buildSettleTransaction(builder, group, info)
 }
 
 func (psh *PerunScriptHandler) buildDisputeTransaction(builder collector.TransactionBuilder, group *transaction.ScriptGroup, abortInfo *DisputeInfo) (bool, error) {
@@ -251,7 +226,7 @@ func (psh PerunScriptHandler) mkPaymentOutput(lock *types.Script, bal uint64) *t
 }
 
 func (psh PerunScriptHandler) mkWitnessAbort() []byte {
-	w := molecule.AbortDefault()
+	w := molecule.NewChannelWitnessBuilder().Set(molecule.ChannelWitnessUnionFromAbort(molecule.AbortDefault())).Build()
 	return w.AsSlice()
 }
 
@@ -268,6 +243,55 @@ func (psh PerunScriptHandler) mkWitnessClose(state *channel.State, paddedSigs []
 	if err != nil {
 		panic(err)
 	}
-	witnessClose := molecule.NewCloseBuilder().State(ps).SigA(*sigA).SigB(*sigB).Build()
+	c := molecule.NewCloseBuilder().State(ps).SigA(*sigA).SigB(*sigB).Build()
+	witnessClose := molecule.NewChannelWitnessBuilder().Set(molecule.ChannelWitnessUnionFromClose(c)).Build()
 	return witnessClose.AsSlice()
+}
+
+func (psh PerunScriptHandler) mkWitnessForceClose() []byte {
+	w := molecule.NewChannelWitnessBuilder().Set(molecule.ChannelWitnessUnionFromForceClose(molecule.ForceCloseDefault())).Build()
+	return w.AsSlice()
+}
+
+func (psh PerunScriptHandler) buildSettleTransaction(builder collector.TransactionBuilder, group *transaction.ScriptGroup, info *settleInfo) (bool, error) {
+	// TODO: How do we make sure that we unlock the channel?
+
+	builder.AddCellDep(&psh.pctsDep)
+	builder.AddCellDep(&psh.pclsDep)
+	builder.AddCellDep(&psh.pflsDep)
+	builder.AddInput(&info.channelInput)
+	for _, assetInput := range info.assetInputs {
+		builder.AddInput(&assetInput)
+	}
+	// Add the payment output for each participant.
+	for i, addr := range info.parties {
+		payoutScript, paymentMinCapacity, err := defaults.VerifyAndGetPayoutScript(addr)
+		if err != nil {
+			return false, err
+		}
+		balance := info.payout[i]
+		// The capacity of the channel's live cell is added to the balance of the first party.
+		if i == 0 {
+			balance += info.channelCapacity
+		}
+		if balance >= paymentMinCapacity {
+			paymentOutput := psh.mkPaymentOutput(payoutScript, balance)
+			builder.AddOutput(paymentOutput, nil)
+		}
+	}
+	// TODO: What index to use? We use 0 for now, because we add the channel input first.
+	err := builder.SetWitness(0, types.WitnessTypeInputType, info.witness)
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+type settleInfo struct {
+	channelInput    types.CellInput
+	assetInputs     []types.CellInput
+	parties         []wallet.Address
+	payout          [2]uint64
+	channelCapacity uint64
+	witness         []byte
 }
