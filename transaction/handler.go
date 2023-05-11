@@ -259,7 +259,7 @@ func (psh PerunScriptHandler) buildSettleTransaction(builder collector.Transacti
 	builder.AddCellDep(&psh.pctsDep)
 	builder.AddCellDep(&psh.pclsDep)
 	builder.AddCellDep(&psh.pflsDep)
-	builder.AddInput(&info.channelInput)
+	idx := builder.AddInput(&info.channelInput)
 	for _, assetInput := range info.assetInputs {
 		builder.AddInput(&assetInput)
 	}
@@ -279,8 +279,7 @@ func (psh PerunScriptHandler) buildSettleTransaction(builder collector.Transacti
 			builder.AddOutput(paymentOutput, nil)
 		}
 	}
-	// TODO: What index to use? We use 0 for now, because we add the channel input first.
-	err := builder.SetWitness(0, types.WitnessTypeInputType, info.witness)
+	err := builder.SetWitness(uint(idx), types.WitnessTypeInputType, info.witness)
 	if err != nil {
 		return false, err
 	}
