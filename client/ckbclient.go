@@ -16,9 +16,7 @@ import (
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types/molecule"
 	"perun.network/go-perun/channel"
 	"perun.network/go-perun/wallet"
-	"perun.network/perun-ckb-backend/backend"
 	"perun.network/perun-ckb-backend/channel/defaults"
-	"perun.network/perun-ckb-backend/encoding"
 )
 
 var ErrNoChannelLiveCell = errors.New("no channel live cell found")
@@ -82,6 +80,17 @@ type Client struct {
 	cache        StableScriptCache
 }
 
+var _ CKBClient = (*Client)(nil)
+
+func (c Client) Start(ctx context.Context, params *channel.Params, state *channel.State) (*types.Script, error) {
+	panic("implement me")
+}
+
+func (c Client) Fund(ctx context.Context, pcts *types.Script) error {
+	//TODO implement me
+	panic("implement me")
+}
+
 func (c Client) Dispute(ctx context.Context, id channel.ID, state *channel.State, sigs []wallet.Sig) error {
 	//TODO implement me
 	panic("implement me")
@@ -134,83 +143,6 @@ func NewDefaultClient(rpcClient rpc.Client) *Client {
 		PFLSHashType: defaults.DefaultPFLSHashType,
 		cache:        NewStableScriptCache(),
 	}
-}
-
-func (c Client) Fund(ctx context.Context, pcts *types.Script) error {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (c Client) Start(ctx context.Context, params *channel.Params, state *channel.State) (*molecule.ChannelToken, error) {
-	panic("implement me")
-	// channelToken, err := c.createChannelToken(ctx)
-	//
-	//	if err != nil {
-	//		return nil, fmt.Errorf("creating channel token: %w", err)
-	//	}
-	//
-	// partyA := channel.Index(0)
-	// inputs, funds, change := c.mkFunding(ctx, *params, *state, partyA)
-	// inputs = append(inputs, channelToken.AsSerializedCellInput())
-	// channelCell := c.mkInitialChannel(params, state, channelToken)
-	// ckboutputs := backend.CKBOutputs{}.Append(channelCell).Extend(funds).Extend(change)
-	// outputs, data := ckboutputs.AsOutputAndData()
-	// rawTx := molecule.NewRawTransactionBuilder().
-	//
-	//	Inputs(molecule.NewCellInputVecBuilder().Extend(inputs).Build()).
-	//	Outputs(outputs).
-	//	OutputsData(data).
-	//	Build()
-	//
-	// mtx := molecule.NewTransactionBuilder().Raw(rawTx).Build()
-	// tx := types.UnpackTransaction(&mtx)
-	//
-	//	if err := c.sendAndAwait(ctx, tx); err != nil {
-	//		return nil, err
-	//	}
-	//
-	// return &channelToken.Token, nil
-}
-
-func (c Client) mkChannelLockScript(params *channel.Params, state *channel.State) molecule.Script {
-	lockScriptCodeHash := c.PCLSCodeHash.Pack()
-	lockScriptHashType := c.PCLSHashType.Pack()
-	return molecule.NewScriptBuilder().CodeHash(*lockScriptCodeHash).HashType(*lockScriptHashType).Build()
-}
-
-func (c Client) mkChannelTypeScript(params *channel.Params, state *channel.State, token molecule.ChannelToken) molecule.Script {
-	typeScriptCodeHash := c.PCTSCodeHash.Pack()
-	typeScriptHashType := c.PCTSHashType.Pack()
-	channelConstants := c.mkChannelConstants(params, token)
-	channelArgs := types.PackBytes(channelConstants.AsSlice())
-	return molecule.NewScriptBuilder().
-		CodeHash(*typeScriptCodeHash).
-		HashType(*typeScriptHashType).
-		Args(*channelArgs).
-		Build()
-}
-
-func (c Client) mkChannelConstants(params *channel.Params, token molecule.ChannelToken) molecule.ChannelConstants {
-	chanParams, err := encoding.PackChannelParameters(params)
-	if err != nil {
-		panic(err)
-	}
-
-	pclsCode := c.PCLSCodeHash.Pack()
-	pclsHashType := c.PCLSHashType.Pack()
-	pflsCode := c.PFLSCodeHash.Pack()
-	pflsHashType := c.PFLSHashType.Pack()
-	pflsMinCapacity := backend.MinCapacityForPFLS()
-
-	return molecule.NewChannelConstantsBuilder().
-		Params(chanParams).
-		PclsCodeHash(*pclsCode).
-		PclsHashType(*pclsHashType).
-		PflsCodeHash(*pflsCode).
-		PflsHashType(*pflsHashType).
-		PflsMinCapacity(*types.PackUint64(pflsMinCapacity)).
-		ThreadToken(token).
-		Build()
 }
 
 // findLiveCKBCells finds one or more live cells containing at least the given
@@ -277,10 +209,6 @@ func (c Client) sendAndAwait(ctx context.Context, tx *types.Transaction) error {
 	}
 
 	return nil
-}
-
-func (c Client) createChannelToken(ctx context.Context) (backend.Token, error) {
-	panic("implement me")
 }
 
 func (c Client) GetChannelWithID(ctx context.Context, id channel.ID) (BlockNumber, *types.Script, *molecule.ChannelConstants, *molecule.ChannelStatus, error) {
@@ -389,8 +317,4 @@ func (c Client) getChannelLiveCellWithCache(ctx context.Context, id channel.ID) 
 		return c.getChannelLiveCellWithCache(ctx, id)
 	}
 	return cell, status, err
-}
-
-func (c Client) getFeeInputs(ctx context.Context, participant *address.Participant) ([]molecule.CellInput, backend.CKBOutput, error) {
-	panic("implement me")
 }
