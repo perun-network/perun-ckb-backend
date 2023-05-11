@@ -12,7 +12,6 @@ import (
 	"perun.network/perun-ckb-backend/channel/asset"
 	"perun.network/perun-ckb-backend/channel/defaults"
 	"perun.network/perun-ckb-backend/encoding"
-	"perun.network/perun-ckb-backend/wallet/address"
 )
 
 // PerunScriptHandler is responsible for building transactions utilizing Perun
@@ -60,6 +59,20 @@ func (psh *PerunScriptHandler) BuildTransaction(builder collector.TransactionBui
 			openInfo = &v
 		}
 		return psh.buildOpenTransaction(builder, group, openInfo)
+	case AbortInfo, *AbortInfo:
+		var abortInfo *AbortInfo
+		if abortInfo, ok = context.(*AbortInfo); !ok {
+			v, _ := context.(AbortInfo)
+			abortInfo = &v
+		}
+		return psh.buildAbortTransaction(builder, group, abortInfo)
+	case DisputeInfo, *DisputeInfo:
+		var disputeInfo *DisputeInfo
+		if disputeInfo, ok = context.(*DisputeInfo); !ok {
+			v, _ := context.(DisputeInfo)
+			disputeInfo = &v
+		}
+		return psh.buildDisputeTransaction(builder, group, disputeInfo)
 	case CloseInfo, *CloseInfo:
 		var closeInfo *CloseInfo
 		if closeInfo, ok = context.(*CloseInfo); !ok {
@@ -116,23 +129,9 @@ func (psh *PerunScriptHandler) buildCloseTransaction(builder collector.Transacti
 	}
 	// Add the payment output for each participant.
 	for i, addr := range closeInfo.Params.Parts {
-		payoutMethod, err := defaults.KnownPayoutPreimage(addr)
+		payoutScript, paymentMinCapacity, err := defaults.VerifyAndGetPayoutScript(addr)
 		if err != nil {
 			return false, err
-		}
-		participant, ok := addr.(*address.Participant)
-		if !ok {
-			return false, errors.New("invalid address type")
-		}
-		var payoutScript *types.Script
-		switch payoutMethod {
-		case defaults.Secp256k1Blake160SighashAll:
-			payoutScript, err = participant.GetSecp256k1Blake160SighashAll()
-			if err != nil {
-				return false, err
-			}
-		default:
-			return false, errors.New("unknown payout method for participant")
 		}
 		balance := closeInfo.State.Balance(channel.Index(i), asset.Asset)
 		if !balance.IsUint64() {
@@ -143,7 +142,7 @@ func (psh *PerunScriptHandler) buildCloseTransaction(builder collector.Transacti
 		if i == 0 {
 			bal += closeInfo.ChannelCapacity
 		}
-		if bal >= participant.PaymentMinCapacity {
+		if bal >= paymentMinCapacity {
 			paymentOutput := psh.mkPaymentOutput(payoutScript, bal)
 			builder.AddOutput(paymentOutput, nil)
 		}
@@ -154,6 +153,44 @@ func (psh *PerunScriptHandler) buildCloseTransaction(builder collector.Transacti
 		return false, err
 	}
 	return true, nil
+}
+
+func (psh *PerunScriptHandler) buildAbortTransaction(builder collector.TransactionBuilder, group *transaction.ScriptGroup, abortInfo *AbortInfo) (bool, error) {
+	// TODO: How do we make sure that we unlock the channel?
+
+	builder.AddCellDep(&psh.pctsDep)
+	builder.AddCellDep(&psh.pclsDep)
+	builder.AddCellDep(&psh.pflsDep)
+	builder.AddInput(&abortInfo.ChannelInput)
+	for _, assetInput := range abortInfo.AssetInputs {
+		builder.AddInput(&assetInput)
+	}
+	// Add the payment output for each participant.
+	for i, addr := range abortInfo.Params.Parts {
+		payoutScript, paymentMinCapacity, err := defaults.VerifyAndGetPayoutScript(addr)
+		if err != nil {
+			return false, err
+		}
+		balance := abortInfo.FundingStatus[i]
+		// The capacity of the channel's live cell is added to the balance of the first party.
+		if i == 0 {
+			balance += abortInfo.ChannelCapacity
+		}
+		if balance >= paymentMinCapacity {
+			paymentOutput := psh.mkPaymentOutput(payoutScript, balance)
+			builder.AddOutput(paymentOutput, nil)
+		}
+	}
+	// TODO: What index to use? We use 0 for now, because we add the channel input first.
+	err := builder.SetWitness(0, types.WitnessTypeInputType, psh.mkWitnessAbort())
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (psh *PerunScriptHandler) buildDisputeTransaction(builder collector.TransactionBuilder, group *transaction.ScriptGroup, abortInfo *DisputeInfo) (bool, error) {
+	panic("implement me")
 }
 
 func (psh PerunScriptHandler) mkChannelLockScript() *types.Script {
@@ -211,6 +248,11 @@ func (psh PerunScriptHandler) mkPaymentOutput(lock *types.Script, bal uint64) *t
 		Lock:     lock,
 		Type:     nil,
 	}
+}
+
+func (psh PerunScriptHandler) mkWitnessAbort() []byte {
+	w := molecule.AbortDefault()
+	return w.AsSlice()
 }
 
 func (psh PerunScriptHandler) mkWitnessClose(state *channel.State, paddedSigs []wallet.Sig) []byte {
