@@ -125,26 +125,28 @@ func (psh *PerunScriptHandler) buildCloseTransaction(builder collector.Transacti
 	if err != nil {
 		return false, err
 	}
-	info := &settleInfo{
-		channelInput:    closeInfo.ChannelInput,
-		assetInputs:     closeInfo.AssetInputs,
-		parties:         closeInfo.Params.Parts,
-		payout:          [2]uint64{balA, balB},
-		channelCapacity: closeInfo.ChannelCapacity,
-		witness:         psh.mkWitnessClose(closeInfo.State, closeInfo.PaddedSignatures),
-	}
+	info := newSettleInfo(
+		closeInfo.ChannelInput,
+		closeInfo.AssetInputs,
+		closeInfo.Headers,
+		closeInfo.Params.Parts,
+		[2]uint64{balA, balB},
+		closeInfo.ChannelCapacity,
+		psh.mkWitnessClose(closeInfo.State, closeInfo.PaddedSignatures),
+	)
 	return psh.buildSettleTransaction(builder, group, info)
 }
 
 func (psh *PerunScriptHandler) buildAbortTransaction(builder collector.TransactionBuilder, group *transaction.ScriptGroup, abortInfo *AbortInfo) (bool, error) {
-	info := &settleInfo{
-		channelInput:    abortInfo.ChannelInput,
-		assetInputs:     abortInfo.AssetInputs,
-		parties:         abortInfo.Params.Parts,
-		payout:          abortInfo.FundingStatus,
-		channelCapacity: abortInfo.ChannelCapacity,
-		witness:         psh.mkWitnessAbort(),
-	}
+	info := newSettleInfo(
+		abortInfo.ChannelInput,
+		abortInfo.AssetInputs,
+		abortInfo.Headers,
+		abortInfo.Params.Parts,
+		abortInfo.FundingStatus,
+		abortInfo.ChannelCapacity,
+		psh.mkWitnessAbort(),
+	)
 	return psh.buildSettleTransaction(builder, group, info)
 }
 
@@ -153,14 +155,15 @@ func (psh *PerunScriptHandler) buildForceCloseTransaction(builder collector.Tran
 	if err != nil {
 		return false, err
 	}
-	info := &settleInfo{
-		channelInput:    forceCloseInfo.ChannelInput,
-		assetInputs:     forceCloseInfo.AssetInputs,
-		parties:         forceCloseInfo.Params.Parts,
-		payout:          [2]uint64{balA, balB},
-		channelCapacity: forceCloseInfo.ChannelCapacity,
-		witness:         psh.mkWitnessForceClose(),
-	}
+	info := newSettleInfo(
+		forceCloseInfo.ChannelInput,
+		forceCloseInfo.AssetInputs,
+		forceCloseInfo.Headers,
+		forceCloseInfo.Params.Parts,
+		[2]uint64{balA, balB},
+		forceCloseInfo.ChannelCapacity,
+		psh.mkWitnessForceClose(),
+	)
 	return psh.buildSettleTransaction(builder, group, info)
 }
 
@@ -263,6 +266,11 @@ func (psh PerunScriptHandler) buildSettleTransaction(builder collector.Transacti
 	for _, assetInput := range info.assetInputs {
 		builder.AddInput(&assetInput)
 	}
+
+	for _, h := range info.headers {
+		builder.AddHeaderDep(h)
+	}
+
 	// Add the payment output for each participant.
 	for i, addr := range info.parties {
 		payoutScript, paymentMinCapacity, err := defaults.VerifyAndGetPayoutScript(addr)
@@ -289,8 +297,21 @@ func (psh PerunScriptHandler) buildSettleTransaction(builder collector.Transacti
 type settleInfo struct {
 	channelInput    types.CellInput
 	assetInputs     []types.CellInput
+	headers         []types.Hash
 	parties         []wallet.Address
 	payout          [2]uint64
 	channelCapacity uint64
 	witness         []byte
+}
+
+func newSettleInfo(channelInput types.CellInput, assetInputs []types.CellInput, headers []types.Hash, parties []wallet.Address, payout [2]uint64, channelCapacity uint64, witness []byte) *settleInfo {
+	return &settleInfo{
+		channelInput:    channelInput,
+		assetInputs:     assetInputs,
+		headers:         headers,
+		parties:         parties,
+		payout:          payout,
+		channelCapacity: channelCapacity,
+		witness:         witness,
+	}
 }

@@ -10,6 +10,7 @@ type CloseInfo struct {
 	ChannelCapacity  uint64
 	ChannelInput     types.CellInput
 	AssetInputs      []types.CellInput
+	Headers          []types.Hash
 	Params           *channel.Params
 	State            *channel.State
 	PaddedSignatures []wallet.Sig

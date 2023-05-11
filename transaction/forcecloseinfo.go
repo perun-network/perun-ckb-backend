@@ -8,6 +8,7 @@ import (
 type ForceCloseInfo struct {
 	ChannelInput    types.CellInput
 	AssetInputs     []types.CellInput
+	Headers         []types.Hash
 	State           *channel.State
 	Params          *channel.Params
 	ChannelCapacity uint64
