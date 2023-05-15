@@ -13,12 +13,50 @@ type CKBOutput struct {
 	Data   molecule.Bytes
 }
 
+func UnpackHashType(b []byte) types.ScriptHashType {
+	switch b[0] {
+	case 0x00:
+		return types.HashTypeData
+	case 0x01:
+		return types.HashTypeType
+	case 0x02:
+		return types.HashTypeData1
+	default:
+		panic("invalid hash type")
+	}
+}
+
+func UnpackScript(v *molecule.Script) *types.Script {
+	s := &types.Script{}
+	if !v.IsEmpty() {
+		s.HashType = UnpackHashType(v.HashType().AsSlice())
+	}
+	s.Args = v.Args().RawData()
+	s.CodeHash = types.BytesToHash(v.CodeHash().RawData())
+	return s
+}
+
 func (o CKBOutput) AsOutputAndData() (types.CellOutput, []byte) {
-	return types.CellOutput{
+	var optType *types.Script = nil
+	if o.Output.Type().IsSome() {
+		optType = types.UnpackScriptOpt(o.Output.Type())
+	}
+	// The SDK deserializes ScriptHashTypes in a wrong way.
+	// types/molecule.go:81:UnpackScript():
+	//	s.HashType = ScriptHashType(v.HashType().AsSlice())
+	//
+	// ^ This interprets the encoded HashType as a byte array, which is correct.
+	// However the result is then interpreted as a `ScriptHashType` which in turn
+	// is a `string` resulting in a wrong value. "0x00|0x01|0x02" instead of
+	// "data|type|data1".
+	//
+	// Building a transaction using this output thus fails.
+	op := types.CellOutput{
 		Capacity: UnpackUint64(*o.Output.Capacity()),
-		Lock:     types.UnpackScript(o.Output.Lock()),
-		Type:     types.UnpackScriptOpt(o.Output.Type()),
-	}, o.Data.AsSlice()
+		Lock:     UnpackScript(o.Output.Lock()),
+		Type:     optType,
+	}
+	return op, o.Data.AsSlice()
 }
 
 type CKBOutputs []CKBOutput
