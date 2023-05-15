@@ -38,11 +38,24 @@ var _ collector.ScriptHandler = (*PerunScriptHandler)(nil)
 // in conjunction with this handler. Otherwise we might miss having required
 // inputs/outputs autofilled by the sdk scaffolding.
 
-func NewPerunScriptHandler(pctsDep, pclsDep, pflsDep types.CellDep) *PerunScriptHandler {
+func NewPerunScriptHandler(
+	pctsDep, pclsDep, pflsDep types.CellDep,
+	pctsCodeHash types.Hash, pctsHashType types.ScriptHashType,
+	pclsCodeHash types.Hash, pclsHashType types.ScriptHashType,
+	pflsCodeHash types.Hash, pflsHashType types.ScriptHashType,
+	defaultLockScript types.Script,
+) *PerunScriptHandler {
 	return &PerunScriptHandler{
-		pctsDep: pctsDep,
-		pclsDep: pclsDep,
-		pflsDep: pflsDep,
+		pctsDep:           pctsDep,
+		pclsDep:           pclsDep,
+		pflsDep:           pflsDep,
+		pctsCodeHash:      pctsCodeHash,
+		pctsHashType:      pctsHashType,
+		pclsCodeHash:      pclsCodeHash,
+		pclsHashType:      pclsHashType,
+		pflsCodeHash:      pflsCodeHash,
+		pflsHashType:      pflsHashType,
+		defaultLockScript: defaultLockScript,
 	}
 }
 
