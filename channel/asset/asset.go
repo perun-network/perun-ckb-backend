@@ -1,7 +1,6 @@
 package asset
 
 import (
-	"perun.network/go-perun/channel"
 	pchannel "perun.network/go-perun/channel"
 )
 
@@ -27,7 +26,7 @@ func (*asset) UnmarshalBinary(data []byte) error {
 }
 
 // Equal returns true if the assets are the same.
-func (asset) Equal(b channel.Asset) bool {
+func (asset) Equal(b pchannel.Asset) bool {
 	_, ok := b.(*asset)
 	return ok
 }
