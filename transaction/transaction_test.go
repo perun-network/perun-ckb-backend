@@ -12,11 +12,15 @@ import (
 	btest "perun.network/perun-ckb-backend/backend/test"
 	"perun.network/perun-ckb-backend/transaction"
 	txtest "perun.network/perun-ckb-backend/transaction/test"
+	wtest "perun.network/perun-ckb-backend/wallet/test"
 	ptest "polycry.pt/poly-go/test"
 )
 
 func TestScriptHandler(t *testing.T) {
 	rng := ptest.Prng(t)
+	sender := wtest.NewRandomParticipant(rng)
+	senderCkbAddr, err := sender.ToCKBAddress(types.NetworkTest)
+	require.NoError(t, err, "converting perun.backend.Participant to ckb-sdk-go address")
 	defaultLock := btest.NewRandomScript(rng)
 	pctsDep := btest.NewRandomCellDep(rng)
 	pclsDep := btest.NewRandomCellDep(rng)
@@ -40,7 +44,8 @@ func TestScriptHandler(t *testing.T) {
 	mockIterator.GenerateInput(ptest.Prng(t))
 	mockIterator.GenerateInput(ptest.Prng(t))
 	mockIterator.GenerateInput(ptest.Prng(t))
-	b := transaction.NewPerunTransactionBuilder(types.NetworkTest, mockIterator, psh)
+	b, err := transaction.NewPerunTransactionBuilder(types.NetworkTest, mockIterator, psh, senderCkbAddr)
+	require.NoError(t, err, "creating perun transaction builder")
 	b.Register(mockHandler)
 	// Open
 	state := test.NewRandomState(rng,
