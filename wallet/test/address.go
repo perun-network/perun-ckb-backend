@@ -12,7 +12,7 @@ import (
 func NewRandomParticipant(rng *rand.Rand) *address.Participant {
 	acc, err := secp256k1.GeneratePrivateKey()
 	if err != nil {
-		panic(fmt.Sprintf("Generating private keys for participant: %v", err, err))
+		panic(fmt.Sprintf("Generating private keys for participant: %v", err))
 	}
 	paymentScript := btest.NewRandomScript(rng)
 	return &address.Participant{
