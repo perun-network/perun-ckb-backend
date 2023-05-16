@@ -13,29 +13,6 @@ type CKBOutput struct {
 	Data   molecule.Bytes
 }
 
-func UnpackHashType(b []byte) types.ScriptHashType {
-	switch b[0] {
-	case 0x00:
-		return types.HashTypeData
-	case 0x01:
-		return types.HashTypeType
-	case 0x02:
-		return types.HashTypeData1
-	default:
-		panic("invalid hash type")
-	}
-}
-
-func UnpackScript(v *molecule.Script) *types.Script {
-	s := &types.Script{}
-	if !v.IsEmpty() {
-		s.HashType = UnpackHashType(v.HashType().AsSlice())
-	}
-	s.Args = v.Args().RawData()
-	s.CodeHash = types.BytesToHash(v.CodeHash().RawData())
-	return s
-}
-
 func (o CKBOutput) AsOutputAndData() (types.CellOutput, []byte) {
 	var optType *types.Script = nil
 	if o.Output.Type().IsSome() {
@@ -53,7 +30,7 @@ func (o CKBOutput) AsOutputAndData() (types.CellOutput, []byte) {
 	// Building a transaction using this output thus fails.
 	op := types.CellOutput{
 		Capacity: UnpackUint64(*o.Output.Capacity()),
-		Lock:     UnpackScript(o.Output.Lock()),
+		Lock:     types.UnpackScript(o.Output.Lock()),
 		Type:     optType,
 	}
 	return op, o.Data.AsSlice()
