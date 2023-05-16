@@ -203,12 +203,8 @@ func (psh *PerunScriptHandler) buildFundTransaction(builder collector.Transactio
 }
 
 func (psh *PerunScriptHandler) mkWitnessFund() []byte {
-	party := molecule.ParticipantIndexUnionFromB(molecule.BDefault())
-	partyIndex := molecule.NewParticipantIndexBuilder().Set(party).Build()
-	fundRedeemer := molecule.NewFundBuilder().Index(partyIndex).Build()
-	witnessArgs := molecule.ChannelWitnessUnionFromFund(fundRedeemer)
-	witness := molecule.NewChannelWitnessBuilder().Set(witnessArgs).Build()
-	return witness.AsSlice()
+	w := molecule.NewChannelWitnessBuilder().Set(molecule.ChannelWitnessUnionFromFund(molecule.FundDefault())).Build()
+	return w.AsSlice()
 }
 
 func (psh *PerunScriptHandler) buildDisputeTransaction(builder collector.TransactionBuilder, group *transaction.ScriptGroup, disputeInfo *DisputeInfo) (bool, error) {

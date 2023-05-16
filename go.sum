@@ -121,8 +121,8 @@ github.com/onsi/gomega v1.7.1/go.mod h1:XdKZgCCFLUoM/7CFJVPcG8C1xQ1AJ0vpAezJrB7J
 github.com/onsi/gomega v1.10.1/go.mod h1:iN09h71vgCQne3DLsj+A5owkum+a2tYe+TOCB1ybHNo=
 github.com/opentracing/opentracing-go v1.1.0/go.mod h1:UkNAQd3GIcIGf0SeVgPpRdFStlNbqXla1AfSYxPUl2o=
 github.com/pborman/uuid v0.0.0-20170112150404-1b00554d8222/go.mod h1:VyrYX9gd7irzKovcSS6BIIEwPRkP2Wm2m9ufcdFSJ34=
-github.com/perun-network/ckb-sdk-go/v2 v2.2.1-0.20230427093811-05bc15078e36 h1:m6GO0QbIqnfvzL01yGxAZ63MyZrYxG4ko/cS8M2xl3s=
-github.com/perun-network/ckb-sdk-go/v2 v2.2.1-0.20230427093811-05bc15078e36/go.mod h1:nPpBML8fuaM1NgkKCwv2gSHiCv+xKH43fu8LA9LOQUg=
+github.com/perun-network/ckb-sdk-go/v2 v2.2.1-0.20230516085459-2c8594f701a2 h1:Dr//+81PBbslPDV9E5ltZ6DkgttlVdLPv/V0+FG76MI=
+github.com/perun-network/ckb-sdk-go/v2 v2.2.1-0.20230516085459-2c8594f701a2/go.mod h1:nPpBML8fuaM1NgkKCwv2gSHiCv+xKH43fu8LA9LOQUg=
 github.com/peterh/liner v1.1.1-0.20190123174540-a2c9a5303de7/go.mod h1:CRroGNssyjTd/qIG2FyxByd2S8JEAZXBl4qUrZf8GS0=
 github.com/pkg/errors v0.8.0/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
 github.com/pkg/errors v0.8.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
