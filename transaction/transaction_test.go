@@ -2,6 +2,7 @@ package transaction_test
 
 import (
 	"math/big"
+	"reflect"
 	"testing"
 
 	ckbtransaction "github.com/nervosnetwork/ckb-sdk-go/v2/transaction"
@@ -24,6 +25,7 @@ func TestScriptHandler(t *testing.T) {
 	senderCkbAddr, err := sender.ToCKBAddress(types.NetworkTest)
 	require.NoError(t, err, "converting perun.backend.Participant to ckb-sdk-go address")
 	defaultLock := btest.NewRandomScript(rng)
+	defaultLockDep := btest.NewRandomCellDep(rng)
 	pctsDep := btest.NewRandomCellDep(rng)
 	pclsDep := btest.NewRandomCellDep(rng)
 	pflsDep := btest.NewRandomCellDep(rng)
@@ -33,6 +35,7 @@ func TestScriptHandler(t *testing.T) {
 		types.Hash{}, types.HashTypeData,
 		types.Hash{}, types.HashTypeData,
 		*defaultLock,
+		*defaultLockDep,
 	)
 
 	mockHandler := txtest.NewMockHandler(defaultLock)
@@ -104,17 +107,25 @@ func TestScriptHandler(t *testing.T) {
 
 type OpenArgs struct {
 	ChannelID channel.ID
-	Params    *channel.Params
-	State     *channel.State
+	Data      []byte
+	PCTS      *types.Script
+	PCLS      *types.Script
 	Initiator address.Participant
 }
 
+// verifyOpenTransaction verifies the given tx to contain the minimal set of
+// cells and data, s.t. it can be used to open a channel.
 func verifyOpenTransaction(t *testing.T, tx *ckbtransaction.TransactionWithScriptGroups, args OpenArgs) {
-	// The outputs of the opening transaction have to contain:
-	// 1. The cell containing the funding for the participant given in args.
-	// 2. The cell describing the channel on-chain with the correct initial
-	//		state and params, also given in args.
-	// 3. Optionally change which is sent back to the initiator.
+	// Open transaction has to contain two celldeps:
+	// 1. The funding cell's lockscript cell dependency.
+	// 2. The Channel's typescript cell dependency.
+	require.Len(t, tx.TxView.CellDeps, 2)
+
+	// We expect 3 outputs:
+	// 1. The channel cell.
+	// 2. The funding cell.
+	// 3. The change cell.
+	require.Len(t, tx.TxView.Outputs, 3)
 	verifyRequiredOutputs(t, tx.TxView.Outputs, tx.TxView.OutputsData, args)
 }
 
@@ -145,27 +156,17 @@ func verifyRequiredOutputs(t *testing.T, outputs []*types.CellOutput, outputsDat
 		return true
 	}
 
-	containsRequiredFundingCell := func(o *types.CellOutput, d []byte) bool {
-		return true
-	}
-
-	mightContainChange := func(o *types.CellOutput, d []byte) bool {
-		return true
-	}
-
 	require.True(t, validate(containsValidChannelCell), "valid channel must be present")
-	require.True(t, validate(containsRequiredFundingCell), "funding cell must be present")
-	require.True(t, validate(mightContainChange), "change cell must be valid")
 }
 
 func isCorrectChannelTypeScript(o *types.CellOutput, args OpenArgs) bool {
-	return false
+	return o.Type == args.PCTS
 }
 
 func isCorrectChannelLockScript(o *types.CellOutput, args OpenArgs) bool {
-	return false
+	return o.Lock == args.PCLS
 }
 
 func isCorrectChannelData(d []byte, args OpenArgs) bool {
-	return false
+	return reflect.DeepEqual(d, args.Data)
 }
