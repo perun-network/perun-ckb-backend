@@ -195,6 +195,7 @@ func (psh *PerunScriptHandler) buildFundTransaction(builder collector.Transactio
 	builder.AddCellDep(&psh.defaultLockScriptDep)
 	builder.AddCellDep(&psh.pclsDep)
 	builder.AddCellDep(&psh.pctsDep)
+	builder.AddHeaderDep(fundInfo.Header)
 
 	// Channel cell input.
 	channelInputIndex := builder.AddInput(&types.CellInput{
@@ -229,6 +230,7 @@ func (psh *PerunScriptHandler) mkWitnessFund() []byte {
 func (psh *PerunScriptHandler) buildDisputeTransaction(builder collector.TransactionBuilder, group *transaction.ScriptGroup, disputeInfo *DisputeInfo) (bool, error) {
 	builder.AddCellDep(&psh.pclsDep)
 	builder.AddCellDep(&psh.pctsDep)
+	builder.AddHeaderDep(disputeInfo.Header)
 
 	// Channel cell input.
 	channelInputIndex := builder.AddInput(&types.CellInput{
@@ -347,6 +349,7 @@ func (psh PerunScriptHandler) buildSettleTransaction(builder collector.Transacti
 	builder.AddCellDep(&psh.pctsDep)
 	builder.AddCellDep(&psh.pclsDep)
 	builder.AddCellDep(&psh.pflsDep)
+
 	idx := builder.AddInput(&info.channelInput)
 	for _, assetInput := range info.assetInputs {
 		builder.AddInput(&assetInput)
