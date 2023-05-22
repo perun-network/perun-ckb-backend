@@ -14,9 +14,13 @@ type OpenInfo struct {
 	Funding      uint64
 	Params       *channel.Params
 	State        *channel.State
+
+	// Cached PCTS after this OpenInfo was used in building a transaction.
+	pcts *types.Script
 }
 
-func (oi OpenInfo) MkInitialChannelCell(channelLockScript, channelTypeScript types.Script) backend.CKBOutput {
+func (oi *OpenInfo) MkInitialChannelCell(channelLockScript, channelTypeScript types.Script) backend.CKBOutput {
+	oi.pcts = &channelTypeScript
 	channelData := mkInitialChannelStatus(oi.State, oi.Funding)
 	channelOutput := types.CellOutput{
 		Capacity: 0,
@@ -65,4 +69,11 @@ func (oi OpenInfo) MinFunding() uint64 {
 		return minFunding
 	}
 	return oi.Funding
+}
+
+func (oi OpenInfo) GetPCTS() *types.Script {
+	if oi.pcts == nil {
+		panic("PCTS not set on OpenInfo")
+	}
+	return oi.pcts
 }
