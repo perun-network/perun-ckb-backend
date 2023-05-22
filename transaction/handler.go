@@ -27,7 +27,8 @@ type PerunScriptHandler struct {
 	pflsCodeHash types.Hash
 	pflsHashType types.ScriptHashType
 
-	defaultLockScript types.Script
+	defaultLockScript    types.Script
+	defaultLockScriptDep types.CellDep
 }
 
 var _ collector.ScriptHandler = (*PerunScriptHandler)(nil)
@@ -44,18 +45,20 @@ func NewPerunScriptHandler(
 	pclsCodeHash types.Hash, pclsHashType types.ScriptHashType,
 	pflsCodeHash types.Hash, pflsHashType types.ScriptHashType,
 	defaultLockScript types.Script,
+	defaultLockScriptDep types.CellDep,
 ) *PerunScriptHandler {
 	return &PerunScriptHandler{
-		pctsDep:           pctsDep,
-		pclsDep:           pclsDep,
-		pflsDep:           pflsDep,
-		pctsCodeHash:      pctsCodeHash,
-		pctsHashType:      pctsHashType,
-		pclsCodeHash:      pclsCodeHash,
-		pclsHashType:      pclsHashType,
-		pflsCodeHash:      pflsCodeHash,
-		pflsHashType:      pflsHashType,
-		defaultLockScript: defaultLockScript,
+		pctsDep:              pctsDep,
+		pclsDep:              pclsDep,
+		pflsDep:              pflsDep,
+		pctsCodeHash:         pctsCodeHash,
+		pctsHashType:         pctsHashType,
+		pclsCodeHash:         pclsCodeHash,
+		pclsHashType:         pclsHashType,
+		pflsCodeHash:         pflsCodeHash,
+		pflsHashType:         pflsHashType,
+		defaultLockScript:    defaultLockScript,
+		defaultLockScriptDep: defaultLockScriptDep,
 	}
 }
 
@@ -112,6 +115,7 @@ func (psh *PerunScriptHandler) BuildTransaction(builder collector.TransactionBui
 
 func (psh *PerunScriptHandler) buildOpenTransaction(builder collector.TransactionBuilder, group *transaction.ScriptGroup, openInfo *OpenInfo) (bool, error) {
 	// Add required cell dependencies for Perun scripts.
+	builder.AddCellDep(&psh.defaultLockScriptDep)
 	builder.AddCellDep(&psh.pctsDep)
 	// Add channel token as input.
 	channelToken := openInfo.ChannelToken.AsCellInput()
@@ -187,6 +191,8 @@ func (psh *PerunScriptHandler) buildForceCloseTransaction(builder collector.Tran
 }
 
 func (psh *PerunScriptHandler) buildFundTransaction(builder collector.TransactionBuilder, group *transaction.ScriptGroup, fundInfo *FundInfo) (bool, error) {
+	// Dependencies.
+	builder.AddCellDep(&psh.defaultLockScriptDep)
 	builder.AddCellDep(&psh.pclsDep)
 	builder.AddCellDep(&psh.pctsDep)
 
