@@ -11,6 +11,7 @@ type DisputeInfo struct {
 	ChannelCell types.OutPoint
 	Status      molecule.ChannelStatus
 	Params      *channel.Params
+	Header      types.Hash
 	Token       backend.Token
 	SigA        molecule.Bytes
 	SigB        molecule.Bytes

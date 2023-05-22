@@ -13,6 +13,7 @@ type FundInfo struct {
 	Params      *channel.Params
 	Token       backend.Token
 	Status      molecule.ChannelStatus
+	Header      types.Hash
 }
 
 func (fi FundInfo) AddFundingToStatus() molecule.ChannelStatus {
