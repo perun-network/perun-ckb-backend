@@ -91,7 +91,7 @@ polling:
 			if encoding.ToBool(*channelStatus.Funded()) {
 				return nil
 			}
-			return f.client.Fund(ctx, script)
+			return f.client.Fund(ctx, script, req.State)
 		}
 	}
 }

@@ -39,7 +39,7 @@ type CKBClient interface {
 
 	// Fund funds the channel with the given channel token. The implementation can assume that Fund will only ever
 	// be performed by Party B.
-	Fund(ctx context.Context, pcts *types.Script) error
+	Fund(ctx context.Context, pcts *types.Script, state *channel.State) error
 
 	// Dispute registers a dispute for the channel with the given channel ID on chain.
 	// It should register the given state with the given signatures as witness.
@@ -101,9 +101,8 @@ func (c Client) Start(ctx context.Context, params *channel.Params, state *channe
 		Params:       params,
 		State:        state,
 	}
-	var sender address.Address
 	iter := collector.NewLiveCellIterator(c.client, &indexer.SearchKey{})
-	b, err := transaction.NewPerunTransactionBuilder(c.deployment.Network, iter, &c.psh, sender)
+	b, err := transaction.NewPerunTransactionBuilder(c.deployment.Network, iter, &c.psh, c.signer.Address)
 	if err != nil {
 		return nil, fmt.Errorf("creating Perun transaction builder: %w", err)
 	}
@@ -130,10 +129,10 @@ func (c Client) createChannelToken(ctx context.Context) (backend.Token, error) {
 
 // TODO: How do we want to handle the channel cell state?
 // The client shall stay independent?
-func (c Client) Fund(ctx context.Context, pcts *types.Script) error {
-	var amount uint64 // TODO: Fetch from on-chain state or from passed state.
+func (c Client) Fund(ctx context.Context, pcts *types.Script, state *channel.State) error {
+	amount := state.Balance(channel.Index(1), asset.Asset) // TODO: Fetch from on-chain state or from passed state.
 	_ = transaction.FundInfo{
-		Amount:      amount,
+		Amount:      amount.Uint64(),
 		ChannelCell: types.OutPoint{},
 		Params:      &channel.Params{},
 		Token:       backend.Token{},
