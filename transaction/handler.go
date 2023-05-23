@@ -8,8 +8,8 @@ import (
 	"perun.network/go-perun/channel"
 	"perun.network/go-perun/wallet"
 	"perun.network/perun-ckb-backend/backend"
-	"perun.network/perun-ckb-backend/channel/defaults"
 	"perun.network/perun-ckb-backend/encoding"
+	"perun.network/perun-ckb-backend/wallet/address"
 )
 
 // PerunScriptHandler is responsible for building transactions utilizing Perun
@@ -339,10 +339,8 @@ func (psh PerunScriptHandler) buildSettleTransaction(builder collector.Transacti
 
 	// Add the payment output for each participant.
 	for i, addr := range info.parties {
-		payoutScript, paymentMinCapacity, err := defaults.VerifyAndGetPayoutScript(addr)
-		if err != nil {
-			return false, err
-		}
+		payoutScript := address.AsParticipant(addr).PaymentScript
+		paymentMinCapacity := payoutScript.OccupiedCapacity()
 		balance := info.payout[i]
 		// The capacity of the channel's live cell is added to the balance of the first party.
 		if i == 0 {

@@ -12,6 +12,8 @@ import (
 	"perun.network/perun-ckb-backend/channel/defaults"
 	"perun.network/perun-ckb-backend/client"
 	"perun.network/perun-ckb-backend/encoding"
+	molecule2 "perun.network/perun-ckb-backend/encoding/molecule"
+	"perun.network/perun-ckb-backend/wallet/address"
 	"time"
 )
 
@@ -96,14 +98,15 @@ polling:
 
 // Fund funds the channel with the given funding request.
 func (f Funder) Fund(ctx context.Context, req channel.FundingReq) error {
-	_, _, err := defaults.VerifyAndGetPayoutScript(req.Params.Parts[0])
+	_, err := address.IsParticipant(req.Params.Parts[0])
 	if err != nil {
-		return err
+		return fmt.Errorf("party a: %w", err)
 	}
-	_, _, err = defaults.VerifyAndGetPayoutScript(req.Params.Parts[1])
+	_, err = address.IsParticipant(req.Params.Parts[1])
 	if err != nil {
-		return err
+		return fmt.Errorf("party b: %w", err)
 	}
+
 	switch req.Idx {
 	case 0:
 		return f.fundPartyA(ctx, req)
@@ -120,11 +123,11 @@ func (f Funder) verifyChannelIntegrity(req channel.FundingReq, constants *molecu
 	// The Params are already implicitly verified because:
 	// 1. We queried for a channel with the given channel ID.
 	// 2. The pcts does not allow creation of a channel where the channel id is not the hash of the channel params.
-	onchainPCLSHashType, err := encoding.ToHashType(constants.PclsHashType())
+	onchainPCLSHashType, err := molecule2.ToHashType(constants.PclsHashType())
 	if err != nil {
 		return err
 	}
-	onchainPFLSHashType, err := encoding.ToHashType(constants.PflsHashType())
+	onchainPFLSHashType, err := molecule2.ToHashType(constants.PflsHashType())
 	if err != nil {
 		return err
 	}
@@ -132,10 +135,10 @@ func (f Funder) verifyChannelIntegrity(req channel.FundingReq, constants *molecu
 		onchainPCLSHashType != f.Constants.PCLSHashType ||
 		types.UnpackHash(constants.PflsCodeHash()) != f.Constants.PFLSCodeHash ||
 		onchainPFLSHashType != f.Constants.PFLSHashType ||
-		encoding.UnpackUint64(constants.PflsMinCapacity()) != f.Constants.PFLSMinCapacity {
+		molecule2.UnpackUint64(constants.PflsMinCapacity()) != f.Constants.PFLSMinCapacity {
 		return errors.New("invalid channel constants")
 	}
-	challengeDuration := encoding.UnpackUint64(constants.Params().ChallengeDuration())
+	challengeDuration := molecule2.UnpackUint64(constants.Params().ChallengeDuration())
 	if challengeDuration > math.MaxInt64 {
 		return fmt.Errorf("challenge duration %d is too large, max: %d", challengeDuration, math.MaxInt64)
 	}

@@ -1,4 +1,4 @@
-package encoding
+package molecule
 
 import (
 	"encoding/binary"

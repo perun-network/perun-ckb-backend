@@ -1,7 +1,6 @@
 package address
 
 import (
-	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
@@ -14,8 +13,6 @@ import (
 const (
 	UncompressedPublicKeyLength = 65
 	CompressedPublicKeyLength   = 33
-	Uint64Length                = 8
-	SerializedParticipantLength = CompressedPublicKeyLength + types.HashLength + types.HashLength + Uint64Length
 )
 
 // Participant uniquely identifies a participant in a channel, encompassing all necessary on-chain information.
@@ -25,13 +22,10 @@ type Participant struct {
 	PubKey *secp256k1.PublicKey
 	// PaymentScript hash is the script-hash of the payment script of the participant. Its preimage must be present
 	// in an output of a transaction in order to address payments to this participant.
-	PaymentScriptHash types.Hash
+	PaymentScript *types.Script
 	// UnlockScriptHash is the script-hash of the unlock script of this participant. The participant uses it to authorize
 	// itself to interact with a channel through an on-chain transaction.
-	UnlockScriptHash types.Hash
-	// PaymentMinCapacity is the minimum capacity required by the payment script of this participant to lock
-	// CKBytes as payment to this participant.
-	PaymentMinCapacity uint64
+	UnlockScript *types.Script
 }
 
 // NewDefaultParticipant creates a new participant with the script hash of the secp256k1_blake160_sighash_all script for
@@ -44,73 +38,49 @@ func NewDefaultParticipant(pubKey *secp256k1.PublicKey) (*Participant, error) {
 	if err != nil {
 		return nil, err
 	}
-	hash := script.Hash()
 	return &Participant{
-		PubKey:             pubKey,
-		PaymentScriptHash:  hash,
-		UnlockScriptHash:   hash,
-		PaymentMinCapacity: script.OccupiedCapacity(),
+		PubKey:        pubKey,
+		PaymentScript: script,
+		UnlockScript:  script,
 	}, nil
 }
 
 func NewParticipant(pubKey *secp256k1.PublicKey, paymentScript, unlockScript *types.Script) *Participant {
 	return &Participant{
-		PubKey:             pubKey,
-		PaymentScriptHash:  paymentScript.Hash(),
-		UnlockScriptHash:   unlockScript.Hash(),
-		PaymentMinCapacity: paymentScript.OccupiedCapacity(),
+		PubKey:        pubKey,
+		PaymentScript: paymentScript,
+		UnlockScript:  unlockScript,
 	}
 }
 
-// MarshalBinary encodes the participant into a binary representation.
-// The encoding is as follows:
-// <sec1 encoded public key: 33 bytes>
-// | <payment script hash: 32 bytes>
-// | <unlock script hash: 32 bytes>
-// | <payment min capacity: 8 bytes (uint64 little endian)>
-func (p Participant) MarshalBinary() (data []byte, err error) {
-	if p.PubKey == nil {
-		return nil, errors.New("public key is nil")
-	}
-	data = make([]byte, SerializedParticipantLength)
-	copy(data[:CompressedPublicKeyLength], p.PubKey.SerializeCompressed())
-	copy(data[CompressedPublicKeyLength:CompressedPublicKeyLength+types.HashLength], p.PaymentScriptHash[:])
-	copy(data[CompressedPublicKeyLength+types.HashLength:CompressedPublicKeyLength+types.HashLength+types.HashLength], p.UnlockScriptHash[:])
-	binary.LittleEndian.PutUint64(data[CompressedPublicKeyLength+types.HashLength+types.HashLength:], p.PaymentMinCapacity)
-	return data, nil
+// MarshalBinary encodes the participant into a binary representation as a molecule.OffChainParticipant.
+func (p Participant) MarshalBinary() ([]byte, error) {
+	offChainParticipant, err := p.PackOffChainParticipant()
+	return offChainParticipant.AsSlice(), err
 }
 
-// UnmarshalBinary decodes the participant from a binary representation. See MarshalBinary for the expected encoding.
+// UnmarshalBinary decodes the participant from a molecule.OffChainParticipant.
 func (p *Participant) UnmarshalBinary(data []byte) error {
-	if len(data) != SerializedParticipantLength {
-		return errors.New("invalid address length")
-	}
-	pubKey, err := secp256k1.ParsePubKey(data[:CompressedPublicKeyLength])
+	offChainParticipant, err := molecule.OffChainParticipantFromSlice(data, false)
 	if err != nil {
 		return err
 	}
-	p.PubKey = pubKey
-	copy(p.PaymentScriptHash[:], data[CompressedPublicKeyLength:CompressedPublicKeyLength+types.HashLength])
-	copy(p.UnlockScriptHash[:], data[CompressedPublicKeyLength+types.HashLength:CompressedPublicKeyLength+types.HashLength+types.HashLength])
-	p.PaymentMinCapacity = binary.LittleEndian.Uint64(data[CompressedPublicKeyLength+types.HashLength+types.HashLength:])
-	return nil
+	return p.UnpackOffChainParticipant(offChainParticipant)
 }
 
 func (p Participant) String() string {
 	return hex.EncodeToString(p.PubKey.SerializeCompressed())
 }
 
+// Equal returns true, iff the given address is a participant with the same public key, payment script and unlock script.
 func (p Participant) Equal(address wallet.Address) bool {
 	other, ok := address.(*Participant)
 	if !ok {
 		return false
 	}
-	if p.UnlockScriptHash != other.UnlockScriptHash ||
-		p.PaymentScriptHash != other.PaymentScriptHash ||
-		p.PaymentMinCapacity != other.PaymentMinCapacity {
-		return false
-	}
-	return p.PubKey.IsEqual(other.PubKey)
+	return p.UnlockScript.Equals(other.UnlockScript) &&
+		p.PubKey.IsEqual(other.PubKey) &&
+		p.PaymentScript.Equals(other.PaymentScript)
 }
 
 // GetUncompressedSEC1 returns the uncompressed SEC1 encoded public key of the participant.
@@ -129,46 +99,104 @@ func (p Participant) GetCompressedSEC1() [CompressedPublicKeyLength]byte {
 
 // GetZeroAddress returns the zero participant. Its public key is the zero public key.
 func GetZeroAddress() *Participant {
-	return &Participant{PubKey: secp256k1.NewPublicKey(new(secp256k1.FieldVal), new(secp256k1.FieldVal))}
+	return &Participant{
+		PubKey:        secp256k1.NewPublicKey(new(secp256k1.FieldVal), new(secp256k1.FieldVal)),
+		PaymentScript: &types.Script{HashType: types.HashTypeData},
+		UnlockScript:  &types.Script{HashType: types.HashTypeData},
+	}
 }
 
-// Pack packs the participant into a molecule participant (on-chain encoding of a participant).
-func (p Participant) Pack() (molecule.Participant, error) {
-	if p.PubKey == nil {
-		return molecule.Participant{}, errors.New("public key is nil")
+// PackOffChainParticipant packs the participant into a molecule.OffChainParticipant
+// (off-chain encoding of a participant).
+func (p Participant) PackOffChainParticipant() (molecule.OffChainParticipant, error) {
+	key, err := PackSEC1EncodedPubKey(p.PubKey)
+	if err != nil {
+		return molecule.OffChainParticipant{}, err
 	}
-	pubKey := PackSEC1EncodedPubKey(p.PubKey)
+	return molecule.NewOffChainParticipantBuilder().
+		PubKey(key).
+		PaymentScript(*p.PaymentScript.Pack()).
+		UnlockScript(*p.UnlockScript.Pack()).
+		Build(), nil
+}
+
+// PackOnChainParticipant packs the participant into a molecule.Participant (on-chain encoding of a participant).
+func (p Participant) PackOnChainParticipant() (molecule.Participant, error) {
+	pubKey, err := PackSEC1EncodedPubKey(p.PubKey)
+	if err != nil {
+		return molecule.Participant{}, err
+	}
+	psh := p.PaymentScript.Hash()
+	ush := p.UnlockScript.Hash()
 	party := molecule.NewParticipantBuilder().
 		PubKey(pubKey).
-		PaymentScriptHash(*p.PaymentScriptHash.Pack()).
-		UnlockScriptHash(*p.UnlockScriptHash.Pack()).
-		PaymentMinCapacity(*types.PackUint64(p.PaymentMinCapacity)).
+		PaymentScriptHash(*psh.Pack()).
+		UnlockScriptHash(*ush.Pack()).
 		Build()
 
 	return party, nil
 }
 
 // PackSEC1EncodedPubKey packs the given public key into a molecule SEC1 encoded public key (compressed).
-func PackSEC1EncodedPubKey(key *secp256k1.PublicKey) molecule.SEC1EncodedPubKey {
+func PackSEC1EncodedPubKey(key *secp256k1.PublicKey) (molecule.SEC1EncodedPubKey, error) {
+	if key == nil {
+		return molecule.SEC1EncodedPubKey{}, errors.New("public key is nil")
+	}
 	sec1 := key.SerializeCompressed()
 	var bytes [CompressedPublicKeyLength]molecule.Byte
 	for i, b := range sec1 {
 		bytes[i] = molecule.NewByte(b)
 	}
-	return molecule.NewSEC1EncodedPubKeyBuilder().Set(bytes).Build()
+	return molecule.NewSEC1EncodedPubKeyBuilder().Set(bytes).Build(), nil
 }
 
-func (p Participant) GetSecp256k1Blake160SighashAll() (*types.Script, error) {
-	if p.PubKey == nil {
+// UnpackSEC1EncodedPubKey unpacks the given molecule SEC1 encoded public key (compressed) into a public key.
+func UnpackSEC1EncodedPubKey(key *molecule.SEC1EncodedPubKey) (*secp256k1.PublicKey, error) {
+	if key == nil {
 		return nil, errors.New("public key is nil")
 	}
-	return systemscript.Secp256K1Blake160SignhashAllByPublicKey(p.PubKey.SerializeCompressed())
+	sec1 := key.AsSlice()
+	if len(sec1) != CompressedPublicKeyLength {
+		return nil, errors.New("invalid public key length")
+	}
+	return secp256k1.ParsePubKey(sec1)
 }
 
+func GetSecp256k1Blake160SighashAll(key *secp256k1.PublicKey) (*types.Script, error) {
+	if key == nil {
+		return nil, errors.New("public key is nil")
+	}
+	return systemscript.Secp256K1Blake160SignhashAllByPublicKey(key.SerializeCompressed())
+}
+
+// AsParticipant returns the participant from the given address.
+// It panics if the address is not a participant.
 func AsParticipant(address wallet.Address) *Participant {
 	p, ok := address.(*Participant)
 	if !ok {
 		panic("address is not participant")
 	}
 	return p
+}
+
+// IsParticipant returns the participant from the given address.
+// It returns an error if the address is not a participant.
+func IsParticipant(address wallet.Address) (*Participant, error) {
+	p, ok := address.(*Participant)
+	if !ok {
+		return nil, errors.New("address is not participant")
+	}
+	return p, nil
+}
+
+// UnpackOffChainParticipant unpacks the given molecule.OffChainParticipant into the participant.
+func (p *Participant) UnpackOffChainParticipant(op *molecule.OffChainParticipant) error {
+	key, err := UnpackSEC1EncodedPubKey(op.PubKey())
+	if err != nil {
+		return err
+	}
+	p.PubKey = key
+	p.PaymentScript = types.UnpackScript(op.PaymentScript())
+	p.UnlockScript = types.UnpackScript(op.UnlockScript())
+	return nil
 }
