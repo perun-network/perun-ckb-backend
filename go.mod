@@ -15,4 +15,4 @@ require (
 	polycry.pt/poly-go v0.0.0-20220222131629-aa4bdbaab60b
 )
 
-replace github.com/nervosnetwork/ckb-sdk-go/v2 v2.2.0 => github.com/perun-network/ckb-sdk-go/v2 v2.2.1-0.20230516085459-2c8594f701a2
+replace github.com/nervosnetwork/ckb-sdk-go/v2 v2.2.0 => github.com/perun-network/ckb-sdk-go/v2 v2.2.1-0.20230523084308-311a8b7f636d

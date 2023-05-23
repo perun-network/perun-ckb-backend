@@ -12,6 +12,7 @@ import (
 	"perun.network/go-perun/channel"
 	"perun.network/perun-ckb-backend/client"
 	"perun.network/perun-ckb-backend/encoding"
+	molecule2 "perun.network/perun-ckb-backend/encoding/molecule"
 	"time"
 )
 
@@ -152,7 +153,7 @@ func (a *PollingSubscription) emitEventIfNecessary(
 	event := channel.NewRegisteredEvent(
 		a.id,
 		&channel.TimeTimeout{Time: challengeDurationStart.Add(challengeDuration)},
-		encoding.UnpackUint64(newStatus.State().Version()),
+		molecule2.UnpackUint64(newStatus.State().Version()),
 		nil, // only needed for virtual channels
 		nil, // only needed for virtual channels
 	)
@@ -192,7 +193,7 @@ func (a *PollingSubscription) getChallengeDuration() (time.Duration, error) {
 		return 0, err
 	}
 
-	duration := encoding.UnpackUint64(channelConstants.Params().ChallengeDuration())
+	duration := molecule2.UnpackUint64(channelConstants.Params().ChallengeDuration())
 	if duration > math.MaxInt64 {
 		panic(fmt.Sprintf("adjudicator_sub: challenge duration %d is too large, max: %d", duration, math.MaxInt64))
 	}

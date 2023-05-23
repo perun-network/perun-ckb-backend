@@ -7,6 +7,7 @@ import (
 	"math/big"
 	"perun.network/go-perun/channel"
 	"perun.network/perun-ckb-backend/channel/asset"
+	molecule2 "perun.network/perun-ckb-backend/encoding/molecule"
 )
 
 func PackChannelState(state *channel.State) (molecule.ChannelState, error) {
@@ -15,7 +16,7 @@ func PackChannelState(state *channel.State) (molecule.ChannelState, error) {
 		return molecule.ChannelState{}, err
 	}
 	return molecule.NewChannelStateBuilder().
-		ChannelId(*PackByte32(state.ID)).
+		ChannelId(*molecule2.PackByte32(state.ID)).
 		Version(*types.PackUint64(state.Version)).
 		IsFinal(FromBool(state.IsFinal)).
 		Balances(molecule.NewBalancesBuilder().
