@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
+	"github.com/nervosnetwork/ckb-sdk-go/v2/address"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/collector"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/indexer"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/rpc"
@@ -16,7 +17,10 @@ import (
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types/molecule"
 	"perun.network/go-perun/channel"
 	"perun.network/go-perun/wallet"
-	"perun.network/perun-ckb-backend/channel/defaults"
+	"perun.network/perun-ckb-backend/backend"
+	ckbchannel "perun.network/perun-ckb-backend/channel"
+	"perun.network/perun-ckb-backend/channel/asset"
+	"perun.network/perun-ckb-backend/transaction"
 )
 
 var ErrNoChannelLiveCell = errors.New("no channel live cell found")
@@ -72,25 +76,70 @@ type CKBClient interface {
 }
 
 type Client struct {
-	client       rpc.Client
-	PCTSCodeHash types.Hash
-	PCTSHashType types.ScriptHashType
-	PCLSCodeHash types.Hash
-	PCLSHashType types.ScriptHashType
-	PFLSCodeHash types.Hash
-	PFLSHashType types.ScriptHashType
-	cache        StableScriptCache
+	client rpc.Client
+
+	signer     backend.Signer
+	deployment backend.Deployment
+
+	psh   transaction.PerunScriptHandler
+	cache StableScriptCache
 }
 
 var _ CKBClient = (*Client)(nil)
 
 func (c Client) Start(ctx context.Context, params *channel.Params, state *channel.State) (*types.Script, error) {
+	channelToken, err := c.createChannelToken(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("creating channel token: %w", err)
+	}
+	cid := ckbchannel.Backend.CalcID(params)
+	funding := state.Balance(channel.Index(0), asset.Asset)
+	oi := &transaction.OpenInfo{
+		ChannelID:    cid,
+		ChannelToken: channelToken,
+		Funding:      funding.Uint64(),
+		Params:       params,
+		State:        state,
+	}
+	var sender address.Address
+	iter := collector.NewLiveCellIterator(c.client, &indexer.SearchKey{})
+	b, err := transaction.NewPerunTransactionBuilder(c.deployment.Network, iter, &c.psh, sender)
+	if err != nil {
+		return nil, fmt.Errorf("creating Perun transaction builder: %w", err)
+	}
+
+	tx, err := b.Build(oi)
+	if err != nil {
+		return nil, fmt.Errorf("building open transaction: %w", err)
+	}
+
+	if err := c.signer.SignTransaction(tx); err != nil {
+		return nil, fmt.Errorf("signing open transaction: %w", err)
+	}
+
+	if err := c.sendAndAwait(ctx, tx.TxView); err != nil {
+		return nil, fmt.Errorf("sending open transaction: %w", err)
+	}
+
+	return oi.GetPCTS(), nil
+}
+
+func (c Client) createChannelToken(ctx context.Context) (backend.Token, error) {
 	panic("implement me")
 }
 
+// TODO: How do we want to handle the channel cell state?
+// The client shall stay independent?
 func (c Client) Fund(ctx context.Context, pcts *types.Script) error {
-	//TODO implement me
-	panic("implement me")
+	var amount uint64 // TODO: Fetch from on-chain state or from passed state.
+	_ = transaction.FundInfo{
+		Amount:      amount,
+		ChannelCell: types.OutPoint{},
+		Params:      &channel.Params{},
+		Token:       backend.Token{},
+		Status:      molecule.ChannelStatus{},
+	}
+	return nil
 }
 
 func (c Client) Dispute(ctx context.Context, id channel.ID, state *channel.State, sigs []wallet.Sig) error {
@@ -135,16 +184,19 @@ func (c Client) GetChannelWithExactPCTS(ctx context.Context, pcts *types.Script)
 }
 
 func NewDefaultClient(rpcClient rpc.Client) *Client {
+	// TODO: Wrap this up.
 	return &Client{
-		client:       rpcClient,
-		PCTSCodeHash: defaults.DefaultPCTSCodeHash,
-		PCTSHashType: defaults.DefaultPCTSHashType,
-		PCLSCodeHash: defaults.DefaultPCLSCodeHash,
-		PCLSHashType: defaults.DefaultPCLSHashType,
-		PFLSCodeHash: defaults.DefaultPFLSCodeHash,
-		PFLSHashType: defaults.DefaultPFLSHashType,
-		cache:        NewStableScriptCache(),
+		client: rpcClient,
+		cache:  NewStableScriptCache(),
 	}
+}
+
+func NewClient(rpcClient rpc.Client, deployment backend.Deployment) (*Client, error) {
+	return &Client{
+		client:     rpcClient,
+		deployment: deployment,
+		cache:      nil,
+	}, nil
 }
 
 // findLiveCKBCells finds one or more live cells containing at least the given
@@ -244,8 +296,8 @@ func (c Client) getFirstChannelLiveCellWithID(channels *indexer.LiveCells, id ch
 
 func (c Client) getAllChannelLiveCells(ctx context.Context) (*indexer.LiveCells, error) {
 	pctsPrefix := &types.Script{
-		CodeHash: c.PCTSCodeHash,
-		HashType: c.PCTSHashType,
+		CodeHash: c.deployment.PCTSCodeHash,
+		HashType: c.deployment.PCTSHashType,
 		Args:     []byte{},
 	}
 	searchKey := &indexer.SearchKey{
@@ -272,8 +324,8 @@ func (c Client) getExactChannelLiveCell(ctx context.Context, pcts *types.Script)
 func (c Client) isValidChannelLiveCell(cell *indexer.LiveCell) bool {
 	if cell.Output == nil ||
 		cell.Output.Type == nil ||
-		cell.Output.Type.CodeHash != c.PCTSCodeHash ||
-		cell.Output.Type.HashType != c.PCTSHashType {
+		cell.Output.Type.CodeHash != c.deployment.PCTSCodeHash ||
+		cell.Output.Type.HashType != c.deployment.PCTSHashType {
 		return false
 	}
 	return true
