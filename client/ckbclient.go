@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
-	"github.com/nervosnetwork/ckb-sdk-go/v2/address"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/collector"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/indexer"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/rpc"
@@ -20,6 +19,7 @@ import (
 	"perun.network/perun-ckb-backend/backend"
 	ckbchannel "perun.network/perun-ckb-backend/channel"
 	"perun.network/perun-ckb-backend/channel/asset"
+	"perun.network/perun-ckb-backend/encoding"
 	"perun.network/perun-ckb-backend/transaction"
 )
 
@@ -101,47 +101,104 @@ func (c Client) Start(ctx context.Context, params *channel.Params, state *channe
 		Params:       params,
 		State:        state,
 	}
-	iter := collector.NewLiveCellIterator(c.client, &indexer.SearchKey{})
-	b, err := transaction.NewPerunTransactionBuilder(c.deployment.Network, iter, &c.psh, c.signer.Address)
-	if err != nil {
-		return nil, fmt.Errorf("creating Perun transaction builder: %w", err)
-	}
 
-	tx, err := b.Build(oi)
-	if err != nil {
-		return nil, fmt.Errorf("building open transaction: %w", err)
-	}
-
-	if err := c.signer.SignTransaction(tx); err != nil {
-		return nil, fmt.Errorf("signing open transaction: %w", err)
-	}
-
-	if err := c.sendAndAwait(ctx, tx.TxView); err != nil {
-		return nil, fmt.Errorf("sending open transaction: %w", err)
+	if err := c.submitTxWithArgument(ctx, oi); err != nil {
+		return nil, fmt.Errorf("submitting transaction: %w", err)
 	}
 
 	return oi.GetPCTS(), nil
 }
 
-func (c Client) createChannelToken(ctx context.Context) (backend.Token, error) {
-	panic("implement me")
+func (c Client) newPerunTransactionBuilder() (*transaction.PerunTransactionBuilder, error) {
+	sender, err := c.signer.Address.Encode()
+	if err != nil {
+		return nil, fmt.Errorf("encoding sender address: %w", err)
+	}
+	iter, err := collector.NewLiveCellIteratorFromAddress(c.client, sender)
+	if err != nil {
+		return nil, fmt.Errorf("creating cell iterator: %w", err)
+	}
+	return transaction.NewPerunTransactionBuilder(c.deployment.Network, iter, &c.psh, c.signer.Address)
+
 }
 
-// TODO: How do we want to handle the channel cell state?
-// The client shall stay independent?
-func (c Client) Fund(ctx context.Context, pcts *types.Script, state *channel.State) error {
-	amount := state.Balance(channel.Index(1), asset.Asset) // TODO: Fetch from on-chain state or from passed state.
-	_ = transaction.FundInfo{
-		Amount:      amount.Uint64(),
-		ChannelCell: types.OutPoint{},
-		Params:      &channel.Params{},
-		Token:       backend.Token{},
-		Status:      molecule.ChannelStatus{},
+// submitTxWithArgument submits a transaction whose type is determined by the
+// txTypeArgument.
+func (c Client) submitTxWithArgument(ctx context.Context, txTypeArgument ...interface{}) error {
+	b, err := c.newPerunTransactionBuilder()
+	if err != nil {
+		return fmt.Errorf("creating Perun transaction builder: %w", err)
+	}
+
+	tx, err := b.Build(txTypeArgument)
+	if err != nil {
+		return fmt.Errorf("building open transaction: %w", err)
+	}
+
+	if err := c.signer.SignTransaction(tx); err != nil {
+		return fmt.Errorf("signing open transaction: %w", err)
+	}
+
+	if err := c.sendAndAwait(ctx, tx.TxView); err != nil {
+		return fmt.Errorf("sending open transaction: %w", err)
 	}
 	return nil
 }
 
+func (c Client) createChannelToken(ctx context.Context) (backend.Token, error) {
+	// TODO: We could also just use the first normal input cell instead of a
+	// dedicated channel token cell.
+	panic("implement me")
+}
+
+func (c Client) Fund(ctx context.Context, pcts *types.Script, state *channel.State) error {
+	amount := state.Balance(channel.Index(1), asset.Asset)
+	channelCell, err := c.getExactChannelLiveCell(ctx, pcts)
+	if err != nil {
+		return fmt.Errorf("getting channel live cell: %w", err)
+	}
+	fi := transaction.FundInfo{
+		Amount:      amount.Uint64(),
+		ChannelCell: *channelCell.OutPoint,
+		Params:      &channel.Params{},
+		Token:       backend.Token{},
+		Status:      molecule.ChannelStatus{},
+	}
+	return c.submitTxWithArgument(ctx, fi)
+}
+
 func (c Client) Dispute(ctx context.Context, id channel.ID, state *channel.State, sigs []wallet.Sig) error {
+	channelCell, status, err := c.getChannelLiveCellWithCache(ctx, id)
+	if err != nil {
+		return fmt.Errorf("getting channel live cell: %w", err)
+	}
+	constants, err := molecule.ChannelConstantsFromSlice(channelCell.Output.Type.Args, false)
+	if err != nil {
+		return fmt.Errorf("parsing channel constants: %w", err)
+	}
+	header, err := c.client.GetTipHeader(ctx)
+	if err != nil {
+		return fmt.Errorf("getting tip header: %w", err)
+	}
+	params, err := encoding.UnpackChannelParameters(*constants.Params())
+	if err != nil {
+		return fmt.Errorf("parsing channel parameters: %w", err)
+	}
+
+	if len(sigs) != 2 {
+		return fmt.Errorf("expected 2 signatures, got %d", len(sigs))
+	}
+	sigA := encoding.PackSignature(sigs[0])
+	sigB := encoding.PackSignature(sigs[1])
+	_ = transaction.DisputeInfo{
+		ChannelCell: *channelCell.OutPoint,
+		Status:      *status,
+		Params:      params,
+		Header:      header.Hash,
+		Token:       *constants.ThreadToken(),
+		SigA:        *sigA,
+		SigB:        *sigB,
+	}
 	//TODO implement me
 	panic("implement me")
 }
@@ -162,24 +219,12 @@ func (c Client) Abort(ctx context.Context, script *types.Script) error {
 }
 
 func (c Client) GetChannelWithExactPCTS(ctx context.Context, pcts *types.Script) (BlockNumber, *molecule.ChannelStatus, error) {
-	cells, err := c.getExactChannelLiveCell(ctx, pcts)
+	cell, err := c.getExactChannelLiveCell(ctx, pcts)
+	channelStatus, err := molecule.ChannelStatusFromSlice(cell.OutputData, false)
 	if err != nil {
 		return 0, nil, err
 	}
-	if cells == nil {
-		return 0, nil, errors.New("unable to get channel live cell")
-	}
-	if len(cells.Objects) == 0 {
-		return 0, nil, ErrNoChannelLiveCell
-	}
-	if len(cells.Objects) != 1 {
-		return 0, nil, fmt.Errorf("expected exactly 1 live channel cell, got: %d", len(cells.Objects))
-	}
-	channelStatus, err := molecule.ChannelStatusFromSlice(cells.Objects[0].OutputData, false)
-	if err != nil {
-		return 0, nil, err
-	}
-	return cells.Objects[0].BlockNumber, channelStatus, nil
+	return cell.BlockNumber, channelStatus, nil
 }
 
 func NewDefaultClient(rpcClient rpc.Client) *Client {
@@ -309,7 +354,7 @@ func (c Client) getAllChannelLiveCells(ctx context.Context) (*indexer.LiveCells,
 	return c.client.GetCells(ctx, searchKey, indexer.SearchOrderDesc, math.MaxUint64, "")
 }
 
-func (c Client) getExactChannelLiveCell(ctx context.Context, pcts *types.Script) (*indexer.LiveCells, error) {
+func (c Client) getExactChannelLiveCell(ctx context.Context, pcts *types.Script) (*indexer.LiveCell, error) {
 	searchKey := &indexer.SearchKey{
 		Script:           pcts,
 		ScriptType:       types.ScriptTypeType,
@@ -317,7 +362,17 @@ func (c Client) getExactChannelLiveCell(ctx context.Context, pcts *types.Script)
 		Filter:           nil,
 		WithData:         true,
 	}
-	return c.client.GetCells(ctx, searchKey, indexer.SearchOrderDesc, math.MaxUint64, "")
+	cells, err := c.client.GetCells(ctx, searchKey, indexer.SearchOrderDesc, math.MaxUint64, "")
+	if err != nil {
+		return nil, err
+	}
+	if len(cells.Objects) > 1 {
+		return nil, errors.New("more than one live cell found for channel")
+	}
+	if len(cells.Objects) == 0 {
+		return nil, ErrNoChannelLiveCell
+	}
+	return cells.Objects[0], nil
 }
 
 func (c Client) isValidChannelLiveCell(cell *indexer.LiveCell) bool {
@@ -344,18 +399,12 @@ func (c Client) GetBlockTime(ctx context.Context, blockNumber BlockNumber) (time
 func (c Client) getChannelLiveCellWithCache(ctx context.Context, id channel.ID) (*indexer.LiveCell, *molecule.ChannelStatus, error) {
 	script, cached := c.cache.Get(id)
 	if cached {
-		cells, err := c.getExactChannelLiveCell(ctx, script)
+		cell, err := c.getExactChannelLiveCell(ctx, script)
 		if err != nil {
 			return nil, nil, err
 		}
-		if len(cells.Objects) > 1 {
-			return nil, nil, errors.New("more than one live cell found for channel")
-		}
-		if len(cells.Objects) == 0 {
-			return nil, nil, ErrNoChannelLiveCell
-		}
-		status, err := molecule.ChannelStatusFromSlice(cells.Objects[0].OutputData, false)
-		return cells.Objects[0], status, nil
+		status, err := molecule.ChannelStatusFromSlice(cell.OutputData, false)
+		return cell, status, nil
 	}
 	liveChannelCells, err := c.getAllChannelLiveCells(ctx)
 	if err != nil {
