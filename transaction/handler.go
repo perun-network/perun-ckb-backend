@@ -124,7 +124,7 @@ func (psh *PerunScriptHandler) buildOpenTransaction(builder collector.Transactio
 	/// Create outputs containing channel cell and channel funds cell.
 
 	// Channel funds cell output.
-	channelTypeScript := psh.mkChannelTypeScript(openInfo.Params, openInfo.ChannelToken)
+	channelTypeScript := psh.mkChannelTypeScript(openInfo.Params, openInfo.ChannelToken.Token)
 	fundsLockScript := psh.mkFundsLockScript(channelTypeScript)
 	channelFundsCell, fundsData := backend.CKBOutput{
 		Output: molecule.NewCellOutputBuilder().
@@ -206,7 +206,7 @@ func (psh *PerunScriptHandler) buildFundTransaction(builder collector.Transactio
 
 	// Channel cell output.
 	channelLockScript := psh.mkChannelLockScript()
-	channelTypeScript := psh.mkChannelTypeScript(fundInfo.Params, fundInfo.Token)
+	channelTypeScript := psh.mkChannelTypeScript(fundInfo.Params, fundInfo.Token.Token)
 	channelData := fundInfo.AddFundingToStatus()
 	channelCell := types.CellOutput{
 		Capacity: 0,
@@ -265,8 +265,8 @@ func (psh PerunScriptHandler) mkChannelLockScript() *types.Script {
 	}
 }
 
-func (psh PerunScriptHandler) mkChannelTypeScript(params *channel.Params, token backend.Token) *types.Script {
-	channelConstants := psh.mkChannelConstants(params, token.Token)
+func (psh PerunScriptHandler) mkChannelTypeScript(params *channel.Params, token molecule.ChannelToken) *types.Script {
+	channelConstants := psh.mkChannelConstants(params, token)
 	channelArgs := types.PackBytes(channelConstants.AsSlice())
 	return &types.Script{
 		CodeHash: psh.pctsCodeHash,
