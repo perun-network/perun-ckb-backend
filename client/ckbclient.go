@@ -203,8 +203,74 @@ func (c Client) Dispute(ctx context.Context, id channel.ID, state *channel.State
 }
 
 func (c Client) Close(ctx context.Context, id channel.ID, state *channel.State, sigs []wallet.Sig) error {
-	//TODO implement me
-	panic("implement me")
+	channelCell, _, err := c.getChannelLiveCellWithCache(ctx, id)
+	if err != nil {
+		return fmt.Errorf("getting channel live cell: %w", err)
+	}
+	pcts := channelCell.Output.Type
+	assets, err := c.getAssets(ctx, pcts)
+	if err != nil {
+		return fmt.Errorf("retrieving assets locked in channel: %w", err)
+	}
+	header, err := c.client.GetTipHeader(ctx)
+	if err != nil {
+		return fmt.Errorf("getting tip header: %w", err)
+	}
+	occupiedChannelCapacity := channelCell.Output.OccupiedCapacity(channelCell.OutputData)
+
+	constants, err := molecule.ChannelConstantsFromSlice(channelCell.Output.Type.Args, false)
+	if err != nil {
+		return fmt.Errorf("parsing channel constants: %w", err)
+	}
+	params, err := encoding.UnpackChannelParameters(*constants.Params())
+	if err != nil {
+		return fmt.Errorf("parsing channel parameters: %w", err)
+	}
+
+	ci := transaction.CloseInfo{
+		ChannelCapacity: occupiedChannelCapacity,
+		ChannelInput: types.CellInput{
+			PreviousOutput: channelCell.OutPoint,
+		},
+		AssetInputs:      mkCellInputs(assets),
+		Headers:          []types.Hash{header.Hash},
+		Params:           params,
+		State:            state,
+		PaddedSignatures: sigs,
+	}
+
+	return c.submitTxWithArgument(ctx, ci)
+}
+
+// Turns a list of live cells into a list of input cells.
+func mkCellInputs(lcs *indexer.LiveCells) []types.CellInput {
+	res := make([]types.CellInput, 0, len(lcs.Objects))
+	for _, lc := range lcs.Objects {
+		res = append(res, types.CellInput{
+			Since:          0,
+			PreviousOutput: lc.OutPoint,
+		})
+	}
+	return res
+}
+
+// getAssets retrieves a list of all assets that are locked in the channel
+// identified by the given PCTS.
+func (c Client) getAssets(ctx context.Context, pcts *types.Script) (*indexer.LiveCells, error) {
+	pctsScriptHash := pcts.Hash()
+	pflsPrefix := &types.Script{
+		CodeHash: c.deployment.PFLSCodeHash,
+		HashType: c.deployment.PFLSHashType,
+		Args:     pctsScriptHash[:],
+	}
+	searchKey := &indexer.SearchKey{
+		Script:           pflsPrefix,
+		ScriptType:       types.ScriptTypeLock,
+		ScriptSearchMode: types.ScriptSearchModePrefix,
+		Filter:           nil,
+		WithData:         true,
+	}
+	return c.client.GetCells(ctx, searchKey, indexer.SearchOrderDesc, math.MaxUint64, "")
 }
 
 func (c Client) ForceClose(ctx context.Context, id channel.ID, state *channel.State) error {
