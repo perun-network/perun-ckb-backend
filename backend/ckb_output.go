@@ -1,10 +1,9 @@
 package backend
 
 import (
-	"encoding/binary"
-
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types/molecule"
+	molecule2 "perun.network/perun-ckb-backend/encoding/molecule"
 )
 
 // CKBOutput groups a CKB output cell and its data.
@@ -29,7 +28,7 @@ func (o CKBOutput) AsOutputAndData() (types.CellOutput, []byte) {
 	//
 	// Building a transaction using this output thus fails.
 	op := types.CellOutput{
-		Capacity: UnpackUint64(*o.Output.Capacity()),
+		Capacity: molecule2.UnpackUint64(o.Output.Capacity()),
 		Lock:     types.UnpackScript(o.Output.Lock()),
 		Type:     optType,
 	}
@@ -60,8 +59,4 @@ func (os CKBOutputs) Append(o CKBOutput) CKBOutputs {
 
 func (os CKBOutputs) Extend(nos CKBOutputs) CKBOutputs {
 	return append(os, nos...)
-}
-
-func UnpackUint64(u molecule.Uint64) uint64 {
-	return binary.LittleEndian.Uint64(u.AsSlice())
 }
