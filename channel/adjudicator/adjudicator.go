@@ -11,14 +11,14 @@ type Adjudicator struct {
 }
 
 func (a Adjudicator) Register(ctx context.Context, req channel.AdjudicatorReq, states []channel.SignedState) error {
-	return a.client.Dispute(ctx, req.Tx.ID, req.Tx.State, req.Tx.Sigs)
+	return a.client.Dispute(ctx, req.Tx.ID, req.Tx.State, req.Tx.Sigs, req.Params)
 }
 
 func (a Adjudicator) Withdraw(ctx context.Context, req channel.AdjudicatorReq, stateMap channel.StateMap) error {
 	if req.Tx.State.IsFinal {
-		return a.client.Close(ctx, req.Tx.ID, req.Tx.State, req.Tx.Sigs)
+		return a.client.Close(ctx, req.Tx.ID, req.Tx.State, req.Tx.Sigs, req.Params)
 	} else {
-		return a.client.ForceClose(ctx, req.Tx.ID, req.Tx.State)
+		return a.client.ForceClose(ctx, req.Tx.ID, req.Tx.State, req.Params)
 	}
 
 }
