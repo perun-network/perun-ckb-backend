@@ -63,10 +63,9 @@ func mkBalancesForParty(index channel.Index, funding uint64) molecule.Balances {
 
 // MinFunding returns the max between the requested funding amount and the
 // minimum capacity required to accomodate the PFLS script in a funds cell.
-func (oi OpenInfo) MinFunding() uint64 {
-	minFunding := backend.MinCapacityForPFLS()
-	if oi.Funding < minFunding {
-		return minFunding
+func (oi OpenInfo) MinFunding(pflsMinCapacity uint64) uint64 {
+	if oi.Funding < pflsMinCapacity {
+		return pflsMinCapacity
 	}
 	return oi.Funding
 }

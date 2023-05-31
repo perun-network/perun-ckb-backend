@@ -20,12 +20,13 @@ type PerunScriptHandler struct {
 	pclsDep types.CellDep
 	pflsDep types.CellDep
 
-	pctsCodeHash types.Hash
-	pctsHashType types.ScriptHashType
-	pclsCodeHash types.Hash
-	pclsHashType types.ScriptHashType
-	pflsCodeHash types.Hash
-	pflsHashType types.ScriptHashType
+	pctsCodeHash    types.Hash
+	pctsHashType    types.ScriptHashType
+	pclsCodeHash    types.Hash
+	pclsHashType    types.ScriptHashType
+	pflsCodeHash    types.Hash
+	pflsHashType    types.ScriptHashType
+	pflsMinCapacity uint64
 
 	defaultLockScript    types.Script
 	defaultLockScriptDep types.CellDep
@@ -44,6 +45,7 @@ func NewPerunScriptHandler(
 	pctsCodeHash types.Hash, pctsHashType types.ScriptHashType,
 	pclsCodeHash types.Hash, pclsHashType types.ScriptHashType,
 	pflsCodeHash types.Hash, pflsHashType types.ScriptHashType,
+	pflsMinCapacity uint64,
 	defaultLockScript types.Script,
 	defaultLockScriptDep types.CellDep,
 ) *PerunScriptHandler {
@@ -57,8 +59,27 @@ func NewPerunScriptHandler(
 		pclsHashType:         pclsHashType,
 		pflsCodeHash:         pflsCodeHash,
 		pflsHashType:         pflsHashType,
+		pflsMinCapacity:      pflsMinCapacity,
 		defaultLockScript:    defaultLockScript,
 		defaultLockScriptDep: defaultLockScriptDep,
+	}
+}
+
+func NewPerunScriptHandlerWithDeployment(deployment backend.Deployment) *PerunScriptHandler {
+	return &PerunScriptHandler{
+		pctsDep: deployment.PCTSDep,
+		pclsDep: deployment.PCLSDep,
+		pflsDep: deployment.PFLSDep,
+		// set all fields using deployment
+		pctsCodeHash:         deployment.PCTSCodeHash,
+		pctsHashType:         deployment.PCTSHashType,
+		pclsCodeHash:         deployment.PCLSCodeHash,
+		pclsHashType:         deployment.PCLSHashType,
+		pflsCodeHash:         deployment.PFLSCodeHash,
+		pflsHashType:         deployment.PFLSHashType,
+		pflsMinCapacity:      deployment.PFLSMinCapacity,
+		defaultLockScript:    deployment.DefaultLockScript,
+		defaultLockScriptDep: deployment.DefaultLockScriptDep,
 	}
 }
 
@@ -128,7 +149,7 @@ func (psh *PerunScriptHandler) buildOpenTransaction(builder collector.Transactio
 	fundsLockScript := psh.mkFundsLockScript(channelTypeScript)
 	channelFundsCell, fundsData := backend.CKBOutput{
 		Output: molecule.NewCellOutputBuilder().
-			Capacity(*types.PackUint64(openInfo.MinFunding())).
+			Capacity(*types.PackUint64(psh.pflsMinCapacity)).
 			Lock(*fundsLockScript.Pack()).
 			Build(),
 		Data: molecule.NewBytesBuilder().Build(),
@@ -294,7 +315,6 @@ func (psh PerunScriptHandler) mkChannelConstants(params *channel.Params, token m
 	pclsHashType := psh.pclsHashType.Pack()
 	pflsCode := psh.pflsCodeHash.Pack()
 	pflsHashType := psh.pflsHashType.Pack()
-	pflsMinCapacity := backend.MinCapacityForPFLS()
 
 	return molecule.NewChannelConstantsBuilder().
 		Params(chanParams).
@@ -302,7 +322,7 @@ func (psh PerunScriptHandler) mkChannelConstants(params *channel.Params, token m
 		PclsHashType(*pclsHashType).
 		PflsCodeHash(*pflsCode).
 		PflsHashType(*pflsHashType).
-		PflsMinCapacity(*types.PackUint64(pflsMinCapacity)).
+		PflsMinCapacity(*types.PackUint64(psh.pflsMinCapacity)).
 		ThreadToken(token).
 		Build()
 }

@@ -34,6 +34,7 @@ func TestScriptHandler(t *testing.T) {
 		types.Hash{}, types.HashTypeData,
 		types.Hash{}, types.HashTypeData,
 		types.Hash{}, types.HashTypeData,
+		0,
 		*defaultLock,
 		*defaultLockDep,
 	)
