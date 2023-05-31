@@ -308,8 +308,44 @@ func (c Client) ForceClose(ctx context.Context, id channel.ID, state *channel.St
 }
 
 func (c Client) Abort(ctx context.Context, script *types.Script) error {
-	//TODO implement me
-	panic("implement me")
+	channelCell, err := c.getExactChannelLiveCell(ctx, script)
+	if err != nil {
+		return fmt.Errorf("getting channel live cell: %w", err)
+	}
+	pcts := channelCell.Output.Type
+	assets, err := c.getAssets(ctx, pcts)
+	if err != nil {
+		return fmt.Errorf("retrieving assets locked in channel: %w", err)
+	}
+	header, err := c.client.GetTipHeader(ctx)
+	if err != nil {
+		return fmt.Errorf("getting tip header: %w", err)
+	}
+	occupiedChannelCapacity := channelCell.Output.OccupiedCapacity(channelCell.OutputData)
+	constants, err := molecule.ChannelConstantsFromSlice(channelCell.Output.Type.Args, false)
+	if err != nil {
+		return fmt.Errorf("parsing channel constants: %w", err)
+	}
+	params, err := encoding.UnpackChannelParameters(*constants.Params())
+	if err != nil {
+		return fmt.Errorf("parsing channel parameters: %w", err)
+	}
+
+	status, err := molecule.ChannelStatusFromSlice(channelCell.OutputData, false)
+	balA := encoding.UnpackUint64(status.State().Balances().Nth0())
+	if err != nil {
+		return fmt.Errorf("parsing channel status: %w", err)
+	}
+
+	ai := transaction.AbortInfo{
+		ChannelInput:    types.CellInput{PreviousOutput: channelCell.OutPoint},
+		AssetInputs:     mkCellInputs(assets),
+		FundingStatus:   [2]uint64{balA, 0},
+		Params:          params,
+		Headers:         []types.Hash{header.Hash},
+		ChannelCapacity: occupiedChannelCapacity,
+	}
+	return c.submitTxWithArgument(ctx, ai)
 }
 
 func (c Client) GetChannelWithExactPCTS(ctx context.Context, pcts *types.Script) (BlockNumber, *molecule.ChannelStatus, error) {
