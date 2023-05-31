@@ -67,10 +67,9 @@ func NewPerunScriptHandler(
 
 func NewPerunScriptHandlerWithDeployment(deployment backend.Deployment) *PerunScriptHandler {
 	return &PerunScriptHandler{
-		pctsDep: deployment.PCTSDep,
-		pclsDep: deployment.PCLSDep,
-		pflsDep: deployment.PFLSDep,
-		// set all fields using deployment
+		pctsDep:              deployment.PCTSDep,
+		pclsDep:              deployment.PCLSDep,
+		pflsDep:              deployment.PFLSDep,
 		pctsCodeHash:         deployment.PCTSCodeHash,
 		pctsHashType:         deployment.PCTSHashType,
 		pclsCodeHash:         deployment.PCLSCodeHash,
@@ -223,7 +222,10 @@ func (psh *PerunScriptHandler) buildFundTransaction(builder collector.Transactio
 		Since:          0,
 		PreviousOutput: &fundInfo.ChannelCell,
 	})
-	builder.SetWitness(uint(channelInputIndex), types.WitnessTypeInputType, psh.mkWitnessFund())
+	err := builder.SetWitness(uint(channelInputIndex), types.WitnessTypeInputType, psh.mkWitnessFund())
+	if err != nil {
+		return false, err
+	}
 
 	// Channel cell output.
 	channelLockScript := psh.mkChannelLockScript()
@@ -258,7 +260,10 @@ func (psh *PerunScriptHandler) buildDisputeTransaction(builder collector.Transac
 		Since:          0,
 		PreviousOutput: &disputeInfo.ChannelCell,
 	})
-	builder.SetWitness(uint(channelInputIndex), types.WitnessTypeInputType, psh.mkWitnessDispute(disputeInfo.SigA, disputeInfo.SigB))
+	err := builder.SetWitness(uint(channelInputIndex), types.WitnessTypeInputType, psh.mkWitnessDispute(disputeInfo.SigA, disputeInfo.SigB))
+	if err != nil {
+		return false, err
+	}
 
 	// Channel cell output.
 	channelLockScript := psh.mkChannelLockScript()
