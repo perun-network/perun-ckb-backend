@@ -200,12 +200,29 @@ func (c Client) Fund(ctx context.Context, pcts *types.Script, state *channel.Sta
 	if err != nil {
 		return fmt.Errorf("getting channel live cell: %w", err)
 	}
+	channelConsts, err := molecule.ChannelConstantsFromSlice(pcts.Args, false)
+	if err != nil {
+		return fmt.Errorf("decoding channel constants: %w", err)
+	}
+	ct, err := molecule.ChannelTokenFromSlice(channelConsts.ThreadToken().AsSlice(), false)
+	if err != nil {
+		return fmt.Errorf("decoding channel token: %w", err)
+	}
+	header, err := c.client.GetTipHeader(ctx)
+	if err != nil {
+		return fmt.Errorf("getting tip header: %w", err)
+	}
+
 	fi := transaction.FundInfo{
 		Amount:      amount.Uint64(),
 		ChannelCell: *channelCell.OutPoint,
 		Params:      params,
-		Token:       backend.Token{},
-		Status:      molecule.ChannelStatus{},
+		Token: backend.Token{
+			Outpoint: *ct.OutPoint(),
+			Token:    *ct,
+		},
+		Status: molecule.ChannelStatus{},
+		Header: header.Hash,
 	}
 	return c.submitTxWithArgument(ctx, fi)
 }
