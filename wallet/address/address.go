@@ -207,7 +207,7 @@ func (p *Participant) UnpackOffChainParticipant(op *molecule.OffChainParticipant
 // Allows to convert the given participant to a CKB address which can be used
 // with the CKB SDK.
 func (p Participant) ToCKBAddress(network types.Network) (address.Address, error) {
-	addrScript, err := p.GetSecp256k1Blake160SighashAll()
+	addrScript, err := GetSecp256k1Blake160SighashAll(p.PubKey)
 	if err != nil {
 		return address.Address{}, fmt.Errorf("generating default address script: %v", err)
 	}
