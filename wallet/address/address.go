@@ -3,8 +3,6 @@ package address
 import (
 	"encoding/hex"
 	"errors"
-	"fmt"
-
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/address"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/systemscript"
@@ -204,15 +202,11 @@ func (p *Participant) UnpackOffChainParticipant(op *molecule.OffChainParticipant
 	return nil
 }
 
-// Allows to convert the given participant to a CKB address which can be used
-// with the CKB SDK.
-func (p Participant) ToCKBAddress(network types.Network) (address.Address, error) {
-	addrScript, err := GetSecp256k1Blake160SighashAll(p.PubKey)
-	if err != nil {
-		return address.Address{}, fmt.Errorf("generating default address script: %v", err)
-	}
+// ToCKBAddress allows to convert the given participant to a CKB address which can be used
+// with the CKB SDK. The script is set to the PaymentScript of the participant.
+func (p Participant) ToCKBAddress(network types.Network) address.Address {
 	return address.Address{
-		Script:  addrScript,
+		Script:  p.PaymentScript,
 		Network: network,
-	}, err
+	}
 }

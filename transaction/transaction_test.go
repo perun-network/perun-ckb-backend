@@ -23,8 +23,7 @@ import (
 func TestScriptHandler(t *testing.T) {
 	rng := ptest.Prng(t)
 	sender := wtest.NewRandomParticipant(rng)
-	senderCkbAddr, err := sender.ToCKBAddress(types.NetworkTest)
-	require.NoError(t, err, "converting perun.backend.Participant to ckb-sdk-go address")
+	senderCkbAddr := sender.ToCKBAddress(types.NetworkTest)
 	defaultLock := btest.NewRandomScript(rng)
 	defaultLockDep := btest.NewRandomCellDep(rng)
 	pctsDep := btest.NewRandomCellDep(rng)
