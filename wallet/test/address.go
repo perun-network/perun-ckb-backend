@@ -15,10 +15,10 @@ func NewRandomParticipant(rng *rand.Rand) *address.Participant {
 		panic(fmt.Sprintf("Generating private keys for participant: %v", err))
 	}
 	paymentScript := btest.NewRandomScript(rng)
+	unlockScript := btest.NewRandomScript(rng)
 	return &address.Participant{
-		PubKey:             acc.PubKey(),
-		PaymentScriptHash:  paymentScript.Hash(),
-		UnlockScriptHash:   btest.NewRandomScript(rng).Hash(),
-		PaymentMinCapacity: paymentScript.OccupiedCapacity(),
+		PubKey:        acc.PubKey(),
+		PaymentScript: paymentScript,
+		UnlockScript:  unlockScript,
 	}
 }
