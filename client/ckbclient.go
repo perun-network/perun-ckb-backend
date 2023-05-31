@@ -12,6 +12,7 @@ import (
 	"github.com/nervosnetwork/ckb-sdk-go/v2/indexer"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/rpc"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/systemscript"
+	ckbtransaction "github.com/nervosnetwork/ckb-sdk-go/v2/transaction"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types/molecule"
 	"perun.network/go-perun/channel"
@@ -88,7 +89,11 @@ type Client struct {
 var _ CKBClient = (*Client)(nil)
 
 func (c Client) Start(ctx context.Context, params *channel.Params, state *channel.State) (*types.Script, error) {
-	channelToken, err := c.createChannelToken(ctx)
+	iter, err := c.mkMyCellIterator()
+	if err != nil {
+		return nil, fmt.Errorf("creating cell iterator: %w", err)
+	}
+	channelToken, err := c.createOrGetChannelToken(ctx, iter)
 	if err != nil {
 		return nil, fmt.Errorf("creating channel token: %w", err)
 	}
@@ -102,24 +107,49 @@ func (c Client) Start(ctx context.Context, params *channel.Params, state *channe
 		State:        state,
 	}
 
-	if err := c.submitTxWithArgument(ctx, oi); err != nil {
+	builder, err := c.newPerunTransactionBuilder(iter)
+	if err != nil {
+		return nil, fmt.Errorf("creating Perun transaction builder: %w", err)
+	}
+	tx, err := builder.Build(oi)
+	if err != nil {
+		return nil, fmt.Errorf("building open transaction: %w", err)
+	}
+	if err := c.submitTx(ctx, tx); err != nil {
 		return nil, fmt.Errorf("submitting transaction: %w", err)
 	}
 
 	return oi.GetPCTS(), nil
 }
 
-func (c Client) newPerunTransactionBuilder() (*transaction.PerunTransactionBuilder, error) {
+// newPerunScriptHandler creates a new PerunScriptHandler. The iterator used to
+// fetch the live cells for the account associated with this client can be
+// injected if it was necessary in the outer scope.
+func (c Client) newPerunTransactionBuilder(withIterator ...collector.CellIterator) (*transaction.PerunTransactionBuilder, error) {
 	sender, err := c.signer.Address.Encode()
 	if err != nil {
 		return nil, fmt.Errorf("encoding sender address: %w", err)
 	}
-	iter, err := collector.NewLiveCellIteratorFromAddress(c.client, sender)
-	if err != nil {
-		return nil, fmt.Errorf("creating cell iterator: %w", err)
+	if len(withIterator) > 1 {
+		panic("at most one iterator can be provided")
+	}
+	var iter collector.CellIterator
+	if len(withIterator) == 0 {
+		iter, err = collector.NewLiveCellIteratorFromAddress(c.client, sender)
+		if err != nil {
+			return nil, fmt.Errorf("creating cell iterator: %w", err)
+		}
+	} else {
+		iter = withIterator[0]
 	}
 	return transaction.NewPerunTransactionBuilder(c.deployment.Network, iter, &c.psh, c.signer.Address)
+}
 
+func (c Client) submitTx(ctx context.Context, tx *ckbtransaction.TransactionWithScriptGroups) error {
+	if err := c.signer.SignTransaction(tx); err != nil {
+		return fmt.Errorf("signing transaction: %w", err)
+	}
+	return c.sendAndAwait(ctx, tx.TxView)
 }
 
 // submitTxWithArgument submits a transaction whose type is determined by the
@@ -132,23 +162,35 @@ func (c Client) submitTxWithArgument(ctx context.Context, txTypeArgument ...inte
 
 	tx, err := b.Build(txTypeArgument)
 	if err != nil {
-		return fmt.Errorf("building open transaction: %w", err)
+		return fmt.Errorf("building transaction: %w", err)
 	}
-
-	if err := c.signer.SignTransaction(tx); err != nil {
-		return fmt.Errorf("signing open transaction: %w", err)
-	}
-
-	if err := c.sendAndAwait(ctx, tx.TxView); err != nil {
-		return fmt.Errorf("sending open transaction: %w", err)
-	}
-	return nil
+	return c.submitTx(ctx, tx)
 }
 
-func (c Client) createChannelToken(ctx context.Context) (backend.Token, error) {
-	// TODO: We could also just use the first normal input cell instead of a
-	// dedicated channel token cell.
-	panic("implement me")
+func (c Client) mkMyCellIterator() (collector.CellIterator, error) {
+	addr, err := c.signer.Address.Encode()
+	if err != nil {
+		return nil, fmt.Errorf("encoding sender address: %w", err)
+	}
+	return collector.NewLiveCellIteratorFromAddress(c.client, addr)
+}
+
+func (c Client) createOrGetChannelToken(ctx context.Context, iter collector.CellIterator) (backend.Token, error) {
+	// TODO: This just takes the first available cell. This should be improved in
+	// the next version, where we make sure to reuse the funding cells instead
+	// of a dedicated cell for the channel token.
+	if !iter.HasNext() {
+		return backend.Token{}, errors.New("sending account has no funds available")
+	}
+	transactionInput := iter.Next()
+	channelToken := molecule.
+		NewChannelTokenBuilder().
+		OutPoint(*transactionInput.OutPoint.Pack()).
+		Build()
+	return backend.Token{
+		Outpoint: *transactionInput.OutPoint.Pack(),
+		Token:    channelToken,
+	}, nil
 }
 
 func (c Client) Fund(ctx context.Context, pcts *types.Script, state *channel.State) error {
