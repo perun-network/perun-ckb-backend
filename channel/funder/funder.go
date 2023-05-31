@@ -59,7 +59,7 @@ polling:
 	for i := 0; i < f.MaxIterationsUntilAbort; i++ {
 		select {
 		case <-ctx.Done():
-			return f.client.Abort(ctx, script)
+			return f.client.Abort(ctx, script, req.Params)
 		case <-time.After(f.PollingInterval):
 			_, cs, err := f.client.GetChannelWithExactPCTS(ctx, script)
 			if err != nil {
@@ -70,7 +70,7 @@ polling:
 			}
 		}
 	}
-	return f.client.Abort(ctx, script)
+	return f.client.Abort(ctx, script, req.Params)
 }
 
 func (f Funder) fundPartyB(ctx context.Context, req channel.FundingReq) error {
@@ -91,7 +91,7 @@ polling:
 			if encoding.ToBool(*channelStatus.Funded()) {
 				return nil
 			}
-			return f.client.Fund(ctx, script, req.State)
+			return f.client.Fund(ctx, script, req.State, req.Params)
 		}
 	}
 }
