@@ -172,13 +172,13 @@ func (c Client) Dispute(ctx context.Context, id channel.ID, state *channel.State
 	if err != nil {
 		return fmt.Errorf("getting channel live cell: %w", err)
 	}
-	constants, err := molecule.ChannelConstantsFromSlice(channelCell.Output.Type.Args, false)
-	if err != nil {
-		return fmt.Errorf("parsing channel constants: %w", err)
-	}
 	header, err := c.client.GetTipHeader(ctx)
 	if err != nil {
 		return fmt.Errorf("getting tip header: %w", err)
+	}
+	constants, err := molecule.ChannelConstantsFromSlice(channelCell.Output.Type.Args, false)
+	if err != nil {
+		return fmt.Errorf("parsing channel constants: %w", err)
 	}
 	params, err := encoding.UnpackChannelParameters(*constants.Params())
 	if err != nil {
@@ -190,7 +190,7 @@ func (c Client) Dispute(ctx context.Context, id channel.ID, state *channel.State
 	}
 	sigA := encoding.PackSignature(sigs[0])
 	sigB := encoding.PackSignature(sigs[1])
-	_ = transaction.DisputeInfo{
+	di := transaction.DisputeInfo{
 		ChannelCell: *channelCell.OutPoint,
 		Status:      *status,
 		Params:      params,
@@ -199,8 +199,7 @@ func (c Client) Dispute(ctx context.Context, id channel.ID, state *channel.State
 		SigA:        *sigA,
 		SigB:        *sigB,
 	}
-	//TODO implement me
-	panic("implement me")
+	return c.submitTxWithArgument(ctx, di)
 }
 
 func (c Client) Close(ctx context.Context, id channel.ID, state *channel.State, sigs []wallet.Sig) error {
