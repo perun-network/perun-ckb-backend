@@ -3,12 +3,10 @@ package molecule
 import (
 	"encoding/binary"
 	"errors"
-	"fmt"
 
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types/molecule"
-	"perun.network/perun-ckb-backend/wallet/address"
 )
 
 func PackByte32(b [32]byte) *molecule.Byte32 {
@@ -37,20 +35,4 @@ func ToHashType(b *molecule.Byte) (types.ScriptHashType, error) {
 
 func UnpackSEC1EncodedPubKey(b *molecule.SEC1EncodedPubKey) (*secp256k1.PublicKey, error) {
 	return secp256k1.ParsePubKey(b.AsSlice())
-}
-
-func UnpackParticipant(p *molecule.Participant) (address.Participant, error) {
-	pubKey, err := UnpackSEC1EncodedPubKey(p.PubKey())
-	if err != nil {
-		return address.Participant{}, fmt.Errorf("unpacking pubkey: %w", err)
-	}
-	paymentScriptHash := types.UnpackHash(p.PaymentScriptHash())
-	unlockScriptHash := types.UnpackHash(p.UnlockScriptHash())
-	paymentMinCapacity := UnpackUint64(p.PaymentMinCapacity())
-	return address.Participant{
-		PubKey:             pubKey,
-		PaymentScriptHash:  paymentScriptHash,
-		UnlockScriptHash:   unlockScriptHash,
-		PaymentMinCapacity: paymentMinCapacity,
-	}, nil
 }

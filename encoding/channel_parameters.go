@@ -50,25 +50,6 @@ func PackChannelParameters(params *channel.Params) (molecule.ChannelParameters, 
 		Build(), nil
 }
 
-func UnpackChannelParameters(params molecule.ChannelParameters) (*channel.Params, error) {
-	cd := UnpackUint64(params.ChallengeDuration())
-	partyA, err := UnpackParticipant(params.PartyA())
-	if err != nil {
-		return nil, fmt.Errorf("unpacking first party: %w", err)
-	}
-	partyB, err := UnpackParticipant(params.PartyB())
-	if err != nil {
-		return nil, fmt.Errorf("unpacking second party: %w", err)
-	}
-	nonce, err := UnpackNonce(params.Nonce())
-	if err != nil {
-		return nil, fmt.Errorf("unpacking nonce: %w", err)
-	}
-	isLedger := ToBool(*params.IsLedgerChannel())
-	isVirtual := ToBool(*params.IsVirtualChannel())
-	return channel.NewParams(cd, []gpwallet.Address{&partyA, &partyB}, nil, nonce, isLedger, isVirtual)
-}
-
 func PackAddressToOnChainParticipant(addr gpwallet.Address) (molecule.Participant, error) {
 	a, ok := addr.(*address.Participant)
 	if !ok {
@@ -92,7 +73,7 @@ func PackNonce(nonce channel.Nonce) (*molecule.Byte32, error) {
 }
 
 func UnpackNonce(nonce *molecule.Byte32) (channel.Nonce, error) {
-	bs, err := UnpackByte32(nonce)
+	bs, err := molecule2.UnpackByte32(nonce)
 	if err != nil {
 		return nil, fmt.Errorf("unpacking byte32: %w", err)
 	}
