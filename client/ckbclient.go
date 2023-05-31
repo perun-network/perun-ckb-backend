@@ -350,6 +350,9 @@ func (c Client) Abort(ctx context.Context, script *types.Script) error {
 
 func (c Client) GetChannelWithExactPCTS(ctx context.Context, pcts *types.Script) (BlockNumber, *molecule.ChannelStatus, error) {
 	cell, err := c.getExactChannelLiveCell(ctx, pcts)
+	if err != nil {
+		return 0, nil, fmt.Errorf("getting exact channel live cell: %w", err)
+	}
 	channelStatus, err := molecule.ChannelStatusFromSlice(cell.OutputData, false)
 	if err != nil {
 		return 0, nil, err
@@ -423,8 +426,8 @@ func (c Client) sendAndAwait(ctx context.Context, tx *types.Transaction) error {
 	// Wait for the transaction to be committed on-chain.
 	txWithStatus := &types.TransactionWithStatus{}
 	ticker := time.NewTicker(defaultPollingInterval)
-	for !(txWithStatus.TxStatus.Status == types.TransactionStatusCommitted ||
-		txWithStatus.TxStatus.Status == types.TransactionStatusRejected) {
+	for txWithStatus.TxStatus.Status != types.TransactionStatusCommitted &&
+		txWithStatus.TxStatus.Status != types.TransactionStatusRejected {
 		select {
 		case <-ctx.Done():
 			return fmt.Errorf("context done: %w", ctx.Err())
@@ -534,6 +537,9 @@ func (c Client) getChannelLiveCellWithCache(ctx context.Context, id channel.ID) 
 			return nil, nil, err
 		}
 		status, err := molecule.ChannelStatusFromSlice(cell.OutputData, false)
+		if err != nil {
+			return nil, nil, fmt.Errorf("converting cell outputdata to ChannelStatus: %w", err)
+		}
 		return cell, status, nil
 	}
 	liveChannelCells, err := c.getAllChannelLiveCells(ctx)
