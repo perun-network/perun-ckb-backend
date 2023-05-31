@@ -22,8 +22,9 @@ type Deployment struct {
 	PCLSCodeHash types.Hash
 	PCLSHashType types.ScriptHashType
 
-	PFLSCodeHash types.Hash
-	PFLSHashType types.ScriptHashType
+	PFLSCodeHash    types.Hash
+	PFLSHashType    types.ScriptHashType
+	PFLSMinCapacity uint64
 
 	DefaultLockScript    types.Script
 	DefaultLockScriptDep types.CellDep

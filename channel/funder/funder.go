@@ -9,7 +9,7 @@ import (
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types/molecule"
 	"math"
 	"perun.network/go-perun/channel"
-	"perun.network/perun-ckb-backend/channel/defaults"
+	"perun.network/perun-ckb-backend/backend"
 	"perun.network/perun-ckb-backend/client"
 	"perun.network/perun-ckb-backend/encoding"
 	molecule2 "perun.network/perun-ckb-backend/encoding/molecule"
@@ -20,33 +20,19 @@ import (
 const DefaultPollingInterval = time.Duration(5) * time.Second
 const DefaultMaxIterationsUntilAbort = 12
 
-type ValidChannelConstants struct {
-	PCLSCodeHash    types.Hash
-	PCLSHashType    types.ScriptHashType
-	PFLSCodeHash    types.Hash
-	PFLSHashType    types.ScriptHashType
-	PFLSMinCapacity uint64
-}
-
 type Funder struct {
 	client                  client.CKBClient
+	Deployment              backend.Deployment
 	PollingInterval         time.Duration
 	MaxIterationsUntilAbort int
-	Constants               ValidChannelConstants
 }
 
-func NewDefaultFunder(client client.CKBClient) *Funder {
+func NewDefaultFunder(client client.CKBClient, deployment backend.Deployment) *Funder {
 	return &Funder{
 		client:                  client,
+		Deployment:              deployment,
 		PollingInterval:         DefaultPollingInterval,
 		MaxIterationsUntilAbort: DefaultMaxIterationsUntilAbort,
-		Constants: ValidChannelConstants{
-			PCLSCodeHash:    defaults.DefaultPCLSCodeHash,
-			PCLSHashType:    defaults.DefaultPCLSHashType,
-			PFLSCodeHash:    defaults.DefaultPFLSCodeHash,
-			PFLSHashType:    defaults.DefaultPFLSHashType,
-			PFLSMinCapacity: defaults.DefaultPFLSMinCapacity,
-		},
 	}
 }
 
@@ -131,11 +117,11 @@ func (f Funder) verifyChannelIntegrity(req channel.FundingReq, constants *molecu
 	if err != nil {
 		return err
 	}
-	if types.UnpackHash(constants.PclsCodeHash()) != f.Constants.PCLSCodeHash ||
-		onchainPCLSHashType != f.Constants.PCLSHashType ||
-		types.UnpackHash(constants.PflsCodeHash()) != f.Constants.PFLSCodeHash ||
-		onchainPFLSHashType != f.Constants.PFLSHashType ||
-		molecule2.UnpackUint64(constants.PflsMinCapacity()) != f.Constants.PFLSMinCapacity {
+	if types.UnpackHash(constants.PclsCodeHash()) != f.Deployment.PCLSCodeHash ||
+		onchainPCLSHashType != f.Deployment.PCLSHashType ||
+		types.UnpackHash(constants.PflsCodeHash()) != f.Deployment.PFLSCodeHash ||
+		onchainPFLSHashType != f.Deployment.PFLSHashType ||
+		molecule2.UnpackUint64(constants.PflsMinCapacity()) != f.Deployment.PFLSMinCapacity {
 		return errors.New("invalid channel constants")
 	}
 	challengeDuration := molecule2.UnpackUint64(constants.Params().ChallengeDuration())
