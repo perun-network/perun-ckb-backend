@@ -23,6 +23,9 @@ func NewPerunTransactionBuilder(network types.Network, iterator collector.CellIt
 	if err != nil {
 		return nil, fmt.Errorf("encoding address: %w", err)
 	}
-	b.AddChangeOutputByAddress(encodedAddr)
+	err = b.AddChangeOutputByAddress(encodedAddr)
+	if err != nil {
+		return nil, fmt.Errorf("adding change output: %w", err)
+	}
 	return b, nil
 }
