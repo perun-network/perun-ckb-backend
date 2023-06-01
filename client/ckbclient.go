@@ -7,11 +7,9 @@ import (
 	"math"
 	"time"
 
-	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/collector"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/indexer"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/rpc"
-	"github.com/nervosnetwork/ckb-sdk-go/v2/systemscript"
 	ckbtransaction "github.com/nervosnetwork/ckb-sdk-go/v2/transaction"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types/molecule"
@@ -405,43 +403,6 @@ func NewClient(rpcClient rpc.Client, deployment backend.Deployment) (*Client, er
 		deployment: deployment,
 		cache:      nil,
 	}, nil
-}
-
-// findLiveCKBCells finds one or more live cells containing at least the given
-// capacity belonging to this client.
-func (c Client) findLiveCKBCells(ctx context.Context, wanted uint64, pubkey *secp256k1.PublicKey) ([]molecule.CellInput, error) {
-	defaultLockscript, err := systemscript.Secp256K1Blake160SignhashAllByPublicKey(pubkey.SerializeCompressed())
-	if err != nil {
-		return nil, fmt.Errorf("generating default lockscript: %w", err)
-	}
-	searchKey := &indexer.SearchKey{
-		Script:           defaultLockscript,
-		ScriptType:       types.ScriptTypeType,
-		ScriptSearchMode: types.ScriptSearchModeExact,
-		Filter:           nil,
-	}
-
-	iter := collector.NewLiveCellIterator(c.client, searchKey)
-	return cellsContainingAtLeastValue(wanted, iter)
-}
-
-func cellsContainingAtLeastValue(value uint64, iter collector.CellIterator) ([]molecule.CellInput, error) {
-	cells := make([]molecule.CellInput, 0, 1)
-	accumulatedCapacity := uint64(0)
-	for iter.HasNext() {
-		cell := iter.Next()
-		accumulatedCapacity += cell.Output.Capacity
-		cells = append(cells, molecule.NewCellInputBuilder().PreviousOutput(*cell.OutPoint.Pack()).Build())
-		if accumulatedCapacity >= value {
-			break
-		}
-	}
-
-	if accumulatedCapacity < value {
-		return nil, fmt.Errorf("not enough capacity, wanted %d, got %d", value, accumulatedCapacity)
-	}
-
-	return cells, nil
 }
 
 const defaultPollingInterval = 4 * time.Second
