@@ -15,7 +15,6 @@ func NewRandomChannelStatus(rng *rand.Rand, opts ...ChannelStatusOpt) *molecule.
 	s := molecule.NewChannelStatusBuilder()
 	s.Funded(encoding.FromBool(rng.Intn(2) == 1))
 	s.Disputed(encoding.FromBool(rng.Intn(2) == 1))
-	s.Funding(*NewRandomBalances(rng))
 
 	for _, opt := range opts {
 		opt(s)
@@ -32,11 +31,5 @@ func WithState(state *channel.State) ChannelStatusOpt {
 			panic(fmt.Sprintf("packing channel state: %v", err))
 		}
 		cs.State(encodedCs)
-	}
-}
-
-func WithFunding(fs molecule.Balances) ChannelStatusOpt {
-	return func(cs *molecule.ChannelStatusBuilder) {
-		cs.Funding(fs)
 	}
 }

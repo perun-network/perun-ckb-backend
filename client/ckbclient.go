@@ -17,9 +17,7 @@ import (
 	"perun.network/go-perun/wallet"
 	"perun.network/perun-ckb-backend/backend"
 	ckbchannel "perun.network/perun-ckb-backend/channel"
-	"perun.network/perun-ckb-backend/channel/asset"
 	"perun.network/perun-ckb-backend/encoding"
-	molecule2 "perun.network/perun-ckb-backend/encoding/molecule"
 	"perun.network/perun-ckb-backend/transaction"
 )
 
@@ -35,7 +33,7 @@ type CKBClient interface {
 	Start(ctx context.Context, params *channel.Params, state *channel.State) (*types.Script, error)
 
 	// Abort aborts the channel with the given channel token.
-	Abort(ctx context.Context, pcts *types.Script, params *channel.Params) error
+	Abort(ctx context.Context, pcts *types.Script, params *channel.Params, state *channel.State) error
 
 	// Fund funds the channel with the given channel token. The implementation can assume that Fund will only ever
 	// be performed by Party B.
@@ -75,6 +73,8 @@ type CKBClient interface {
 	GetBlockTime(ctx context.Context, blockNumber BlockNumber) (time.Time, error)
 }
 
+// TODO: Require sudt handlers!
+
 type Client struct {
 	client rpc.Client
 
@@ -97,14 +97,7 @@ func (c Client) Start(ctx context.Context, params *channel.Params, state *channe
 		return nil, fmt.Errorf("creating channel token: %w", err)
 	}
 	cid := ckbchannel.Backend.CalcID(params)
-	funding := state.Balance(channel.Index(0), asset.Asset)
-	oi := &transaction.OpenInfo{
-		ChannelID:    cid,
-		ChannelToken: channelToken,
-		Funding:      funding.Uint64(),
-		Params:       params,
-		State:        state,
-	}
+	oi := transaction.NewOpenInfo(cid, channelToken, params, state)
 
 	builder, err := c.newPerunTransactionBuilder(iter)
 	if err != nil {
@@ -193,35 +186,19 @@ func (c Client) createOrGetChannelToken(ctx context.Context, iter collector.Cell
 }
 
 func (c Client) Fund(ctx context.Context, pcts *types.Script, state *channel.State, params *channel.Params) error {
-	amount := state.Balance(channel.Index(1), asset.Asset)
 	channelCell, err := c.getExactChannelLiveCell(ctx, pcts)
 	if err != nil {
 		return fmt.Errorf("getting channel live cell: %w", err)
-	}
-	channelConsts, err := molecule.ChannelConstantsFromSlice(pcts.Args, false)
-	if err != nil {
-		return fmt.Errorf("decoding channel constants: %w", err)
-	}
-	ct, err := molecule.ChannelTokenFromSlice(channelConsts.ThreadToken().AsSlice(), false)
-	if err != nil {
-		return fmt.Errorf("decoding channel token: %w", err)
 	}
 	header, err := c.client.GetTipHeader(ctx)
 	if err != nil {
 		return fmt.Errorf("getting tip header: %w", err)
 	}
-
-	fi := transaction.FundInfo{
-		Amount:      amount.Uint64(),
-		ChannelCell: *channelCell.OutPoint,
-		Params:      params,
-		Token: backend.Token{
-			Outpoint: *ct.OutPoint(),
-			Token:    *ct,
-		},
-		Status: molecule.ChannelStatus{},
-		Header: header.Hash,
+	channelStatus, err := molecule.ChannelStatusFromSlice(channelCell.OutputData, false)
+	if err != nil {
+		return err
 	}
+	fi := transaction.NewFundInfo(*channelCell.OutPoint, params, state, pcts, *channelStatus, header.Hash)
 	return c.submitTxWithArgument(ctx, fi)
 }
 
@@ -234,25 +211,13 @@ func (c Client) Dispute(ctx context.Context, id channel.ID, state *channel.State
 	if err != nil {
 		return fmt.Errorf("getting tip header: %w", err)
 	}
-	constants, err := molecule.ChannelConstantsFromSlice(channelCell.Output.Type.Args, false)
-	if err != nil {
-		return fmt.Errorf("parsing channel constants: %w", err)
-	}
 
 	if len(sigs) != 2 {
 		return fmt.Errorf("expected 2 signatures, got %d", len(sigs))
 	}
 	sigA := encoding.PackSignature(sigs[0])
 	sigB := encoding.PackSignature(sigs[1])
-	di := transaction.DisputeInfo{
-		ChannelCell: *channelCell.OutPoint,
-		Status:      *status,
-		Params:      params,
-		Header:      header.Hash,
-		Token:       *constants.ThreadToken(),
-		SigA:        *sigA,
-		SigB:        *sigB,
-	}
+	di := transaction.NewDisputeInfo(*channelCell.OutPoint, *status, params, header.Hash, channelCell.Output.Type, *sigA, *sigB)
 	return c.submitTxWithArgument(ctx, di)
 }
 
@@ -272,17 +237,15 @@ func (c Client) Close(ctx context.Context, id channel.ID, state *channel.State, 
 	}
 	occupiedChannelCapacity := channelCell.Output.OccupiedCapacity(channelCell.OutputData)
 
-	ci := transaction.CloseInfo{
-		ChannelCapacity: occupiedChannelCapacity,
-		ChannelInput: types.CellInput{
-			PreviousOutput: channelCell.OutPoint,
-		},
-		AssetInputs:      mkCellInputs(assets),
-		Headers:          []types.Hash{header.Hash},
-		Params:           params,
-		State:            state,
-		PaddedSignatures: sigs,
-	}
+	ci := transaction.NewCloseInfo(
+		occupiedChannelCapacity,
+		types.CellInput{PreviousOutput: channelCell.OutPoint},
+		mkCellInputs(assets),
+		[]types.Hash{header.Hash},
+		params,
+		state,
+		sigs,
+	)
 
 	return c.submitTxWithArgument(ctx, ci)
 }
@@ -333,18 +296,19 @@ func (c Client) ForceClose(ctx context.Context, id channel.ID, state *channel.St
 		return fmt.Errorf("getting tip header: %w", err)
 	}
 	occupiedChannelCapacity := channelCell.Output.OccupiedCapacity(channelCell.OutputData)
-	fci := transaction.ForceCloseInfo{
-		ChannelInput:    types.CellInput{PreviousOutput: channelCell.OutPoint},
-		AssetInputs:     mkCellInputs(assets),
-		Headers:         []types.Hash{header.Hash},
-		State:           state,
-		Params:          params,
-		ChannelCapacity: occupiedChannelCapacity,
-	}
+	fci := transaction.NewForceCloseInfo(
+		types.CellInput{PreviousOutput: channelCell.OutPoint},
+		mkCellInputs(assets),
+		[]types.Hash{header.Hash},
+		state,
+		params,
+		occupiedChannelCapacity,
+	)
+
 	return c.submitTxWithArgument(ctx, fci)
 }
 
-func (c Client) Abort(ctx context.Context, script *types.Script, params *channel.Params) error {
+func (c Client) Abort(ctx context.Context, script *types.Script, params *channel.Params, state *channel.State) error {
 	channelCell, err := c.getExactChannelLiveCell(ctx, script)
 	if err != nil {
 		return fmt.Errorf("getting channel live cell: %w", err)
@@ -359,21 +323,15 @@ func (c Client) Abort(ctx context.Context, script *types.Script, params *channel
 		return fmt.Errorf("getting tip header: %w", err)
 	}
 	occupiedChannelCapacity := channelCell.Output.OccupiedCapacity(channelCell.OutputData)
+	ai := transaction.NewAbortInfo(
+		types.CellInput{PreviousOutput: channelCell.OutPoint},
+		mkCellInputs(assets),
+		state,
+		params,
+		[]types.Hash{header.Hash},
+		occupiedChannelCapacity,
+	)
 
-	status, err := molecule.ChannelStatusFromSlice(channelCell.OutputData, false)
-	balA := molecule2.UnpackUint64(status.State().Balances().Nth0())
-	if err != nil {
-		return fmt.Errorf("parsing channel status: %w", err)
-	}
-
-	ai := transaction.AbortInfo{
-		ChannelInput:    types.CellInput{PreviousOutput: channelCell.OutPoint},
-		AssetInputs:     mkCellInputs(assets),
-		FundingStatus:   [2]uint64{balA, 0},
-		Params:          params,
-		Headers:         []types.Hash{header.Hash},
-		ChannelCapacity: occupiedChannelCapacity,
-	}
 	return c.submitTxWithArgument(ctx, ai)
 }
 

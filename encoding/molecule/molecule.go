@@ -3,6 +3,8 @@ package molecule
 import (
 	"encoding/binary"
 	"errors"
+	"github.com/Pilatuz/bigz/uint128"
+	"math/big"
 
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types"
@@ -35,4 +37,28 @@ func ToHashType(b *molecule.Byte) (types.ScriptHashType, error) {
 
 func UnpackSEC1EncodedPubKey(b *molecule.SEC1EncodedPubKey) (*secp256k1.PublicKey, error) {
 	return secp256k1.ParsePubKey(b.AsSlice())
+}
+
+func PackUint128(x *big.Int) (*molecule.Uint128, error) {
+	u128, err := ToUint128(x)
+	if err != nil {
+		return nil, err
+	}
+	bytes := make([]byte, 16)
+	uint128.StoreLittleEndian(bytes[:], u128)
+	return molecule.Uint128FromSliceUnchecked(bytes), nil
+}
+
+func UnpackUint128(x *molecule.Uint128) uint128.Uint128 {
+	return uint128.LoadLittleEndian(x.AsSlice())
+}
+
+func ToUint128(x *big.Int) (uint128.Uint128, error) {
+	if x.Cmp(uint128.Max().Big()) == 1 {
+		return uint128.Uint128{}, errors.New("uint128 overflow")
+	}
+	if x.Sign() == -1 {
+		return uint128.Uint128{}, errors.New("uint128 underflow")
+	}
+	return uint128.FromBig(x), nil
 }

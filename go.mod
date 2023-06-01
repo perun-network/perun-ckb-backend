@@ -11,8 +11,9 @@ require (
 )
 
 require (
+	github.com/Pilatuz/bigz v1.2.1
 	github.com/stretchr/testify v1.7.0
 	polycry.pt/poly-go v0.0.0-20220222131629-aa4bdbaab60b
 )
 
-replace github.com/nervosnetwork/ckb-sdk-go/v2 v2.2.0 => github.com/perun-network/ckb-sdk-go/v2 v2.2.1-0.20230523084308-311a8b7f636d
+replace github.com/nervosnetwork/ckb-sdk-go/v2 v2.2.0 => github.com/perun-network/ckb-sdk-go/v2 v2.2.1-0.20230601140721-2bf596fddd80
