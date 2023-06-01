@@ -2,20 +2,16 @@ package transaction_test
 
 import (
 	"math/big"
-	"reflect"
 	"testing"
 
-	ckbtransaction "github.com/nervosnetwork/ckb-sdk-go/v2/transaction"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types/molecule"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types/numeric"
 	"github.com/stretchr/testify/require"
-	"perun.network/go-perun/channel"
 	"perun.network/go-perun/channel/test"
 	btest "perun.network/perun-ckb-backend/backend/test"
 	"perun.network/perun-ckb-backend/transaction"
 	txtest "perun.network/perun-ckb-backend/transaction/test"
-	"perun.network/perun-ckb-backend/wallet/address"
 	wtest "perun.network/perun-ckb-backend/wallet/test"
 	ptest "polycry.pt/poly-go/test"
 )
@@ -143,69 +139,3 @@ func TestScriptHandler(t *testing.T) {
 //              [],
 //    ],
 // }
-
-type OpenArgs struct {
-	ChannelID channel.ID
-	Data      []byte
-	PCTS      *types.Script
-	PCLS      *types.Script
-	Initiator address.Participant
-}
-
-// verifyOpenTransaction verifies the given tx to contain the minimal set of
-// cells and data, s.t. it can be used to open a channel.
-func verifyOpenTransaction(t *testing.T, tx *ckbtransaction.TransactionWithScriptGroups, args OpenArgs) {
-	// Open transaction has to contain two celldeps:
-	// 1. The funding cell's lockscript cell dependency.
-	// 2. The Channel's typescript cell dependency.
-	require.Len(t, tx.TxView.CellDeps, 2)
-
-	// We expect 3 outputs:
-	// 1. The channel cell.
-	// 2. The funding cell.
-	// 3. The change cell.
-	require.Len(t, tx.TxView.Outputs, 3)
-	verifyRequiredOutputs(t, tx.TxView.Outputs, tx.TxView.OutputsData, args)
-}
-
-func verifyRequiredOutputs(t *testing.T, outputs []*types.CellOutput, outputsData [][]byte, args OpenArgs) {
-	validate := func(pred func(*types.CellOutput, []byte) bool) bool {
-		var r bool
-		for oIdx, o := range outputs {
-			if ok := pred(o, outputsData[oIdx]); ok {
-				r = ok
-				break
-			}
-		}
-		return r
-	}
-
-	containsValidChannelCell := func(o *types.CellOutput, d []byte) bool {
-		if ok := isCorrectChannelTypeScript(o, args); !ok {
-			return ok
-		}
-
-		if ok := isCorrectChannelLockScript(o, args); !ok {
-			return ok
-		}
-
-		if ok := isCorrectChannelData(d, args); !ok {
-			return ok
-		}
-		return true
-	}
-
-	require.True(t, validate(containsValidChannelCell), "valid channel must be present")
-}
-
-func isCorrectChannelTypeScript(o *types.CellOutput, args OpenArgs) bool {
-	return o.Type == args.PCTS
-}
-
-func isCorrectChannelLockScript(o *types.CellOutput, args OpenArgs) bool {
-	return o.Lock == args.PCLS
-}
-
-func isCorrectChannelData(d []byte, args OpenArgs) bool {
-	return reflect.DeepEqual(d, args.Data)
-}
