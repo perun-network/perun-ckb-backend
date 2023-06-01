@@ -13,3 +13,14 @@ type ForceCloseInfo struct {
 	Params          *channel.Params
 	ChannelCapacity uint64
 }
+
+func NewForceCloseInfo(channelInput types.CellInput, assetInputs []types.CellInput, headers []types.Hash, state *channel.State, params *channel.Params, channelCapacity uint64) *ForceCloseInfo {
+	return &ForceCloseInfo{
+		ChannelInput:    channelInput,
+		AssetInputs:     assetInputs,
+		Headers:         headers,
+		State:           state,
+		Params:          params,
+		ChannelCapacity: channelCapacity,
+	}
+}

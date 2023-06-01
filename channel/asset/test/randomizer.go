@@ -11,7 +11,8 @@ import (
 type Randomizer struct{}
 
 func (*Randomizer) NewRandomAsset(*rand.Rand) channel.Asset {
-	return asset.Asset
+	// TODO: Also allow to generate random SUDT asset.
+	return asset.CKBAsset
 }
 
 var _ test.Randomizer = (*Randomizer)(nil)

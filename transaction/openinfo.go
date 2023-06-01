@@ -5,13 +5,13 @@ import (
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types/molecule"
 	"perun.network/go-perun/channel"
 	"perun.network/perun-ckb-backend/backend"
+	"perun.network/perun-ckb-backend/channel/asset"
 	"perun.network/perun-ckb-backend/encoding"
 )
 
 type OpenInfo struct {
 	ChannelID    channel.ID
 	ChannelToken backend.Token
-	Funding      uint64
 	Params       *channel.Params
 	State        *channel.State
 
@@ -19,55 +19,38 @@ type OpenInfo struct {
 	pcts *types.Script
 }
 
-func (oi *OpenInfo) MkInitialChannelCell(channelLockScript, channelTypeScript types.Script) backend.CKBOutput {
+func NewOpenInfo(channelID channel.ID, channelToken backend.Token, params *channel.Params, state *channel.State) *OpenInfo {
+	return &OpenInfo{
+		ChannelID:    channelID,
+		ChannelToken: channelToken,
+		Params:       params,
+		State:        state,
+	}
+}
+
+func (oi *OpenInfo) MkInitialChannelCell(channelLockScript, channelTypeScript types.Script) (types.CellOutput, []byte) {
 	oi.pcts = &channelTypeScript
-	channelData := mkInitialChannelStatus(oi.State, oi.Funding)
+	channelStatus := mkInitialChannelStatus(oi.State)
 	channelOutput := types.CellOutput{
 		Capacity: 0,
 		Lock:     &channelLockScript,
 		Type:     &channelTypeScript,
 	}
-	capacity := channelOutput.OccupiedCapacity(channelData.AsSlice())
+	capacity := channelOutput.OccupiedCapacity(channelStatus.AsSlice())
 	channelOutput.Capacity = capacity
-	return backend.CKBOutput{
-		Output: *channelOutput.Pack(),
-		Data:   channelData,
-	}
+	return channelOutput, channelStatus.AsSlice()
 }
 
-func mkInitialChannelStatus(state *channel.State, fundingPartyA uint64) molecule.Bytes {
+func mkInitialChannelStatus(state *channel.State) molecule.ChannelStatus {
 	packedState, err := encoding.PackChannelState(state)
 	if err != nil {
 		panic(err)
 	}
-	partyA := channel.Index(0)
-	balances := mkBalancesForParty(partyA, fundingPartyA)
-	status := molecule.NewChannelStatusBuilder().
+	return molecule.NewChannelStatusBuilder().
 		State(packedState).
-		Funded(encoding.False).
+		Funded(initialFundedStatus(state)).
 		Disputed(encoding.False).
-		Funding(balances).
 		Build()
-	return *types.PackBytes(status.AsSlice())
-}
-
-func mkBalancesForParty(index channel.Index, funding uint64) molecule.Balances {
-	balances := molecule.NewBalancesBuilder()
-	if index == channel.Index(0) {
-		balances = balances.Nth0(*types.PackUint64(funding))
-	} else { // channel.Index(1), we only have two party channels.
-		balances = balances.Nth1(*types.PackUint64(funding))
-	}
-	return balances.Build()
-}
-
-// MinFunding returns the max between the requested funding amount and the
-// minimum capacity required to accomodate the PFLS script in a funds cell.
-func (oi OpenInfo) MinFunding(pflsMinCapacity uint64) uint64 {
-	if oi.Funding < pflsMinCapacity {
-		return pflsMinCapacity
-	}
-	return oi.Funding
 }
 
 func (oi OpenInfo) GetPCTS() *types.Script {
@@ -75,4 +58,15 @@ func (oi OpenInfo) GetPCTS() *types.Script {
 		panic("PCTS not set on OpenInfo")
 	}
 	return oi.pcts
+}
+
+func initialFundedStatus(state *channel.State) molecule.Bool {
+	// TODO: Verify that sum of max_capacity of the assets is 0 instead of that there are no assets.
+	// We shortcut here, because assets with 0 max_capacity make no sense.
+	if len(state.Assets) == 0 &&
+		state.Assets[0].Equal(asset.CKBAsset) &&
+		state.Balance(1, asset.CKBAsset).Sign() == 0 {
+		return encoding.True
+	}
+	return encoding.False
 }

@@ -43,8 +43,9 @@ func (b backend) Verify(addr wallet.Address, state *channel.State, sig wallet.Si
 	return wallet.VerifySignature(s.AsSlice(), sig, addr)
 }
 
+// NewAsset returns an empty asset.SUDTAsset.
 func (b backend) NewAsset() channel.Asset {
-	return asset.Asset
+	return &asset.SUDTAsset{}
 }
 
 var MaxBalance = new(big.Int).SetUint64(math.MaxUint64)

@@ -45,7 +45,7 @@ polling:
 	for i := 0; i < f.MaxIterationsUntilAbort; i++ {
 		select {
 		case <-ctx.Done():
-			return f.client.Abort(ctx, script, req.Params)
+			return f.client.Abort(ctx, script, req.Params, req.State)
 		case <-time.After(f.PollingInterval):
 			_, cs, err := f.client.GetChannelWithExactPCTS(ctx, script)
 			if err != nil {
@@ -56,7 +56,7 @@ polling:
 			}
 		}
 	}
-	return f.client.Abort(ctx, script, req.Params)
+	return f.client.Abort(ctx, script, req.Params, req.State)
 }
 
 func (f Funder) fundPartyB(ctx context.Context, req channel.FundingReq) error {
@@ -84,6 +84,9 @@ polling:
 
 // Fund funds the channel with the given funding request.
 func (f Funder) Fund(ctx context.Context, req channel.FundingReq) error {
+	// TODO: Verify channel fundable, such as:
+	// - no ckbytes allocation in initial state in (0, pflsMinCapacity)
+	// - ...
 	_, err := address.IsParticipant(req.Params.Parts[0])
 	if err != nil {
 		return fmt.Errorf("party a: %w", err)

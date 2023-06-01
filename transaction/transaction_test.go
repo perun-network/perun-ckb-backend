@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types"
-	"github.com/nervosnetwork/ckb-sdk-go/v2/types/molecule"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types/numeric"
 	"github.com/stretchr/testify/require"
 	"perun.network/go-perun/channel/test"
@@ -69,14 +68,7 @@ func TestScriptHandler(t *testing.T) {
 			test.WithLedgerChannel(true),
 			test.WithVirtualChannel(false),
 			test.WithoutApp())
-		oi := transaction.OpenInfo{
-			ChannelID:    [32]byte{},
-			ChannelToken: btest.NewRandomToken(rng),
-			Funding:      funding,
-			Params:       params,
-			State:        state,
-		}
-
+		oi := transaction.NewOpenInfo([32]byte{}, btest.NewRandomToken(rng), params, state)
 		_, err = b.Build(oi, txtest.MockContext{})
 		require.NoError(t, err)
 	})
@@ -99,13 +91,7 @@ func TestScriptHandler(t *testing.T) {
 			test.WithVirtualChannel(false),
 			test.WithoutApp())
 
-		fi := transaction.FundInfo{
-			Amount:      420_690,
-			ChannelCell: *btest.NewRandomOutpoint(rng),
-			Params:      params,
-			Token:       btest.NewRandomToken(rng),
-			Status:      *btest.NewRandomChannelStatus(rng, btest.WithState(state), btest.WithFunding(molecule.BalancesDefault())),
-		}
+		fi := transaction.NewFundInfo(*btest.NewRandomOutpoint(rng), params, state, btest.NewRandomScript(rng), *btest.NewRandomChannelStatus(rng, btest.WithState(state)), btest.NewRandomHash(rng))
 
 		_, err = b.Build(fi, txtest.MockContext{})
 		require.NoError(t, err)
