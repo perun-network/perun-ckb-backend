@@ -306,6 +306,9 @@ func (psh *PerunScriptHandler) buildForceCloseTransaction(builder collector.Tran
 		}
 
 		err = psh.AddAssetsToOutputs(builder, forceCloseInfo.State, i, payoutScript, additionalBalance)
+		if err != nil {
+			return false, err
+		}
 	}
 	err := builder.SetWitness(uint(idx), types.WitnessTypeInputType, psh.mkWitnessForceClose())
 	if err != nil {
