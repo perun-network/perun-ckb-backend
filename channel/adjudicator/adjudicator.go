@@ -10,6 +10,10 @@ type Adjudicator struct {
 	client client.CKBClient
 }
 
+func NewAdjudicator(client client.CKBClient) *Adjudicator {
+	return &Adjudicator{client: client}
+}
+
 func (a Adjudicator) Register(ctx context.Context, req channel.AdjudicatorReq, states []channel.SignedState) error {
 	return a.client.Dispute(ctx, req.Tx.ID, req.Tx.State, req.Tx.Sigs, req.Params)
 }
