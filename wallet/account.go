@@ -34,3 +34,7 @@ func NewAccount() (*Account, error) {
 	}
 	return &Account{key: key}, nil
 }
+
+func NewAccountFromPrivateKey(key *secp256k1.PrivateKey) *Account {
+	return &Account{key: key}
+}

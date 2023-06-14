@@ -32,19 +32,23 @@ func (e *EphemeralWallet) IncrementUsage(address wallet.Address) {}
 
 func (e *EphemeralWallet) DecrementUsage(address wallet.Address) {}
 
-func (e *EphemeralWallet) AddNewAccount() (wallet.Account, error) {
+func (e *EphemeralWallet) AddNewAccount() (*Account, error) {
 	acc, err := NewAccount()
 	if err != nil {
 		return nil, err
 	}
+	return acc, e.AddAccount(acc)
+}
+
+func (e *EphemeralWallet) AddAccount(acc *Account) error {
 	e.lock.Lock()
 	defer e.lock.Unlock()
 	_, ok := e.accounts[acc.Address().String()]
 	if ok {
-		return nil, errors.New("account already exists")
+		return errors.New("account already exists")
 	}
 	e.accounts[acc.Address().String()] = acc
-	return acc, nil
+	return nil
 }
 
 func NewEphemeralWallet() *EphemeralWallet {
