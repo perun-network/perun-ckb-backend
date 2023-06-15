@@ -81,8 +81,19 @@ type Client struct {
 	signer     backend.Signer
 	deployment backend.Deployment
 
-	psh   transaction.PerunScriptHandler
+	psh   *transaction.PerunScriptHandler
 	cache StableScriptCache
+}
+
+func NewClient(rpcClient rpc.Client, signer backend.Signer, deployment backend.Deployment) (*Client, error) {
+	psh := transaction.NewPerunScriptHandlerWithDeployment(deployment)
+	return &Client{
+		client:     rpcClient,
+		signer:     signer,
+		deployment: deployment,
+		psh:        psh,
+		cache:      NewStableScriptCache(),
+	}, nil
 }
 
 var _ CKBClient = (*Client)(nil)
@@ -134,7 +145,7 @@ func (c Client) newPerunTransactionBuilder(withIterator ...collector.CellIterato
 	} else {
 		iter = withIterator[0]
 	}
-	return transaction.NewPerunTransactionBuilder(c.deployment.Network, iter, &c.psh, c.signer.Address)
+	return transaction.NewPerunTransactionBuilder(c.deployment.Network, iter, c.psh, c.signer.Address)
 }
 
 func (c Client) submitTx(ctx context.Context, tx *ckbtransaction.TransactionWithScriptGroups) error {
@@ -345,22 +356,6 @@ func (c Client) GetChannelWithExactPCTS(ctx context.Context, pcts *types.Script)
 		return 0, nil, err
 	}
 	return cell.BlockNumber, channelStatus, nil
-}
-
-func NewDefaultClient(rpcClient rpc.Client) *Client {
-	// TODO: Wrap this up.
-	return &Client{
-		client: rpcClient,
-		cache:  NewStableScriptCache(),
-	}
-}
-
-func NewClient(rpcClient rpc.Client, deployment backend.Deployment) (*Client, error) {
-	return &Client{
-		client:     rpcClient,
-		deployment: deployment,
-		cache:      nil,
-	}, nil
 }
 
 const defaultPollingInterval = 4 * time.Second
