@@ -30,3 +30,13 @@ func NewRandomHash(rng *rand.Rand) types.Hash {
 	_, _ = rng.Read(bytes)
 	return types.BytesToHash(bytes)
 }
+
+func NewRandomHashType(rng *rand.Rand) types.ScriptHashType {
+	types := []types.ScriptHashType{
+		types.HashTypeData,
+		types.HashTypeType,
+		types.HashTypeData1,
+	}
+
+	return types[rng.Intn(len(types))]
+}
