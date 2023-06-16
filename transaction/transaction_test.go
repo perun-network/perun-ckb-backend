@@ -24,15 +24,13 @@ func TestScriptHandler(t *testing.T) {
 	pctsDep := btest.NewRandomCellDep(rng)
 	pclsDep := btest.NewRandomCellDep(rng)
 	pflsDep := btest.NewRandomCellDep(rng)
-	psh := transaction.NewPerunScriptHandler(
-		*pctsDep, *pclsDep, *pflsDep,
-		types.Hash{}, types.HashTypeData,
-		types.Hash{}, types.HashTypeData,
-		types.Hash{}, types.HashTypeData,
-		0,
-		*defaultLock,
-		*defaultLockDep,
+	deployment := btest.NewRandomDeployment(rng,
+		btest.WithPCTS(types.Hash{}, *pctsDep, types.HashTypeData),
+		btest.WithPCLS(types.Hash{}, *pclsDep, types.HashTypeData),
+		btest.WithPFLS(types.Hash{}, *pflsDep, types.HashTypeData),
+		btest.WithDefaultLockScript(*defaultLock, *defaultLockDep),
 	)
+	psh := transaction.NewPerunScriptHandlerWithDeployment(*deployment)
 
 	mockHandler := txtest.NewMockHandler(defaultLock)
 	funding := uint64(numeric.NewCapacityFromCKBytes(420_690))
