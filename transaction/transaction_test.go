@@ -89,7 +89,12 @@ func TestScriptHandler(t *testing.T) {
 			test.WithVirtualChannel(false),
 			test.WithoutApp())
 
-		fi := transaction.NewFundInfo(*btest.NewRandomOutpoint(rng), params, state, btest.NewRandomScript(rng), *btest.NewRandomChannelStatus(rng, btest.WithState(state)), btest.NewRandomHash(rng))
+		fi := transaction.NewFundInfo(*btest.NewRandomOutpoint(rng),
+			params,
+			state,
+			btest.NewRandomScript(rng),
+			*btest.NewRandomChannelStatus(rng, btest.WithState(state)),
+			btest.NewRandomHash(rng))
 
 		_, err = b.Build(fi, txtest.MockContext{})
 		require.NoError(t, err)

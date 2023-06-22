@@ -114,7 +114,10 @@ func (c Client) Start(ctx context.Context, params *channel.Params, state *channe
 	if err != nil {
 		return nil, fmt.Errorf("creating Perun transaction builder: %w", err)
 	}
-	tx, err := builder.Build(oi)
+	if err := builder.Open(oi); err != nil {
+		return nil, fmt.Errorf("creating open transaction: %w", err)
+	}
+	tx, err := builder.Build()
 	if err != nil {
 		return nil, fmt.Errorf("building open transaction: %w", err)
 	}
@@ -145,11 +148,12 @@ func (c Client) newPerunTransactionBuilder(withIterator ...collector.CellIterato
 	} else {
 		iter = withIterator[0]
 	}
-	return transaction.NewPerunTransactionBuilder(c.deployment.Network, iter, c.psh, c.signer.Address)
+	return transaction.NewPerunTransactionBuilderWithDeployment(c.deployment, iter, nil, c.signer.Address)
 }
 
 func (c Client) submitTx(ctx context.Context, tx *ckbtransaction.TransactionWithScriptGroups) error {
-	if err := c.signer.SignTransaction(tx); err != nil {
+	_, err := c.signer.SignTransaction(tx)
+	if err != nil {
 		return fmt.Errorf("signing transaction: %w", err)
 	}
 	return c.sendAndAwait(ctx, tx.TxView)

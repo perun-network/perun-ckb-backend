@@ -31,7 +31,6 @@ func NewSignerInstance(addr address.Address, key secp256k1.PrivateKey, network t
 	}
 }
 
-func (s Signer) SignTransaction(tx *transaction.TransactionWithScriptGroups) error {
-	_, err := s.TxSigner.SignTransactionByPrivateKeys(tx, s.key.Key.String())
-	return err
+func (s Signer) SignTransaction(tx *transaction.TransactionWithScriptGroups) ([]int, error) {
+	return s.TxSigner.SignTransactionByPrivateKeys(tx, s.key.Key.String())
 }
