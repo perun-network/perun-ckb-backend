@@ -7,6 +7,7 @@ import (
 	"math"
 	"time"
 
+	"github.com/nervosnetwork/ckb-sdk-go/v2/address"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/collector"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/indexer"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/rpc"
@@ -99,7 +100,7 @@ func NewClient(rpcClient rpc.Client, signer backend.Signer, deployment backend.D
 var _ CKBClient = (*Client)(nil)
 
 func (c Client) Start(ctx context.Context, params *channel.Params, state *channel.State) (*types.Script, error) {
-	iter, err := c.mkMyCellIterator()
+	iter, defaultHash, err := c.mkMyCellIterator()
 	if err != nil {
 		return nil, fmt.Errorf("creating cell iterator: %w", err)
 	}
@@ -110,7 +111,7 @@ func (c Client) Start(ctx context.Context, params *channel.Params, state *channe
 	cid := ckbchannel.Backend.CalcID(params)
 	oi := transaction.NewOpenInfo(cid, channelToken, params, state)
 
-	builder, err := c.newPerunTransactionBuilder(iter)
+	builder, err := c.newPerunTransactionBuilder(map[types.Hash]collector.CellIterator{defaultHash: iter})
 	if err != nil {
 		return nil, fmt.Errorf("creating Perun transaction builder: %w", err)
 	}
@@ -131,24 +132,45 @@ func (c Client) Start(ctx context.Context, params *channel.Params, state *channe
 // newPerunScriptHandler creates a new PerunScriptHandler. The iterator used to
 // fetch the live cells for the account associated with this client can be
 // injected if it was necessary in the outer scope.
-func (c Client) newPerunTransactionBuilder(withIterator ...collector.CellIterator) (*transaction.PerunTransactionBuilder, error) {
-	sender, err := c.signer.Address.Encode()
+func (c Client) newPerunTransactionBuilder(withIterators map[types.Hash]collector.CellIterator) (*transaction.PerunTransactionBuilder, error) {
+	iters, err := iteratorsForDeployment(c.client, c.deployment, c.signer.Address)
+	if err != nil {
+		return nil, fmt.Errorf("creating cell iterators: %w", err)
+	}
+
+	// Override custom specified iterators.
+	for hash, iter := range withIterators {
+		iters[hash] = iter
+	}
+	return transaction.NewPerunTransactionBuilderWithDeployment(c.client, c.deployment, iters)
+}
+
+func iteratorsForDeployment(cl rpc.Client, deployment backend.Deployment, sender address.Address) (map[types.Hash]collector.CellIterator, error) {
+	iters := make(map[types.Hash]collector.CellIterator)
+	// Iterator for the lockscript:
+	senderString, err := sender.Encode()
 	if err != nil {
 		return nil, fmt.Errorf("encoding sender address: %w", err)
 	}
-	if len(withIterator) > 1 {
-		panic("at most one iterator can be provided")
+	iter, err := collector.NewLiveCellIteratorFromAddress(cl, senderString)
+	if err != nil {
+		return nil, fmt.Errorf("creating cell iterator for default lockscript: %w", err)
 	}
-	var iter collector.CellIterator
-	if len(withIterator) == 0 {
-		iter, err = collector.NewLiveCellIteratorFromAddress(c.client, sender)
-		if err != nil {
-			return nil, fmt.Errorf("creating cell iterator: %w", err)
+	iters[sender.Script.Hash()] = iter
+
+	// Iterator for udts:
+	for _, udt := range deployment.SUDTs {
+		searchKey := &indexer.SearchKey{
+			Script:           &udt,
+			ScriptType:       types.ScriptTypeType,
+			ScriptSearchMode: types.ScriptSearchModePrefix,
+			Filter:           nil,
+			WithData:         true,
 		}
-	} else {
-		iter = withIterator[0]
+		sudtIter := collector.NewLiveCellIterator(cl, searchKey)
+		iters[udt.Hash()] = sudtIter
 	}
-	return transaction.NewPerunTransactionBuilderWithDeployment(c.deployment, iter, nil, c.signer.Address)
+	return iters, nil
 }
 
 func (c Client) submitTx(ctx context.Context, tx *ckbtransaction.TransactionWithScriptGroups) error {
@@ -162,7 +184,7 @@ func (c Client) submitTx(ctx context.Context, tx *ckbtransaction.TransactionWith
 // submitTxWithArgument submits a transaction whose type is determined by the
 // txTypeArgument.
 func (c Client) submitTxWithArgument(ctx context.Context, txTypeArgument ...interface{}) error {
-	b, err := c.newPerunTransactionBuilder()
+	b, err := c.newPerunTransactionBuilder(nil)
 	if err != nil {
 		return fmt.Errorf("creating Perun transaction builder: %w", err)
 	}
@@ -174,12 +196,19 @@ func (c Client) submitTxWithArgument(ctx context.Context, txTypeArgument ...inte
 	return c.submitTx(ctx, tx)
 }
 
-func (c Client) mkMyCellIterator() (collector.CellIterator, error) {
+// mkMyCellIterator returns a celliterator together with the associated script
+// hash it is meant to be used with.
+func (c Client) mkMyCellIterator() (collector.CellIterator, types.Hash, error) {
 	addr, err := c.signer.Address.Encode()
 	if err != nil {
-		return nil, fmt.Errorf("encoding sender address: %w", err)
+		return nil, types.Hash{}, fmt.Errorf("encoding sender address: %w", err)
 	}
-	return collector.NewLiveCellIteratorFromAddress(c.client, addr)
+	defaultLockScript := c.signer.Address.Script
+	iter, err := collector.NewLiveCellIteratorFromAddress(c.client, addr)
+	if err != nil {
+		return nil, types.Hash{}, fmt.Errorf("creating cell iterator: %w", err)
+	}
+	return iter, defaultLockScript.Hash(), nil
 }
 
 func (c Client) createOrGetChannelToken(ctx context.Context, iter collector.CellIterator) (backend.Token, error) {
