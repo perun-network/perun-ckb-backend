@@ -66,7 +66,11 @@ func NewPerunTransactionBuilder(client LiveCellFetcher, iterators map[types.Hash
 	return b, nil
 }
 
-func NewPerunTransactionBuilderWithDeployment(client LiveCellFetcher, deployment backend.Deployment, iterators map[types.Hash]collector.CellIterator, knownUDTs map[types.Hash]types.Script) (*PerunTransactionBuilder, error) {
+func NewPerunTransactionBuilderWithDeployment(
+	client LiveCellFetcher,
+	deployment backend.Deployment,
+	iterators map[types.Hash]collector.CellIterator,
+) (*PerunTransactionBuilder, error) {
 	psh := NewPerunScriptHandlerWithDeployment(deployment)
 	simpleBuilder := NewSimpleTransactionBuilder(deployment.DefaultLockScript.CodeHash, deployment.DefaultLockScriptDep)
 
@@ -74,7 +78,7 @@ func NewPerunTransactionBuilderWithDeployment(client LiveCellFetcher, deployment
 		SimpleTransactionBuilder: simpleBuilder,
 		psh:                      psh,
 		iterators:                iterators,
-		knownUDTs:                knownUDTs,
+		knownUDTs:                deployment.SUDTs,
 		cl:                       client,
 		scriptGroups:             make([]*ckbtransaction.ScriptGroup, 0, 10),
 		scriptGroupMap:           make(map[types.Hash]int),
