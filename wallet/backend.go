@@ -2,9 +2,10 @@ package wallet
 
 import (
 	"errors"
+	"io"
+
 	"github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
 	"golang.org/x/crypto/blake2b"
-	"io"
 	"perun.network/go-perun/wallet"
 	"perun.network/perun-ckb-backend/wallet/address"
 )

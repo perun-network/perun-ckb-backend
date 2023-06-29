@@ -2,9 +2,11 @@ package client
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
+	"os"
 	"time"
 
 	"github.com/nervosnetwork/ckb-sdk-go/v2/address"
@@ -100,7 +102,8 @@ func NewClient(rpcClient rpc.Client, signer backend.Signer, deployment backend.D
 var _ CKBClient = (*Client)(nil)
 
 func (c Client) Start(ctx context.Context, params *channel.Params, state *channel.State) (*types.Script, error) {
-	iter, defaultHash, err := c.mkMyCellIterator()
+	// TODO: Override defaulthash logic.
+	iter, _, err := c.mkMyCellIterator()
 	if err != nil {
 		return nil, fmt.Errorf("creating cell iterator: %w", err)
 	}
@@ -111,7 +114,8 @@ func (c Client) Start(ctx context.Context, params *channel.Params, state *channe
 	cid := ckbchannel.Backend.CalcID(params)
 	oi := transaction.NewOpenInfo(cid, channelToken, params, state)
 
-	builder, err := c.newPerunTransactionBuilder(map[types.Hash]collector.CellIterator{defaultHash: iter})
+	zeroHash := types.Hash{}
+	builder, err := c.newPerunTransactionBuilder(map[types.Hash]collector.CellIterator{zeroHash: iter})
 	if err != nil {
 		return nil, fmt.Errorf("creating Perun transaction builder: %w", err)
 	}
@@ -142,10 +146,12 @@ func (c Client) newPerunTransactionBuilder(withIterators map[types.Hash]collecto
 	for hash, iter := range withIterators {
 		iters[hash] = iter
 	}
-	return transaction.NewPerunTransactionBuilderWithDeployment(c.client, c.deployment, iters)
+
+	return transaction.NewPerunTransactionBuilderWithDeployment(c.client, c.deployment, iters, c.signer.Address)
 }
 
 func iteratorsForDeployment(cl rpc.Client, deployment backend.Deployment, sender address.Address) (map[types.Hash]collector.CellIterator, error) {
+	zeroHash := types.Hash{}
 	iters := make(map[types.Hash]collector.CellIterator)
 	// Iterator for the lockscript:
 	senderString, err := sender.Encode()
@@ -156,7 +162,8 @@ func iteratorsForDeployment(cl rpc.Client, deployment backend.Deployment, sender
 	if err != nil {
 		return nil, fmt.Errorf("creating cell iterator for default lockscript: %w", err)
 	}
-	iters[sender.Script.Hash()] = iter
+	// NOTE: This is to gather CKBytes.
+	iters[zeroHash] = iter
 
 	// Iterator for udts:
 	for _, udt := range deployment.SUDTs {
@@ -391,21 +398,35 @@ func (c Client) GetChannelWithExactPCTS(ctx context.Context, pcts *types.Script)
 	return cell.BlockNumber, channelStatus, nil
 }
 
-const defaultPollingInterval = 4 * time.Second
+const defaultPollingInterval = 2 * time.Second
 
 // sendAndAwait sends the given transaction and waits for it to be committed
 // on-chain.
 func (c Client) sendAndAwait(ctx context.Context, tx *types.Transaction) error {
+	msg, err := json.Marshal(tx)
+	if err != nil {
+		panic(err)
+	}
+	if err := os.WriteFile("tx.json", msg, 0644); err != nil {
+		panic(err)
+	}
+
 	txHash, err := c.client.SendTransaction(ctx, tx)
 	if err != nil {
 		return fmt.Errorf("sending transaction: %w", err)
 	}
 
 	// Wait for the transaction to be committed on-chain.
-	txWithStatus := &types.TransactionWithStatus{}
+	txWithStatus, err := c.client.GetTransaction(ctx, *txHash)
+	if err != nil {
+		return fmt.Errorf("initially polling transaction: %w", err)
+	}
+
 	ticker := time.NewTicker(defaultPollingInterval)
-	for txWithStatus.TxStatus.Status != types.TransactionStatusCommitted &&
-		txWithStatus.TxStatus.Status != types.TransactionStatusRejected {
+	for txWithStatus.TxStatus.Status != types.TransactionStatusCommitted {
+		if txWithStatus.TxStatus.Status == types.TransactionStatusRejected {
+			return fmt.Errorf("transaction rejected with: %v", *txWithStatus.TxStatus.Reason)
+		}
 		select {
 		case <-ctx.Done():
 			return fmt.Errorf("context done: %w", ctx.Err())

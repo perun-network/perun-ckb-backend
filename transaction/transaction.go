@@ -70,6 +70,7 @@ func NewPerunTransactionBuilderWithDeployment(
 	client LiveCellFetcher,
 	deployment backend.Deployment,
 	iterators map[types.Hash]collector.CellIterator,
+	changeAddress address.Address,
 ) (*PerunTransactionBuilder, error) {
 	psh := NewPerunScriptHandlerWithDeployment(deployment)
 	simpleBuilder := NewSimpleTransactionBuilder(deployment.DefaultLockScript.CodeHash, deployment.DefaultLockScriptDep)
@@ -80,6 +81,7 @@ func NewPerunTransactionBuilderWithDeployment(
 		iterators:                iterators,
 		knownUDTs:                deployment.SUDTs,
 		cl:                       client,
+		changeAddress:            changeAddress,
 		scriptGroups:             make([]*ckbtransaction.ScriptGroup, 0, 10),
 		scriptGroupMap:           make(map[types.Hash]int),
 	}
@@ -121,6 +123,13 @@ func (ptb *PerunTransactionBuilder) Build(contexts ...interface{}) (*ckbtransact
 		return nil, fmt.Errorf("balancing transaction: %w", err)
 	}
 
+	// The CKB-SDK expects at least a single context to be passed, otherwise its
+	// logic is not executed. This context can as well be nil, which is why we
+	// extend them here if necessary.
+	if len(contexts) == 0 {
+		contexts = append(contexts, nil)
+	}
+
 	// We process outputs first, since the semantics of the
 	// PerunTransactionBuilder is that a user only has to specify what he wants
 	// the output and inputs to look like, at the very least. Everything else is
@@ -140,42 +149,88 @@ func (ptb *PerunTransactionBuilder) Build(contexts ...interface{}) (*ckbtransact
 	}
 
 	tx := ptb.BuildTransaction()
-	tx.ScriptGroups = ptb.scriptGroups
+	tx.ScriptGroups = ptb.copyValidScriptGroups()
 	return tx, nil
+}
+
+// copyValidScriptGroups only returns the script groups that are valid.
+//
+// Our builder just createes all script groups preemtively, but some of them
+// might not be necessary: e.g. a ScriptGroup of type "Lock" which has only
+// references to output cells does not have to be handled, because that
+// lockscript group is not evaluated when verifying the transaction.
+func (ptb *PerunTransactionBuilder) copyValidScriptGroups() []*ckbtransaction.ScriptGroup {
+	validScriptGroups := make([]*ckbtransaction.ScriptGroup, 0, len(ptb.scriptGroups))
+	for _, sg := range ptb.scriptGroups {
+		switch sg.GroupType {
+		case types.ScriptTypeLock:
+			if len(sg.InputIndices) == 0 {
+				// Skip lock script groups which are not referenced in inputs.
+				continue
+			}
+		case types.ScriptTypeType:
+			if len(sg.OutputIndices)+len(sg.InputIndices) == 0 {
+				// Skip type script groups which are not referenced in inputs or
+				// outputs.
+				continue
+			}
+		}
+		validScriptGroups = append(validScriptGroups, sg)
+	}
+	return validScriptGroups
 }
 
 func (ptb *PerunTransactionBuilder) initializeScriptGroups() error {
 	// Create all script groups that are required by the outputs specified by the
 	// user of this transaction.
-	for _, output := range ptb.SimpleTransactionBuilder.Outputs {
-		ptb.initializeScript(output.Lock, types.ScriptTypeLock)
-		ptb.initializeScript(output.Type, types.ScriptTypeType)
+	for idx, output := range ptb.SimpleTransactionBuilder.Outputs {
+		ptb.initializeScript(output.Lock, types.ScriptTypeLock, idx, outputDir)
+		ptb.initializeScript(output.Type, types.ScriptTypeType, idx, outputDir)
 	}
 
 	// Create all script groups that are required by the inputs specified by the
 	// user of this transaction.
-	for _, input := range ptb.SimpleTransactionBuilder.Inputs {
+	for idx, input := range ptb.SimpleTransactionBuilder.Inputs {
 		inputCell, err := ptb.cl.GetLiveCell(context.Background(), input.PreviousOutput, false)
 		if err != nil {
 			return fmt.Errorf("getting live cell when resolving script groups: %w", err)
 		}
-		ptb.initializeScript(inputCell.Cell.Output.Lock, types.ScriptTypeLock)
-		ptb.initializeScript(inputCell.Cell.Output.Type, types.ScriptTypeType)
+		ptb.initializeScript(inputCell.Cell.Output.Lock, types.ScriptTypeLock, idx, inputDir)
+		ptb.initializeScript(inputCell.Cell.Output.Type, types.ScriptTypeType, idx, inputDir)
 	}
 
 	// Make sure we have script the minimum set of script groups defined for
 	// Perun transactions.
 	defaultLockScript := ptb.defaultLockScript()
-	ptb.initializeScript(defaultLockScript, types.ScriptTypeLock)
+	ptb.initializeScript(defaultLockScript, types.ScriptTypeLock, -1, noneDir)
 	return nil
 }
 
-func (ptb *PerunTransactionBuilder) initializeScript(script *types.Script, scriptType types.ScriptType) {
+type InputOrOutput string
+
+var (
+	inputDir  InputOrOutput = "input"
+	outputDir InputOrOutput = "output"
+	noneDir   InputOrOutput = "none"
+)
+
+// initializeScript initializes the script group for the given script.
+func (ptb *PerunTransactionBuilder) initializeScript(script *types.Script, scriptType types.ScriptType, ioIdx int, d InputOrOutput) {
 	if script == nil {
 		return
 	}
-	if _, ok := ptb.scriptGroupMap[script.Hash()]; ok {
-		// Return if we already added this script group.
+	appendToScriptGroup := func(group *ckbtransaction.ScriptGroup, ioidx int, d InputOrOutput) {
+		switch d {
+		case inputDir:
+			group.InputIndices = append(group.InputIndices, uint32(ioidx))
+		case outputDir:
+			group.OutputIndices = append(group.OutputIndices, uint32(ioidx))
+		default:
+		}
+	}
+	if g, ok := ptb.scriptGroupMap[script.Hash()]; ok {
+		// Only append the idx if the scriptgroup already existed.
+		appendToScriptGroup(ptb.scriptGroups[g], ioIdx, d)
 		return
 	}
 	idx := ptb.AddScriptGroup(&ckbtransaction.ScriptGroup{
@@ -183,6 +238,7 @@ func (ptb *PerunTransactionBuilder) initializeScript(script *types.Script, scrip
 		GroupType: scriptType,
 	})
 	ptb.scriptGroupMap[script.Hash()] = idx
+	appendToScriptGroup(ptb.scriptGroups[idx], ioIdx, d)
 }
 
 func (ptb *PerunTransactionBuilder) AddScriptGroup(group *ckbtransaction.ScriptGroup) int {
@@ -357,54 +413,61 @@ func (ptb *PerunTransactionBuilder) balanceTransaction() error {
 }
 
 // addChangeCell will add a change cell to the output of the given transaction
-// using the preconfigured change address
+// using the preconfigured change address.
 func (ptb *PerunTransactionBuilder) addChangeCell(assetHash types.Hash, amount uint64) error {
-	dataForCell := func(cell *types.CellOutput) ([]byte, error) {
-		// []byte{} for CKBytes, encoded amount as Uint128 for UDTs.
-		if cell.Type == nil {
-			return []byte{}, nil
-		}
-
-		encodedAmount, err := molecule2.PackUint128(big.NewInt(0).SetUint64(amount))
-		if err != nil {
-			return nil, fmt.Errorf("encoding amount for %x as Uint128: %w", assetHash, err)
-		}
-		return encodedAmount.AsSlice(), nil
+	if assetHash == zeroHash {
+		return ptb.addCKBChangeCell(amount)
 	}
 
+	return ptb.addUDTChangeCell(assetHash, amount)
+}
+
+func (ptb *PerunTransactionBuilder) addCKBChangeCell(amount uint64) error {
+	outputCell := &types.CellOutput{
+		Capacity: amount,
+		Lock:     ptb.defaultLockScript(),
+		Type:     nil,
+	}
+
+	ptb.SimpleTransactionBuilder.Outputs = append(ptb.SimpleTransactionBuilder.Outputs, outputCell)
+	ptb.SimpleTransactionBuilder.OutputsData = append(ptb.SimpleTransactionBuilder.OutputsData, []byte{})
+
+	lockScriptGroup, _ := ptb.scriptGroupsForHash(zeroHash)
+	appendOutputToGroups(lockScriptGroup, nil, uint32(len(ptb.SimpleTransactionBuilder.Outputs)-1))
+	return nil
+}
+
+func (ptb *PerunTransactionBuilder) addUDTChangeCell(assetHash types.Hash, amount uint64) error {
 	outputCell := &types.CellOutput{
 		Capacity: 0,
 		Lock:     ptb.defaultLockScript(),
 		Type:     nil,
 	}
 
-	if assetHash != zeroHash {
-		udtScript, ok := ptb.knownUDTs[assetHash]
-		if !ok {
-			return fmt.Errorf("unknown UDT %x", assetHash)
-		}
-		outputCell.Type = &udtScript
+	udtScript, ok := ptb.knownUDTs[assetHash]
+	if !ok {
+		return fmt.Errorf("unknown UDT %x", assetHash)
 	}
+	outputCell.Type = &udtScript
+
+	encodedAmount, err := molecule2.PackUint128(big.NewInt(0).SetUint64(amount))
+	if err != nil {
+		return fmt.Errorf("encoding amount for %x as Uint128: %w", assetHash, err)
+	}
+	data := encodedAmount.AsSlice()
+
+	requiredCapacity := outputCell.OccupiedCapacity(data)
+	outputCell.Capacity = requiredCapacity
 
 	ptb.SimpleTransactionBuilder.Outputs = append(ptb.SimpleTransactionBuilder.Outputs, outputCell)
-
-	data, err := dataForCell(outputCell)
-	if err != nil {
-		return err
-	}
 	ptb.SimpleTransactionBuilder.OutputsData = append(ptb.SimpleTransactionBuilder.OutputsData, data)
 
-	// Make sure to update the ScriptGroup:
 	lockScriptGroup, typeScriptGroup := ptb.scriptGroupsForHash(assetHash)
-	if lockScriptGroup == nil || (assetHash != zeroHash && typeScriptGroup == nil) {
-		return fmt.Errorf("no script group for asset %x", assetHash)
-	}
 	appendOutputToGroups(lockScriptGroup, typeScriptGroup, uint32(len(ptb.SimpleTransactionBuilder.Outputs)-1))
 	return nil
 }
 
 func (ptb *PerunTransactionBuilder) scriptGroupsForHash(assetHash types.Hash) (*ckbtransaction.ScriptGroup, *ckbtransaction.ScriptGroup) {
-
 	findInGroup := func(hash types.Hash) *ckbtransaction.ScriptGroup {
 		groupIdx, ok := ptb.scriptGroupMap[hash]
 		if !ok {
@@ -422,9 +485,11 @@ func (ptb *PerunTransactionBuilder) scriptGroupsForHash(assetHash types.Hash) (*
 }
 
 func (ptb *PerunTransactionBuilder) completeCKBCapacity(requiredAmount uint64) error {
+	alreadyProvidedFunding := NewAssetInformation(ptb.knownUDTs)
+	requiredFunding := NewAssetInformation(ptb.knownUDTs)
 	// We need to add inputs and potentially change cells to fund the required
 	// amount.
-	if err := ptb.addInputsAndChangeForFunding(types.Hash{}, requiredAmount, nil, nil); err != nil {
+	if err := ptb.addInputsAndChangeForFunding(zeroHash, requiredAmount, requiredFunding, alreadyProvidedFunding); err != nil {
 		return fmt.Errorf("adding inputs and change for funding: %w", err)
 	}
 	return nil
@@ -438,6 +503,9 @@ func (ptb *PerunTransactionBuilder) completeCKBCapacity(requiredAmount uint64) e
 // alreadyProvidedFunding might be modified for CKB capacity.
 func (ptb *PerunTransactionBuilder) addInputsAndChangeForFunding(assetHash types.Hash, requiredAmount uint64, requiredFunding, alreadyProvidedFunding *AssetInformation) error {
 	iter := ptb.iterators[assetHash]
+	if iter == nil {
+		return fmt.Errorf("no iterator for asset %x registered", assetHash)
+	}
 
 	fundedAmount, err := ptb.addInputsForFunding(iter, assetHash, requiredAmount)
 	if err != nil {
@@ -486,6 +554,8 @@ func (ptb *PerunTransactionBuilder) addInputsForFunding(iter collector.CellItera
 			PreviousOutput: input.OutPoint,
 		})
 		fundedAmount.AddValuesFromOutput(input.Output, input.OutputData)
+		// Make sure to add a dummy witness for each input.
+		ptb.SimpleTransactionBuilder.Witnesses = append(ptb.SimpleTransactionBuilder.Witnesses, []byte{})
 
 		// Make sure to update the according script group.
 		appendInputToGroups(lockScriptGroup, typeScriptGroup, uint32(len(ptb.SimpleTransactionBuilder.Inputs)-1))
