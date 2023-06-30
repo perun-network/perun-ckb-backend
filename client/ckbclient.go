@@ -247,8 +247,20 @@ func (c Client) Fund(ctx context.Context, pcts *types.Script, state *channel.Sta
 	if err != nil {
 		return err
 	}
+
 	fi := transaction.NewFundInfo(*channelCell.OutPoint, params, state, pcts, *channelStatus, header.Hash)
-	return c.submitTxWithArgument(ctx, fi)
+	builder, err := c.newPerunTransactionBuilder(nil)
+	if err != nil {
+		return fmt.Errorf("creating Perun transaction builder: %w", err)
+	}
+	if err := builder.Fund(fi); err != nil {
+		return fmt.Errorf("creating open transaction: %w", err)
+	}
+	tx, err := builder.Build()
+	if err != nil {
+		return fmt.Errorf("building open transaction: %w", err)
+	}
+	return c.submitTx(ctx, tx)
 }
 
 func (c Client) Dispute(ctx context.Context, id channel.ID, state *channel.State, sigs []wallet.Sig, params *channel.Params) error {
@@ -267,7 +279,19 @@ func (c Client) Dispute(ctx context.Context, id channel.ID, state *channel.State
 	sigA := encoding.PackSignature(sigs[0])
 	sigB := encoding.PackSignature(sigs[1])
 	di := transaction.NewDisputeInfo(*channelCell.OutPoint, *status, params, header.Hash, channelCell.Output.Type, *sigA, *sigB)
-	return c.submitTxWithArgument(ctx, di)
+
+	builder, err := c.newPerunTransactionBuilder(nil)
+	if err != nil {
+		return fmt.Errorf("creating Perun transaction builder: %w", err)
+	}
+	if err := builder.Dispute(di); err != nil {
+		return fmt.Errorf("creating open transaction: %w", err)
+	}
+	tx, err := builder.Build()
+	if err != nil {
+		return fmt.Errorf("building open transaction: %w", err)
+	}
+	return c.submitTx(ctx, tx)
 }
 
 func (c Client) Close(ctx context.Context, id channel.ID, state *channel.State, sigs []wallet.Sig, params *channel.Params) error {
@@ -296,7 +320,18 @@ func (c Client) Close(ctx context.Context, id channel.ID, state *channel.State, 
 		sigs,
 	)
 
-	return c.submitTxWithArgument(ctx, ci)
+	builder, err := c.newPerunTransactionBuilder(nil)
+	if err != nil {
+		return fmt.Errorf("creating Perun transaction builder: %w", err)
+	}
+	if err := builder.Close(ci); err != nil {
+		return fmt.Errorf("creating open transaction: %w", err)
+	}
+	tx, err := builder.Build()
+	if err != nil {
+		return fmt.Errorf("building open transaction: %w", err)
+	}
+	return c.submitTx(ctx, tx)
 }
 
 // Turns a list of live cells into a list of input cells.
@@ -354,7 +389,18 @@ func (c Client) ForceClose(ctx context.Context, id channel.ID, state *channel.St
 		occupiedChannelCapacity,
 	)
 
-	return c.submitTxWithArgument(ctx, fci)
+	builder, err := c.newPerunTransactionBuilder(nil)
+	if err != nil {
+		return fmt.Errorf("creating Perun transaction builder: %w", err)
+	}
+	if err := builder.ForceClose(fci); err != nil {
+		return fmt.Errorf("creating open transaction: %w", err)
+	}
+	tx, err := builder.Build()
+	if err != nil {
+		return fmt.Errorf("building open transaction: %w", err)
+	}
+	return c.submitTx(ctx, tx)
 }
 
 func (c Client) Abort(ctx context.Context, script *types.Script, params *channel.Params, state *channel.State) error {
@@ -381,7 +427,18 @@ func (c Client) Abort(ctx context.Context, script *types.Script, params *channel
 		occupiedChannelCapacity,
 	)
 
-	return c.submitTxWithArgument(ctx, ai)
+	builder, err := c.newPerunTransactionBuilder(nil)
+	if err != nil {
+		return fmt.Errorf("creating Perun transaction builder: %w", err)
+	}
+	if err := builder.Abort(ai); err != nil {
+		return fmt.Errorf("creating open transaction: %w", err)
+	}
+	tx, err := builder.Build()
+	if err != nil {
+		return fmt.Errorf("building open transaction: %w", err)
+	}
+	return c.submitTx(ctx, tx)
 }
 
 func (c Client) GetChannelWithExactPCTS(ctx context.Context, pcts *types.Script) (BlockNumber, *molecule.ChannelStatus, error) {
