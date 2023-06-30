@@ -2,11 +2,9 @@ package client
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
-	"os"
 	"time"
 
 	"github.com/nervosnetwork/ckb-sdk-go/v2/address"
@@ -403,14 +401,6 @@ const defaultPollingInterval = 2 * time.Second
 // sendAndAwait sends the given transaction and waits for it to be committed
 // on-chain.
 func (c Client) sendAndAwait(ctx context.Context, tx *types.Transaction) error {
-	msg, err := json.Marshal(tx)
-	if err != nil {
-		panic(err)
-	}
-	if err := os.WriteFile("tx.json", msg, 0644); err != nil {
-		panic(err)
-	}
-
 	txHash, err := c.client.SendTransaction(ctx, tx)
 	if err != nil {
 		return fmt.Errorf("sending transaction: %w", err)
