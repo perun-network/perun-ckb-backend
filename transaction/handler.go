@@ -38,37 +38,6 @@ type PerunScriptHandler struct {
 
 var _ collector.ScriptHandler = (*PerunScriptHandler)(nil)
 
-// TODO: Create a helper function to easily build a PerunChannelTransaction,
-// such that it uses the defaults for everything. This is especially important
-// because we rely on default scripts with their respective handlers to be used
-// in conjunction with this handler. Otherwise we might miss having required
-// inputs/outputs autofilled by the sdk scaffolding.
-
-func NewPerunScriptHandler(
-	pctsDep, pclsDep, pflsDep types.CellDep,
-	pctsCodeHash types.Hash, pctsHashType types.ScriptHashType,
-	pclsCodeHash types.Hash, pclsHashType types.ScriptHashType,
-	pflsCodeHash types.Hash, pflsHashType types.ScriptHashType,
-	pflsMinCapacity uint64,
-	defaultLockScript types.Script,
-	defaultLockScriptDep types.CellDep,
-) *PerunScriptHandler {
-	return &PerunScriptHandler{
-		pctsDep:              pctsDep,
-		pclsDep:              pclsDep,
-		pflsDep:              pflsDep,
-		pctsCodeHash:         pctsCodeHash,
-		pctsHashType:         pctsHashType,
-		pclsCodeHash:         pclsCodeHash,
-		pclsHashType:         pclsHashType,
-		pflsCodeHash:         pflsCodeHash,
-		pflsHashType:         pflsHashType,
-		pflsMinCapacity:      pflsMinCapacity,
-		defaultLockScript:    defaultLockScript,
-		defaultLockScriptDep: defaultLockScriptDep,
-	}
-}
-
 func NewPerunScriptHandlerWithDeployment(deployment backend.Deployment) *PerunScriptHandler {
 	return &PerunScriptHandler{
 		pctsDep:              deployment.PCTSDep,
@@ -183,8 +152,8 @@ func (psh *PerunScriptHandler) buildCloseTransaction(builder collector.Transacti
 	builder.AddCellDep(&psh.pflsDep)
 
 	idx := builder.AddInput(&closeInfo.ChannelInput)
-	for _, assetInput := range closeInfo.AssetInputs {
-		builder.AddInput(&assetInput)
+	for idx := range closeInfo.AssetInputs {
+		builder.AddInput(&closeInfo.AssetInputs[idx])
 	}
 
 	for _, h := range closeInfo.Headers {
@@ -413,20 +382,18 @@ func (psh PerunScriptHandler) mkChannelLockScript() *types.Script {
 
 func (psh PerunScriptHandler) mkChannelTypeScript(params *channel.Params, token molecule.ChannelToken) *types.Script {
 	channelConstants := psh.mkChannelConstants(params, token)
-	channelArgs := types.PackBytes(channelConstants.AsSlice())
 	return &types.Script{
 		CodeHash: psh.pctsCodeHash,
 		HashType: psh.pctsHashType,
-		Args:     channelArgs.AsSlice(),
+		Args:     channelConstants.AsSlice(),
 	}
 }
 
 func (psh PerunScriptHandler) mkFundsLockScript(pcts *types.Script) *types.Script {
-	fundsArgs := types.PackBytes(pcts.Hash().Bytes())
 	return &types.Script{
 		CodeHash: psh.pflsCodeHash,
 		HashType: psh.pflsHashType,
-		Args:     fundsArgs.AsSlice(),
+		Args:     pcts.Hash().Bytes(),
 	}
 }
 

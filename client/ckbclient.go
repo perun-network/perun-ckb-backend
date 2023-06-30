@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"math"
 	"time"
 
+	"github.com/nervosnetwork/ckb-sdk-go/v2/address"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/collector"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/indexer"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/rpc"
@@ -81,14 +83,26 @@ type Client struct {
 	signer     backend.Signer
 	deployment backend.Deployment
 
-	psh   transaction.PerunScriptHandler
+	psh   *transaction.PerunScriptHandler
 	cache StableScriptCache
+}
+
+func NewClient(rpcClient rpc.Client, signer backend.Signer, deployment backend.Deployment) (*Client, error) {
+	psh := transaction.NewPerunScriptHandlerWithDeployment(deployment)
+	return &Client{
+		client:     rpcClient,
+		signer:     signer,
+		deployment: deployment,
+		psh:        psh,
+		cache:      NewStableScriptCache(),
+	}, nil
 }
 
 var _ CKBClient = (*Client)(nil)
 
 func (c Client) Start(ctx context.Context, params *channel.Params, state *channel.State) (*types.Script, error) {
-	iter, err := c.mkMyCellIterator()
+	// TODO: Override defaulthash logic.
+	iter, _, err := c.mkMyCellIterator()
 	if err != nil {
 		return nil, fmt.Errorf("creating cell iterator: %w", err)
 	}
@@ -99,11 +113,15 @@ func (c Client) Start(ctx context.Context, params *channel.Params, state *channe
 	cid := ckbchannel.Backend.CalcID(params)
 	oi := transaction.NewOpenInfo(cid, channelToken, params, state)
 
-	builder, err := c.newPerunTransactionBuilder(iter)
+	zeroHash := types.Hash{}
+	builder, err := c.newPerunTransactionBuilder(map[types.Hash]collector.CellIterator{zeroHash: iter})
 	if err != nil {
 		return nil, fmt.Errorf("creating Perun transaction builder: %w", err)
 	}
-	tx, err := builder.Build(oi)
+	if err := builder.Open(oi); err != nil {
+		return nil, fmt.Errorf("creating open transaction: %w", err)
+	}
+	tx, err := builder.Build()
 	if err != nil {
 		return nil, fmt.Errorf("building open transaction: %w", err)
 	}
@@ -117,28 +135,53 @@ func (c Client) Start(ctx context.Context, params *channel.Params, state *channe
 // newPerunScriptHandler creates a new PerunScriptHandler. The iterator used to
 // fetch the live cells for the account associated with this client can be
 // injected if it was necessary in the outer scope.
-func (c Client) newPerunTransactionBuilder(withIterator ...collector.CellIterator) (*transaction.PerunTransactionBuilder, error) {
-	sender, err := c.signer.Address.Encode()
+func (c Client) newPerunTransactionBuilder(withIterators map[types.Hash]collector.CellIterator) (*transaction.PerunTransactionBuilder, error) {
+	iters, err := iteratorsForDeployment(c.client, c.deployment, c.signer.Address)
+	if err != nil {
+		return nil, fmt.Errorf("creating cell iterators: %w", err)
+	}
+
+	// Override custom specified iterators.
+	for hash, iter := range withIterators {
+		iters[hash] = iter
+	}
+
+	return transaction.NewPerunTransactionBuilderWithDeployment(c.client, c.deployment, iters, c.signer.Address)
+}
+
+func iteratorsForDeployment(cl rpc.Client, deployment backend.Deployment, sender address.Address) (map[types.Hash]collector.CellIterator, error) {
+	zeroHash := types.Hash{}
+	iters := make(map[types.Hash]collector.CellIterator)
+	// Iterator for the lockscript:
+	senderString, err := sender.Encode()
 	if err != nil {
 		return nil, fmt.Errorf("encoding sender address: %w", err)
 	}
-	if len(withIterator) > 1 {
-		panic("at most one iterator can be provided")
+	iter, err := collector.NewLiveCellIteratorFromAddress(cl, senderString)
+	if err != nil {
+		return nil, fmt.Errorf("creating cell iterator for default lockscript: %w", err)
 	}
-	var iter collector.CellIterator
-	if len(withIterator) == 0 {
-		iter, err = collector.NewLiveCellIteratorFromAddress(c.client, sender)
-		if err != nil {
-			return nil, fmt.Errorf("creating cell iterator: %w", err)
+	// NOTE: This is to gather CKBytes.
+	iters[zeroHash] = iter
+
+	// Iterator for udts:
+	for _, udt := range deployment.SUDTs {
+		searchKey := &indexer.SearchKey{
+			Script:           &udt,
+			ScriptType:       types.ScriptTypeType,
+			ScriptSearchMode: types.ScriptSearchModePrefix,
+			Filter:           nil,
+			WithData:         true,
 		}
-	} else {
-		iter = withIterator[0]
+		sudtIter := collector.NewLiveCellIterator(cl, searchKey)
+		iters[udt.Hash()] = sudtIter
 	}
-	return transaction.NewPerunTransactionBuilder(c.deployment.Network, iter, &c.psh, c.signer.Address)
+	return iters, nil
 }
 
 func (c Client) submitTx(ctx context.Context, tx *ckbtransaction.TransactionWithScriptGroups) error {
-	if err := c.signer.SignTransaction(tx); err != nil {
+	_, err := c.signer.SignTransaction(tx)
+	if err != nil {
 		return fmt.Errorf("signing transaction: %w", err)
 	}
 	return c.sendAndAwait(ctx, tx.TxView)
@@ -147,7 +190,7 @@ func (c Client) submitTx(ctx context.Context, tx *ckbtransaction.TransactionWith
 // submitTxWithArgument submits a transaction whose type is determined by the
 // txTypeArgument.
 func (c Client) submitTxWithArgument(ctx context.Context, txTypeArgument ...interface{}) error {
-	b, err := c.newPerunTransactionBuilder()
+	b, err := c.newPerunTransactionBuilder(nil)
 	if err != nil {
 		return fmt.Errorf("creating Perun transaction builder: %w", err)
 	}
@@ -159,12 +202,19 @@ func (c Client) submitTxWithArgument(ctx context.Context, txTypeArgument ...inte
 	return c.submitTx(ctx, tx)
 }
 
-func (c Client) mkMyCellIterator() (collector.CellIterator, error) {
+// mkMyCellIterator returns a celliterator together with the associated script
+// hash it is meant to be used with.
+func (c Client) mkMyCellIterator() (collector.CellIterator, types.Hash, error) {
 	addr, err := c.signer.Address.Encode()
 	if err != nil {
-		return nil, fmt.Errorf("encoding sender address: %w", err)
+		return nil, types.Hash{}, fmt.Errorf("encoding sender address: %w", err)
 	}
-	return collector.NewLiveCellIteratorFromAddress(c.client, addr)
+	defaultLockScript := c.signer.Address.Script
+	iter, err := collector.NewLiveCellIteratorFromAddress(c.client, addr)
+	if err != nil {
+		return nil, types.Hash{}, fmt.Errorf("creating cell iterator: %w", err)
+	}
+	return iter, defaultLockScript.Hash(), nil
 }
 
 func (c Client) createOrGetChannelToken(ctx context.Context, iter collector.CellIterator) (backend.Token, error) {
@@ -180,6 +230,7 @@ func (c Client) createOrGetChannelToken(ctx context.Context, iter collector.Cell
 		OutPoint(*transactionInput.OutPoint.Pack()).
 		Build()
 	return backend.Token{
+		Idx:      transactionInput.OutPoint.Index,
 		Outpoint: *transactionInput.OutPoint.Pack(),
 		Token:    channelToken,
 	}, nil
@@ -198,8 +249,20 @@ func (c Client) Fund(ctx context.Context, pcts *types.Script, state *channel.Sta
 	if err != nil {
 		return err
 	}
+
 	fi := transaction.NewFundInfo(*channelCell.OutPoint, params, state, pcts, *channelStatus, header.Hash)
-	return c.submitTxWithArgument(ctx, fi)
+	builder, err := c.newPerunTransactionBuilder(nil)
+	if err != nil {
+		return fmt.Errorf("creating Perun transaction builder: %w", err)
+	}
+	if err := builder.Fund(fi); err != nil {
+		return fmt.Errorf("creating fund transaction: %w", err)
+	}
+	tx, err := builder.Build()
+	if err != nil {
+		return fmt.Errorf("building fund transaction: %w", err)
+	}
+	return c.submitTx(ctx, tx)
 }
 
 func (c Client) Dispute(ctx context.Context, id channel.ID, state *channel.State, sigs []wallet.Sig, params *channel.Params) error {
@@ -218,7 +281,19 @@ func (c Client) Dispute(ctx context.Context, id channel.ID, state *channel.State
 	sigA := encoding.PackSignature(sigs[0])
 	sigB := encoding.PackSignature(sigs[1])
 	di := transaction.NewDisputeInfo(*channelCell.OutPoint, *status, params, header.Hash, channelCell.Output.Type, *sigA, *sigB)
-	return c.submitTxWithArgument(ctx, di)
+
+	builder, err := c.newPerunTransactionBuilder(nil)
+	if err != nil {
+		return fmt.Errorf("creating Perun transaction builder: %w", err)
+	}
+	if err := builder.Dispute(di); err != nil {
+		return fmt.Errorf("creating open transaction: %w", err)
+	}
+	tx, err := builder.Build()
+	if err != nil {
+		return fmt.Errorf("building open transaction: %w", err)
+	}
+	return c.submitTx(ctx, tx)
 }
 
 func (c Client) Close(ctx context.Context, id channel.ID, state *channel.State, sigs []wallet.Sig, params *channel.Params) error {
@@ -247,17 +322,28 @@ func (c Client) Close(ctx context.Context, id channel.ID, state *channel.State, 
 		sigs,
 	)
 
-	return c.submitTxWithArgument(ctx, ci)
+	builder, err := c.newPerunTransactionBuilder(nil)
+	if err != nil {
+		return fmt.Errorf("creating Perun transaction builder: %w", err)
+	}
+	if err := builder.Close(ci); err != nil {
+		return fmt.Errorf("creating open transaction: %w", err)
+	}
+	tx, err := builder.Build()
+	if err != nil {
+		return fmt.Errorf("building open transaction: %w", err)
+	}
+	return c.submitTx(ctx, tx)
 }
 
 // Turns a list of live cells into a list of input cells.
 func mkCellInputs(lcs *indexer.LiveCells) []types.CellInput {
-	res := make([]types.CellInput, 0, len(lcs.Objects))
-	for _, lc := range lcs.Objects {
-		res = append(res, types.CellInput{
+	res := make([]types.CellInput, len(lcs.Objects))
+	for idx, lc := range lcs.Objects {
+		res[idx] = types.CellInput{
 			Since:          0,
 			PreviousOutput: lc.OutPoint,
-		})
+		}
 	}
 	return res
 }
@@ -278,7 +364,7 @@ func (c Client) getAssets(ctx context.Context, pcts *types.Script) (*indexer.Liv
 		Filter:           nil,
 		WithData:         true,
 	}
-	return c.client.GetCells(ctx, searchKey, indexer.SearchOrderDesc, math.MaxUint64, "")
+	return c.client.GetCells(ctx, searchKey, indexer.SearchOrderDesc, math.MaxUint32, "")
 }
 
 func (c Client) ForceClose(ctx context.Context, id channel.ID, state *channel.State, params *channel.Params) error {
@@ -305,7 +391,18 @@ func (c Client) ForceClose(ctx context.Context, id channel.ID, state *channel.St
 		occupiedChannelCapacity,
 	)
 
-	return c.submitTxWithArgument(ctx, fci)
+	builder, err := c.newPerunTransactionBuilder(nil)
+	if err != nil {
+		return fmt.Errorf("creating Perun transaction builder: %w", err)
+	}
+	if err := builder.ForceClose(fci); err != nil {
+		return fmt.Errorf("creating open transaction: %w", err)
+	}
+	tx, err := builder.Build()
+	if err != nil {
+		return fmt.Errorf("building open transaction: %w", err)
+	}
+	return c.submitTx(ctx, tx)
 }
 
 func (c Client) Abort(ctx context.Context, script *types.Script, params *channel.Params, state *channel.State) error {
@@ -332,7 +429,18 @@ func (c Client) Abort(ctx context.Context, script *types.Script, params *channel
 		occupiedChannelCapacity,
 	)
 
-	return c.submitTxWithArgument(ctx, ai)
+	builder, err := c.newPerunTransactionBuilder(nil)
+	if err != nil {
+		return fmt.Errorf("creating Perun transaction builder: %w", err)
+	}
+	if err := builder.Abort(ai); err != nil {
+		return fmt.Errorf("creating open transaction: %w", err)
+	}
+	tx, err := builder.Build()
+	if err != nil {
+		return fmt.Errorf("building open transaction: %w", err)
+	}
+	return c.submitTx(ctx, tx)
 }
 
 func (c Client) GetChannelWithExactPCTS(ctx context.Context, pcts *types.Script) (BlockNumber, *molecule.ChannelStatus, error) {
@@ -347,23 +455,7 @@ func (c Client) GetChannelWithExactPCTS(ctx context.Context, pcts *types.Script)
 	return cell.BlockNumber, channelStatus, nil
 }
 
-func NewDefaultClient(rpcClient rpc.Client) *Client {
-	// TODO: Wrap this up.
-	return &Client{
-		client: rpcClient,
-		cache:  NewStableScriptCache(),
-	}
-}
-
-func NewClient(rpcClient rpc.Client, deployment backend.Deployment) (*Client, error) {
-	return &Client{
-		client:     rpcClient,
-		deployment: deployment,
-		cache:      nil,
-	}, nil
-}
-
-const defaultPollingInterval = 4 * time.Second
+const defaultPollingInterval = 2 * time.Second
 
 // sendAndAwait sends the given transaction and waits for it to be committed
 // on-chain.
@@ -374,10 +466,16 @@ func (c Client) sendAndAwait(ctx context.Context, tx *types.Transaction) error {
 	}
 
 	// Wait for the transaction to be committed on-chain.
-	txWithStatus := &types.TransactionWithStatus{}
+	txWithStatus, err := c.client.GetTransaction(ctx, *txHash)
+	if err != nil {
+		return fmt.Errorf("initially polling transaction: %w", err)
+	}
+
 	ticker := time.NewTicker(defaultPollingInterval)
-	for txWithStatus.TxStatus.Status != types.TransactionStatusCommitted &&
-		txWithStatus.TxStatus.Status != types.TransactionStatusRejected {
+	for txWithStatus.TxStatus.Status != types.TransactionStatusCommitted {
+		if txWithStatus.TxStatus.Status == types.TransactionStatusRejected {
+			return fmt.Errorf("transaction rejected with: %v", *txWithStatus.TxStatus.Reason)
+		}
 		select {
 		case <-ctx.Done():
 			return fmt.Errorf("context done: %w", ctx.Err())
@@ -397,6 +495,7 @@ func (c Client) GetChannelWithID(ctx context.Context, id channel.ID) (BlockNumbe
 	if err != nil {
 		return 0, nil, nil, nil, err
 	}
+	log.Println("GetChannelWithID: got channel live cell")
 	channelConstants, err := molecule.ChannelConstantsFromSlice(cell.Output.Type.Args, false)
 	if err != nil {
 		return 0, nil, nil, nil, err
@@ -434,7 +533,7 @@ func (c Client) getAllChannelLiveCells(ctx context.Context) (*indexer.LiveCells,
 		Filter:           nil,
 		WithData:         true,
 	}
-	return c.client.GetCells(ctx, searchKey, indexer.SearchOrderDesc, math.MaxUint64, "")
+	return c.client.GetCells(ctx, searchKey, indexer.SearchOrderDesc, math.MaxUint32, "")
 }
 
 func (c Client) getExactChannelLiveCell(ctx context.Context, pcts *types.Script) (*indexer.LiveCell, error) {
@@ -445,8 +544,10 @@ func (c Client) getExactChannelLiveCell(ctx context.Context, pcts *types.Script)
 		Filter:           nil,
 		WithData:         true,
 	}
-	cells, err := c.client.GetCells(ctx, searchKey, indexer.SearchOrderDesc, math.MaxUint64, "")
+	cells, err := c.client.GetCells(ctx, searchKey, indexer.SearchOrderDesc, math.MaxUint32, "")
+	log.Println("getExactChannelLiveCell: GetCells")
 	if err != nil {
+		log.Println("getExactChannelLiveCell: GetCells error: ", err)
 		return nil, err
 	}
 	if len(cells.Objects) > 1 {
@@ -481,6 +582,7 @@ func (c Client) GetBlockTime(ctx context.Context, blockNumber BlockNumber) (time
 
 func (c Client) getChannelLiveCellWithCache(ctx context.Context, id channel.ID) (*indexer.LiveCell, *molecule.ChannelStatus, error) {
 	script, cached := c.cache.Get(id)
+	log.Println("getChannelLiveCellWithCache: cached?", cached)
 	if cached {
 		cell, err := c.getExactChannelLiveCell(ctx, script)
 		if err != nil {
@@ -493,6 +595,7 @@ func (c Client) getChannelLiveCellWithCache(ctx context.Context, id channel.ID) 
 		return cell, status, nil
 	}
 	liveChannelCells, err := c.getAllChannelLiveCells(ctx)
+	log.Println("getChannelLiveCellWithCache: getAllChannelLiveCells returned error: ", err)
 	if err != nil {
 		return nil, nil, err
 	}

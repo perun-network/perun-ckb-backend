@@ -1,9 +1,12 @@
 package transaction_test
 
 import (
+	"fmt"
 	"math/big"
 	"testing"
 
+	"github.com/nervosnetwork/ckb-sdk-go/v2/collector"
+	ckbtransaction "github.com/nervosnetwork/ckb-sdk-go/v2/transaction"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types/numeric"
 	"github.com/stretchr/testify/require"
@@ -15,6 +18,8 @@ import (
 	ptest "polycry.pt/poly-go/test"
 )
 
+var zeroHash types.Hash = types.Hash{}
+
 func TestScriptHandler(t *testing.T) {
 	rng := ptest.Prng(t)
 	sender := wtest.NewRandomParticipant(rng)
@@ -24,15 +29,13 @@ func TestScriptHandler(t *testing.T) {
 	pctsDep := btest.NewRandomCellDep(rng)
 	pclsDep := btest.NewRandomCellDep(rng)
 	pflsDep := btest.NewRandomCellDep(rng)
-	psh := transaction.NewPerunScriptHandler(
-		*pctsDep, *pclsDep, *pflsDep,
-		types.Hash{}, types.HashTypeData,
-		types.Hash{}, types.HashTypeData,
-		types.Hash{}, types.HashTypeData,
-		0,
-		*defaultLock,
-		*defaultLockDep,
+	deployment := btest.NewRandomDeployment(rng,
+		btest.WithPCTS(types.Hash{}, *pctsDep, types.HashTypeData),
+		btest.WithPCLS(types.Hash{}, *pclsDep, types.HashTypeData),
+		btest.WithPFLS(types.Hash{}, *pflsDep, types.HashTypeData),
+		btest.WithDefaultLockScript(*defaultLock, *defaultLockDep),
 	)
+	psh := transaction.NewPerunScriptHandlerWithDeployment(*deployment)
 
 	mockHandler := txtest.NewMockHandler(defaultLock)
 	funding := uint64(numeric.NewCapacityFromCKBytes(420_690))
@@ -51,9 +54,16 @@ func TestScriptHandler(t *testing.T) {
 		return mockIterator
 	}
 
-	t.Run("Open", func(t *testing.T) {
+	t.Run("Balancing", func(t *testing.T) {
 		mockIterator := mkMockIterator()
-		b, err := transaction.NewPerunTransactionBuilder(types.NetworkTest, mockIterator, psh, senderCkbAddr)
+		iters := map[types.Hash]collector.CellIterator{
+			zeroHash: mockIterator,
+		}
+		channelTokenOutpoint := btest.NewRandomOutpoint(rng)
+		mockIterator.GenerateInput(rng, txtest.WithOutPoint(channelTokenOutpoint))
+		liveCellMap := liveCellMapFromIterator(mockIterator)
+		client := txtest.NewMockClient(txtest.WithMockLiveCells(liveCellMap))
+		b, err := transaction.NewPerunTransactionBuilder(client, iters, make(map[types.Hash]types.Script), psh, senderCkbAddr)
 		require.NoError(t, err, "creating perun transaction builder")
 		b.Register(mockHandler)
 		// Open
@@ -61,67 +71,82 @@ func TestScriptHandler(t *testing.T) {
 			test.WithNumParts(2),
 			test.WithNumAssets(1),
 			test.WithNumLocked(0),
-			test.WithBalancesInRange(big.NewInt(100), big.NewInt(10_000)),
+			test.WithBalancesInRange(big.NewInt(0).Mul(big.NewInt(100), big.NewInt(100_000_000)), big.NewInt(0).Mul(big.NewInt(10_000), big.NewInt(100_000_000))),
 		)
 		params := test.NewRandomParams(rng,
 			test.WithNumParts(2),
 			test.WithLedgerChannel(true),
 			test.WithVirtualChannel(false),
 			test.WithoutApp())
-		oi := transaction.NewOpenInfo([32]byte{}, btest.NewRandomToken(rng), params, state)
-		_, err = b.Build(oi, txtest.MockContext{})
+		oi := transaction.NewOpenInfo([32]byte{}, btest.NewRandomToken(rng,
+			btest.WithOutpoint(*channelTokenOutpoint)),
+			params,
+			state)
+		require.NoError(t, b.Open(oi), "executing opening transaction handler")
+
+		tx, err := b.Build()
 		require.NoError(t, err)
-	})
 
-	t.Run("Fund", func(t *testing.T) {
-		mockIterator := mkMockIterator()
-		b, err := transaction.NewPerunTransactionBuilder(types.NetworkTest, mockIterator, psh, senderCkbAddr)
-		require.NoError(t, err, "creating perun transaction builder")
-		b.Register(mockHandler)
-		// Open
-		state := test.NewRandomState(rng,
-			test.WithNumParts(2),
-			test.WithNumAssets(1),
-			test.WithNumLocked(0),
-			test.WithBalancesInRange(big.NewInt(100), big.NewInt(10_000)),
-		)
-		params := test.NewRandomParams(rng,
-			test.WithNumParts(2),
-			test.WithLedgerChannel(true),
-			test.WithVirtualChannel(false),
-			test.WithoutApp())
-
-		fi := transaction.NewFundInfo(*btest.NewRandomOutpoint(rng), params, state, btest.NewRandomScript(rng), *btest.NewRandomChannelStatus(rng, btest.WithState(state)), btest.NewRandomHash(rng))
-
-		_, err = b.Build(fi, txtest.MockContext{})
-		require.NoError(t, err)
+		require.NoError(t, checkTransactionBalance(tx, mockIterator, transaction.DefaultFeeShannon), "transaction should be properly balanced")
 	})
 
 }
 
-// Example output:
-// *github.com/nervosnetwork/ckb-sdk-go/v2/types.Transaction {
-//		Version: 0, Hash: github.com/nervosnetwork/ckb-sdk-go/v2/types.Hash [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-//    CellDeps: []*github.com/nervosnetwork/ckb-sdk-go/v2/types.CellDep len: 1, cap: 1, [
-//              *(*"github.com/nervosnetwork/ckb-sdk-go/v2/types.CellDep")(0xc00013e360),
-//    ],
-//    HeaderDeps: []github.com/nervosnetwork/ckb-sdk-go/v2/types.Hash len: 0, cap: 0, nil,
-//    Inputs: []*github.com/nervosnetwork/ckb-sdk-go/v2/types.CellInput len: 2, cap: 2, [
-//              *(*"github.com/nervosnetwork/ckb-sdk-go/v2/types.CellInput")(0xc00018a3b0),
-//							*(*"github.com/nervosnetwork/ckb-sdk-go/v2/types.CellInput")(0xc00018a3c0),
-//    ],
-//    Outputs: []*github.com/nervosnetwork/ckb-sdk-go/v2/types.CellOutput len: 3, cap: 4, [
-//              *(*"github.com/nervosnetwork/ckb-sdk-go/v2/types.CellOutput")(0xc000012768),
-//							*(*"github.com/nervosnetwork/ckb-sdk-go/v2/types.CellOutput")(0xc000013470),
-//    					*(*"github.com/nervosnetwork/ckb-sdk-go/v2/types.CellOutput")(0xc000013680),
-//    ],
-//    OutputsData: [][]uint8 len: 3, cap: 4, [
-//              [],
-//              [0,0,0,0],
-//              [127,0,0,0,127,0,0,0,20,0,0,0,101,0,0,0,106,0,0,0,122,0,0,0,81,0,0,0,20,0,0,0,52,0,0,0,68,0,0,0,76,0,0,0,90,86,116,59,198,53,20,55,241,48,110,209,59,70,224,83,24,195,74,108,...+67 more],
-//    ],
-//    Witnesses: [][]uint8 len: 2, cap: 2, [
-//              [],
-//              [],
-//    ],
-// }
+func checkTransactionBalance(
+	tx *ckbtransaction.TransactionWithScriptGroups,
+	mockIterator *txtest.MockIterator,
+	expectedFeeShannon uint64) error {
+	inputs := mockIterator.GetInputs()
+	findInInputs := func(cellInput *types.CellInput) *types.TransactionInput {
+		for _, input := range inputs {
+			if *input.OutPoint == *cellInput.PreviousOutput {
+				return input
+			}
+		}
+		return nil
+	}
+
+	// Iterate over all inputs and fetch their corresponding amounts from the
+	// mockiterator.
+	inputCKBAmount := uint64(0)
+	for _, input := range tx.TxView.Inputs {
+		txInput := findInInputs(input)
+		if txInput == nil {
+			return fmt.Errorf("input %v not found in mock iterator", input)
+		}
+		inputCKBAmount += txInput.Output.Capacity
+	}
+
+	outputCKBAmount := uint64(0)
+	for _, output := range tx.TxView.Outputs {
+		outputCKBAmount += output.Capacity
+	}
+
+	if inputCKBAmount != (outputCKBAmount + expectedFeeShannon) {
+		return fmt.Errorf("input and output amounts do not match: %d != %d", inputCKBAmount, outputCKBAmount)
+	}
+
+	return nil
+}
+
+type inputSource interface {
+	GetInputs() []*types.TransactionInput
+}
+
+func liveCellMapFromIterator(is inputSource) map[string]*types.CellWithStatus {
+	m := make(map[string]*types.CellWithStatus)
+	for _, ti := range is.GetInputs() {
+		key := txtest.MakeKeyFromOutpoint(ti.OutPoint)
+		m[key] = &types.CellWithStatus{
+			Cell: &types.CellInfo{
+				Data: &types.CellData{
+					Content: ti.OutputData,
+					Hash:    zeroHash, // TODO: use real hash
+				},
+				Output: ti.Output,
+			},
+			Status: "live",
+		}
+	}
+	return m
+}

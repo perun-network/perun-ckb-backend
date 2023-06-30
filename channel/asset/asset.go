@@ -9,10 +9,11 @@ import (
 	molecule2 "perun.network/perun-ckb-backend/encoding/molecule"
 )
 
-// ckbAsset is the native asset of the chain (CKBytes).
+// ckbAsset is the native asset of the chain (CKBytes) denominated in shannon.
 type ckbAsset struct{}
 
-// CKBAsset is the unique asset that is supported by the chain (CKBytes).
+// CKBAsset is the unique asset that is supported by the chain (CKBytes)
+// denominated in shannon.
 var CKBAsset = &ckbAsset{}
 
 // MarshalBinary does nothing and returns nil since the backend has a singleton native asset.

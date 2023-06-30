@@ -6,6 +6,7 @@ import (
 )
 
 type Token struct {
+	Idx      uint32
 	Outpoint molecule.OutPoint
 	Token    molecule.ChannelToken
 }
@@ -19,7 +20,7 @@ func (t Token) AsCellInput() types.CellInput {
 		Since: 0,
 		PreviousOutput: &types.OutPoint{
 			TxHash: types.BytesToHash(t.Outpoint.TxHash().AsSlice()),
-			Index:  0,
+			Index:  t.Idx,
 		},
 	}
 }

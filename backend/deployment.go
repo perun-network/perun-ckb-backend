@@ -28,6 +28,8 @@ type Deployment struct {
 
 	DefaultLockScript    types.Script
 	DefaultLockScriptDep types.CellDep
+
+	SUDTs map[types.Hash]types.Script
 }
 
 type DeploymentConfig struct {
