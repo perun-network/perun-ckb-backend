@@ -8,13 +8,30 @@ import (
 	"perun.network/perun-ckb-backend/backend"
 )
 
-func NewRandomToken(rng *rand.Rand) backend.Token {
+func NewRandomToken(rng *rand.Rand, opts ...TokenOpt) backend.Token {
 	op := NewRandomOutpoint(rng)
 	ct := molecule.NewChannelTokenBuilder()
 
-	return backend.Token{
+	bt := &backend.Token{
 		Outpoint: *op.Pack(),
 		Token:    ct.OutPoint(*op.Pack()).Build(),
+	}
+
+	for _, opt := range opts {
+		opt(bt)
+	}
+
+	return *bt
+}
+
+type TokenOpt func(*backend.Token)
+
+func WithOutpoint(op types.OutPoint) TokenOpt {
+	return func(t *backend.Token) {
+		ct := molecule.NewChannelTokenBuilder()
+		t.Idx = op.Index
+		t.Outpoint = *op.Pack()
+		t.Token = ct.OutPoint(*op.Pack()).Build()
 	}
 }
 

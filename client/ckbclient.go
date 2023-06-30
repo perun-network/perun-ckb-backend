@@ -230,6 +230,7 @@ func (c Client) createOrGetChannelToken(ctx context.Context, iter collector.Cell
 		OutPoint(*transactionInput.OutPoint.Pack()).
 		Build()
 	return backend.Token{
+		Idx:      transactionInput.OutPoint.Index,
 		Outpoint: *transactionInput.OutPoint.Pack(),
 		Token:    channelToken,
 	}, nil

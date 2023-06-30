@@ -11,15 +11,16 @@ import (
 type MockIterator struct {
 	inputs   []*types.TransactionInput
 	defaults []TransactionInputOpt
+	idx      int
 }
 
 func (mi *MockIterator) HasNext() bool {
-	return len(mi.inputs) != 0
+	return mi.idx < len(mi.inputs)
 }
 
 func (mi *MockIterator) Next() *types.TransactionInput {
-	ti := mi.inputs[0]
-	mi.inputs = mi.inputs[1:]
+	ti := mi.inputs[mi.idx]
+	mi.idx++
 	return ti
 }
 
@@ -29,6 +30,7 @@ func NewMockIterator(defaults ...TransactionInputOpt) *MockIterator {
 	return &MockIterator{
 		inputs:   []*types.TransactionInput{},
 		defaults: defaults,
+		idx:      0,
 	}
 }
 
@@ -68,6 +70,35 @@ func (mi *MockIterator) GenerateInput(rng *rand.Rand, opts ...TransactionInputOp
 	}
 	mi.inputs = append(mi.inputs, ti)
 	return mi
+}
+
+func (mi *MockIterator) GetInputs() []*types.TransactionInput {
+	copyScript := func(s *types.Script) *types.Script {
+		if s == nil {
+			return nil
+		}
+		return &types.Script{
+			CodeHash: s.CodeHash,
+			HashType: s.HashType,
+			Args:     s.Args,
+		}
+	}
+	cloned := make([]*types.TransactionInput, len(mi.inputs))
+	for i, ti := range mi.inputs {
+		cloned[i] = &types.TransactionInput{
+			OutPoint: &types.OutPoint{
+				TxHash: ti.OutPoint.TxHash,
+				Index:  ti.OutPoint.Index,
+			},
+			Output: &types.CellOutput{
+				Capacity: ti.Output.Capacity,
+				Lock:     copyScript(ti.Output.Lock),
+				Type:     copyScript(ti.Output.Type),
+			},
+			OutputData: ti.OutputData,
+		}
+	}
+	return cloned
 }
 
 func (mi *MockIterator) applyDefaults(ti *types.TransactionInput) {
