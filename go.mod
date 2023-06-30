@@ -1,6 +1,6 @@
 module perun.network/perun-ckb-backend
 
-go 1.17
+go 1.19
 
 require perun.network/go-perun v0.10.6
 
@@ -19,6 +19,7 @@ require (
 require (
 	github.com/StackExchange/wmi v0.0.0-20180116203802-5d049714c4a6 // indirect
 	github.com/btcsuite/btcd/btcec/v2 v2.2.0 // indirect
+	github.com/btcsuite/btcd/chaincfg/chainhash v1.0.2 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/deckarep/golang-set v1.8.0 // indirect
 	github.com/ethereum/go-ethereum v1.10.22 // indirect
