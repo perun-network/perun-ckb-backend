@@ -324,10 +324,8 @@ func (ptb *PerunTransactionBuilder) processOutputs(contexts ...interface{}) erro
 	groups := ptb.getScriptGroups()
 
 	for _, output := range ptb.SimpleTransactionBuilder.Outputs {
-		if err := ptb.processOutputLockScript(output, groups, contexts...); err != nil {
-			return fmt.Errorf("processing output lock script: %w", err)
-		}
-
+		// Only process type scripts, because lock scripts are not evaluated in
+		// their outputs.
 		if err := ptb.processOutputTypeScript(output, groups, contexts...); err != nil {
 			return fmt.Errorf("processing output type script: %w", err)
 		}
@@ -751,7 +749,7 @@ func (ptb *PerunTransactionBuilder) resolveInputCell(input *types.CellInput) (*t
 	return cell.Cell.Output, cell.Cell.Data.Content, nil
 }
 
-func (ptb *PerunTransactionBuilder) processOutputLockScript(output *types.CellOutput, groups []*ckbtransaction.ScriptGroup, contexts ...interface{}) error {
+func (ptb *PerunTransactionBuilder) processLockScript(output *types.CellOutput, groups []*ckbtransaction.ScriptGroup, contexts ...interface{}) error {
 	lockScriptGroup, err := ptb.groupForScript(output.Lock)
 	if err != nil {
 		return fmt.Errorf("getting lock script group: %w", err)
@@ -789,7 +787,7 @@ func (ptb *PerunTransactionBuilder) processInputLockScript(input *types.CellInpu
 	if err != nil {
 		return fmt.Errorf("resolving input cell: %w", err)
 	}
-	return ptb.processOutputLockScript(cell.Cell.Output, groups, contexts...)
+	return ptb.processLockScript(cell.Cell.Output, groups, contexts...)
 }
 
 func (ptb *PerunTransactionBuilder) processInputTypeScript(input *types.CellInput, groups []*ckbtransaction.ScriptGroup, contexts ...interface{}) error {
