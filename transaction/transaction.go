@@ -55,7 +55,7 @@ type LiveCellFetcher interface {
 	GetLiveCell(ctx context.Context, outPoint *types.OutPoint, withData bool) (*types.CellWithStatus, error)
 }
 
-func NewPerunTransactionBuilder(client LiveCellFetcher, iterators map[types.Hash]collector.CellIterator, knownUDTs map[types.Hash]types.Script, psh *PerunScriptHandler) (*PerunTransactionBuilder, error) {
+func NewPerunTransactionBuilder(client LiveCellFetcher, iterators map[types.Hash]collector.CellIterator, knownUDTs map[types.Hash]types.Script, psh *PerunScriptHandler, changeAddress address.Address) (*PerunTransactionBuilder, error) {
 	udtChangeCellIndices := make(map[types.Hash]int)
 	for hash := range knownUDTs {
 		udtChangeCellIndices[hash] = -1
@@ -70,6 +70,7 @@ func NewPerunTransactionBuilder(client LiveCellFetcher, iterators map[types.Hash
 		scriptGroupMap:           make(map[types.Hash]int),
 		ckbChangeCellIndex:       -1,
 		udtChangeCellIndices:     udtChangeCellIndices,
+		changeAddress:            changeAddress,
 	}
 
 	return b, nil
@@ -163,12 +164,11 @@ func (ptb *PerunTransactionBuilder) Build(contexts ...interface{}) (*ckbtransact
 		return nil, fmt.Errorf("processing inputs: %w", err)
 	}
 
-	// TODO:
 	// Final balancing of transaction. Every additional output/input were added,
 	// we now only have to make sure that all amounts are correct.
-	// if err := ptb.balanceTransaction(); err != nil {
-	// 	return nil, fmt.Errorf("final balancing of transaction: %w", err)
-	// }
+	if err := ptb.balanceTransaction(); err != nil {
+		return nil, fmt.Errorf("final balancing of transaction: %w", err)
+	}
 
 	tx := ptb.BuildTransaction()
 	tx.ScriptGroups = ptb.copyValidScriptGroups()
@@ -436,30 +436,55 @@ func (ptb *PerunTransactionBuilder) balanceTransaction() error {
 
 // addChangeCell will add a change cell to the output of the given transaction
 // using the preconfigured change address.
-func (ptb *PerunTransactionBuilder) addChangeCell(assetHash types.Hash, amount uint64) error {
+func (ptb *PerunTransactionBuilder) addOrUpdateChangeCell(assetHash types.Hash, amount uint64) error {
 	if assetHash == zeroHash {
-		return ptb.addCKBChangeCell(amount)
+		return ptb.addOrUpdateCKBChangeCell(amount)
 	}
 
-	return ptb.addUDTChangeCell(assetHash, amount)
+	return ptb.addOrUpdateUDTChangeCell(assetHash, amount)
 }
 
-func (ptb *PerunTransactionBuilder) addCKBChangeCell(amount uint64) error {
+func (ptb *PerunTransactionBuilder) addOrUpdateCKBChangeCell(amount uint64) error {
+	idx := ptb.ckbChangeCellIndex
+
+	if idx != -1 {
+		// We already added the change cell to the script group, just update the
+		// cell capacity.
+		ptb.SimpleTransactionBuilder.Outputs[idx].Capacity = amount
+		return nil
+	}
+
 	outputCell := &types.CellOutput{
 		Capacity: amount,
 		Lock:     ptb.defaultLockScript(),
 		Type:     nil,
 	}
-
 	ptb.SimpleTransactionBuilder.Outputs = append(ptb.SimpleTransactionBuilder.Outputs, outputCell)
 	ptb.SimpleTransactionBuilder.OutputsData = append(ptb.SimpleTransactionBuilder.OutputsData, []byte{})
 
+	ptb.ckbChangeCellIndex = len(ptb.SimpleTransactionBuilder.Outputs) - 1
+
 	lockScriptGroup, _ := ptb.scriptGroupsForHash(zeroHash)
 	appendOutputToGroups(lockScriptGroup, nil, uint32(len(ptb.SimpleTransactionBuilder.Outputs)-1))
+
 	return nil
 }
 
-func (ptb *PerunTransactionBuilder) addUDTChangeCell(assetHash types.Hash, amount uint64) error {
+func (ptb *PerunTransactionBuilder) addOrUpdateUDTChangeCell(assetHash types.Hash, amount uint64) error {
+	encodedAmount, err := molecule2.PackUint128(big.NewInt(0).SetUint64(amount))
+	if err != nil {
+		return fmt.Errorf("encoding amount for %x as Uint128: %w", assetHash, err)
+	}
+	data := encodedAmount.AsSlice()
+
+	idx := ptb.udtChangeCellIndices[assetHash]
+	if idx != -1 {
+		// We already constructed and added the udt change cell to its script
+		// group, only the change amount has to be adjusted.
+		ptb.SimpleTransactionBuilder.OutputsData[idx] = data
+		return nil
+	}
+
 	outputCell := &types.CellOutput{
 		Capacity: 0,
 		Lock:     ptb.defaultLockScript(),
@@ -471,12 +496,6 @@ func (ptb *PerunTransactionBuilder) addUDTChangeCell(assetHash types.Hash, amoun
 		return fmt.Errorf("unknown UDT %x", assetHash)
 	}
 	outputCell.Type = &udtScript
-
-	encodedAmount, err := molecule2.PackUint128(big.NewInt(0).SetUint64(amount))
-	if err != nil {
-		return fmt.Errorf("encoding amount for %x as Uint128: %w", assetHash, err)
-	}
-	data := encodedAmount.AsSlice()
 
 	requiredCapacity := outputCell.OccupiedCapacity(data)
 	outputCell.Capacity = requiredCapacity
@@ -610,7 +629,7 @@ func (ptb *PerunTransactionBuilder) addChangeAndDeductCellCapacity(assetHash typ
 	udtCapacity := ptb.requiredCapacity(assetHash)
 	alreadyProvidedFunding.assetAmounts[assetHash] -= udtCapacity
 
-	return ptb.addChangeCell(assetHash, change)
+	return ptb.addOrUpdateChangeCell(assetHash, change)
 }
 
 // requiredCapacity returns the required amount of CKBytes to accomodate the

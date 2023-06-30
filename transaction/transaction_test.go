@@ -4,6 +4,7 @@ import (
 	"math/big"
 	"testing"
 
+	"github.com/nervosnetwork/ckb-sdk-go/v2/collector"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types/numeric"
 	"github.com/stretchr/testify/require"
@@ -14,6 +15,8 @@ import (
 	wtest "perun.network/perun-ckb-backend/wallet/test"
 	ptest "polycry.pt/poly-go/test"
 )
+
+var zeroHash types.Hash = types.Hash{}
 
 func TestScriptHandler(t *testing.T) {
 	rng := ptest.Prng(t)
@@ -51,7 +54,11 @@ func TestScriptHandler(t *testing.T) {
 
 	t.Run("Open", func(t *testing.T) {
 		mockIterator := mkMockIterator()
-		b, err := transaction.NewPerunTransactionBuilder(types.NetworkTest, mockIterator, psh, senderCkbAddr)
+		iters := map[types.Hash]collector.CellIterator{
+			zeroHash: mockIterator,
+		}
+		client := txtest.NewMockClient()
+		b, err := transaction.NewPerunTransactionBuilder(client, iters, make(map[types.Hash]types.Script), psh, senderCkbAddr)
 		require.NoError(t, err, "creating perun transaction builder")
 		b.Register(mockHandler)
 		// Open
@@ -73,7 +80,11 @@ func TestScriptHandler(t *testing.T) {
 
 	t.Run("Fund", func(t *testing.T) {
 		mockIterator := mkMockIterator()
-		b, err := transaction.NewPerunTransactionBuilder(types.NetworkTest, mockIterator, psh, senderCkbAddr)
+		iters := map[types.Hash]collector.CellIterator{
+			zeroHash: mockIterator,
+		}
+		client := txtest.NewMockClient()
+		b, err := transaction.NewPerunTransactionBuilder(client, iters, make(map[types.Hash]types.Script), psh, senderCkbAddr)
 		require.NoError(t, err, "creating perun transaction builder")
 		b.Register(mockHandler)
 		// Open
