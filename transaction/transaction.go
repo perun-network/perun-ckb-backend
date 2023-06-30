@@ -626,7 +626,6 @@ func (ptb *PerunTransactionBuilder) addInputsAndChangeForFunding(assetHash types
 	}
 
 	alreadyProvidedAssetAmount := alreadyProvidedFunding.AssetAmount(assetHash)
-	var fundedAmount *AssetInformation
 	if alreadyProvidedAssetAmount < requestedAmount {
 		requiredAmount := requestedAmount - alreadyProvidedAssetAmount
 		amountAddedByInputs, err := ptb.addInputsForFunding(iter, assetHash, requiredAmount)
@@ -634,10 +633,10 @@ func (ptb *PerunTransactionBuilder) addInputsAndChangeForFunding(assetHash types
 			return fmt.Errorf("adding inputs for funding: %w", err)
 		}
 		alreadyProvidedFunding.MergeWithAssetInformation(amountAddedByInputs)
-	} else {
-		clonedProvidedFunding := alreadyProvidedFunding.Clone()
-		fundedAmount = &clonedProvidedFunding
 	}
+
+	clonedProvidedFunding := alreadyProvidedFunding.Clone()
+	fundedAmount := &clonedProvidedFunding
 
 	// We have at least the required amount of funds for the UDT available, check
 	// if we need to add a change cell.
