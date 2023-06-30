@@ -44,6 +44,9 @@ type PerunTransactionBuilder struct {
 	// scriptGroupmap maps the hash of a script to the index within the
 	// scriptGroup.
 	scriptGroupMap map[types.Hash]int
+
+	ckbChangeCellIndex   int
+	udtChangeCellIndices map[types.Hash]int
 }
 
 type LiveCellFetcher interface {
@@ -53,6 +56,10 @@ type LiveCellFetcher interface {
 }
 
 func NewPerunTransactionBuilder(client LiveCellFetcher, iterators map[types.Hash]collector.CellIterator, knownUDTs map[types.Hash]types.Script, psh *PerunScriptHandler) (*PerunTransactionBuilder, error) {
+	udtChangeCellIndices := make(map[types.Hash]int)
+	for hash := range knownUDTs {
+		udtChangeCellIndices[hash] = -1
+	}
 	b := &PerunTransactionBuilder{
 		SimpleTransactionBuilder: NewSimpleTransactionBuilder(psh.defaultLockScript.CodeHash, psh.defaultLockScriptDep),
 		psh:                      psh,
@@ -61,6 +68,8 @@ func NewPerunTransactionBuilder(client LiveCellFetcher, iterators map[types.Hash
 		cl:                       client,
 		scriptGroups:             make([]*ckbtransaction.ScriptGroup, 0, 10),
 		scriptGroupMap:           make(map[types.Hash]int),
+		ckbChangeCellIndex:       -1,
+		udtChangeCellIndices:     udtChangeCellIndices,
 	}
 
 	return b, nil
@@ -75,11 +84,17 @@ func NewPerunTransactionBuilderWithDeployment(
 	psh := NewPerunScriptHandlerWithDeployment(deployment)
 	simpleBuilder := NewSimpleTransactionBuilder(deployment.DefaultLockScript.CodeHash, deployment.DefaultLockScriptDep)
 
+	udtChangeCellIndices := make(map[types.Hash]int)
+	for hash := range deployment.SUDTs {
+		udtChangeCellIndices[hash] = -1
+	}
 	b := &PerunTransactionBuilder{
 		SimpleTransactionBuilder: simpleBuilder,
 		psh:                      psh,
 		iterators:                iterators,
 		knownUDTs:                deployment.SUDTs,
+		ckbChangeCellIndex:       -1,
+		udtChangeCellIndices:     udtChangeCellIndices,
 		cl:                       client,
 		changeAddress:            changeAddress,
 		scriptGroups:             make([]*ckbtransaction.ScriptGroup, 0, 10),
@@ -147,6 +162,13 @@ func (ptb *PerunTransactionBuilder) Build(contexts ...interface{}) (*ckbtransact
 	if err := ptb.processInputs(contexts...); err != nil {
 		return nil, fmt.Errorf("processing inputs: %w", err)
 	}
+
+	// TODO:
+	// Final balancing of transaction. Every additional output/input were added,
+	// we now only have to make sure that all amounts are correct.
+	// if err := ptb.balanceTransaction(); err != nil {
+	// 	return nil, fmt.Errorf("final balancing of transaction: %w", err)
+	// }
 
 	tx := ptb.BuildTransaction()
 	tx.ScriptGroups = ptb.copyValidScriptGroups()
