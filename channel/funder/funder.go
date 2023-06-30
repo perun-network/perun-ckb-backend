@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types/molecule"
+	"log"
 	"math"
 	"perun.network/go-perun/channel"
 	"perun.network/perun-ckb-backend/backend"
@@ -66,10 +67,13 @@ polling:
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-time.After(f.PollingInterval):
+			log.Println("Party B: Polling for opened channel...")
 			_, script, channelConstants, channelStatus, err := f.client.GetChannelWithID(ctx, req.Params.ID())
 			if err != nil {
+				log.Println("Party B: Error while polling for opened channel:", err)
 				continue polling
 			}
+			log.Println("Party B: Found opened channel!")
 			err = f.verifyChannelIntegrity(req, channelConstants, channelStatus)
 			if err != nil {
 				return err
@@ -84,6 +88,7 @@ polling:
 
 // Fund funds the channel with the given funding request.
 func (f Funder) Fund(ctx context.Context, req channel.FundingReq) error {
+	log.Println("FUND called")
 	// TODO: Verify channel fundable, such as:
 	// - no ckbytes allocation in initial state in (0, pflsMinCapacity)
 	// - ...

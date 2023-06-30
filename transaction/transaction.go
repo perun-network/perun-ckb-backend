@@ -191,9 +191,9 @@ func (ptb *PerunTransactionBuilder) Build(contexts ...interface{}) (*ckbtransact
 
 	// Final balancing of transaction. Every additional output/input were added,
 	// we now only have to make sure that all amounts are correct.
-	if err := ptb.balanceTransaction(); err != nil {
-		return nil, fmt.Errorf("final balancing of transaction: %w", err)
-	}
+	//	if err := ptb.balanceTransaction(); err != nil {
+	//		return nil, fmt.Errorf("final balancing of transaction: %w", err)
+	//	}
 
 	tx := ptb.BuildTransaction()
 	tx.ScriptGroups = ptb.copyValidScriptGroups()
@@ -580,7 +580,7 @@ func (ptb *PerunTransactionBuilder) addInputsAndChangeForFunding(assetHash types
 
 	actualAmount := fundedAmount.UDTAmount(assetHash)
 	if actualAmount < requiredAmount {
-		return fmt.Errorf("not enough UDT %x cells with proper amount available for funding: want: %v; got: %v", assetHash, requiredAmount, actualAmount)
+		return fmt.Errorf("not enough UDT %#x cells with proper amount available for funding: want: %v; got: %v", assetHash.Bytes(), requiredAmount, actualAmount)
 	}
 
 	// We have at least the required amount of funds for the UDT available, check

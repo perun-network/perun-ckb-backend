@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"math"
 	"time"
 
@@ -254,11 +255,11 @@ func (c Client) Fund(ctx context.Context, pcts *types.Script, state *channel.Sta
 		return fmt.Errorf("creating Perun transaction builder: %w", err)
 	}
 	if err := builder.Fund(fi); err != nil {
-		return fmt.Errorf("creating open transaction: %w", err)
+		return fmt.Errorf("creating fund transaction: %w", err)
 	}
 	tx, err := builder.Build()
 	if err != nil {
-		return fmt.Errorf("building open transaction: %w", err)
+		return fmt.Errorf("building fund transaction: %w", err)
 	}
 	return c.submitTx(ctx, tx)
 }
@@ -362,7 +363,7 @@ func (c Client) getAssets(ctx context.Context, pcts *types.Script) (*indexer.Liv
 		Filter:           nil,
 		WithData:         true,
 	}
-	return c.client.GetCells(ctx, searchKey, indexer.SearchOrderDesc, math.MaxUint64, "")
+	return c.client.GetCells(ctx, searchKey, indexer.SearchOrderDesc, math.MaxUint32, "")
 }
 
 func (c Client) ForceClose(ctx context.Context, id channel.ID, state *channel.State, params *channel.Params) error {
@@ -493,6 +494,7 @@ func (c Client) GetChannelWithID(ctx context.Context, id channel.ID) (BlockNumbe
 	if err != nil {
 		return 0, nil, nil, nil, err
 	}
+	log.Println("GetChannelWithID: got channel live cell")
 	channelConstants, err := molecule.ChannelConstantsFromSlice(cell.Output.Type.Args, false)
 	if err != nil {
 		return 0, nil, nil, nil, err
@@ -530,7 +532,7 @@ func (c Client) getAllChannelLiveCells(ctx context.Context) (*indexer.LiveCells,
 		Filter:           nil,
 		WithData:         true,
 	}
-	return c.client.GetCells(ctx, searchKey, indexer.SearchOrderDesc, math.MaxUint64, "")
+	return c.client.GetCells(ctx, searchKey, indexer.SearchOrderDesc, math.MaxUint32, "")
 }
 
 func (c Client) getExactChannelLiveCell(ctx context.Context, pcts *types.Script) (*indexer.LiveCell, error) {
@@ -541,8 +543,10 @@ func (c Client) getExactChannelLiveCell(ctx context.Context, pcts *types.Script)
 		Filter:           nil,
 		WithData:         true,
 	}
-	cells, err := c.client.GetCells(ctx, searchKey, indexer.SearchOrderDesc, math.MaxUint64, "")
+	cells, err := c.client.GetCells(ctx, searchKey, indexer.SearchOrderDesc, math.MaxUint32, "")
+	log.Println("getExactChannelLiveCell: GetCells")
 	if err != nil {
+		log.Println("getExactChannelLiveCell: GetCells error: ", err)
 		return nil, err
 	}
 	if len(cells.Objects) > 1 {
@@ -577,6 +581,7 @@ func (c Client) GetBlockTime(ctx context.Context, blockNumber BlockNumber) (time
 
 func (c Client) getChannelLiveCellWithCache(ctx context.Context, id channel.ID) (*indexer.LiveCell, *molecule.ChannelStatus, error) {
 	script, cached := c.cache.Get(id)
+	log.Println("getChannelLiveCellWithCache: cached?", cached)
 	if cached {
 		cell, err := c.getExactChannelLiveCell(ctx, script)
 		if err != nil {
@@ -589,6 +594,7 @@ func (c Client) getChannelLiveCellWithCache(ctx context.Context, id channel.ID) 
 		return cell, status, nil
 	}
 	liveChannelCells, err := c.getAllChannelLiveCells(ctx)
+	log.Println("getChannelLiveCellWithCache: getAllChannelLiveCells returned error: ", err)
 	if err != nil {
 		return nil, nil, err
 	}
