@@ -338,12 +338,12 @@ func (c Client) Close(ctx context.Context, id channel.ID, state *channel.State, 
 
 // Turns a list of live cells into a list of input cells.
 func mkCellInputs(lcs *indexer.LiveCells) []types.CellInput {
-	res := make([]types.CellInput, 0, len(lcs.Objects))
-	for _, lc := range lcs.Objects {
-		res = append(res, types.CellInput{
+	res := make([]types.CellInput, len(lcs.Objects))
+	for idx, lc := range lcs.Objects {
+		res[idx] = types.CellInput{
 			Since:          0,
 			PreviousOutput: lc.OutPoint,
-		})
+		}
 	}
 	return res
 }

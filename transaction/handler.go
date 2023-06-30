@@ -152,8 +152,8 @@ func (psh *PerunScriptHandler) buildCloseTransaction(builder collector.Transacti
 	builder.AddCellDep(&psh.pflsDep)
 
 	idx := builder.AddInput(&closeInfo.ChannelInput)
-	for _, assetInput := range closeInfo.AssetInputs {
-		builder.AddInput(&assetInput)
+	for idx := range closeInfo.AssetInputs {
+		builder.AddInput(&closeInfo.AssetInputs[idx])
 	}
 
 	for _, h := range closeInfo.Headers {
