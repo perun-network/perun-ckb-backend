@@ -382,20 +382,18 @@ func (psh PerunScriptHandler) mkChannelLockScript() *types.Script {
 
 func (psh PerunScriptHandler) mkChannelTypeScript(params *channel.Params, token molecule.ChannelToken) *types.Script {
 	channelConstants := psh.mkChannelConstants(params, token)
-	channelArgs := types.PackBytes(channelConstants.AsSlice())
 	return &types.Script{
 		CodeHash: psh.pctsCodeHash,
 		HashType: psh.pctsHashType,
-		Args:     channelArgs.AsSlice(),
+		Args:     channelConstants.AsSlice(),
 	}
 }
 
 func (psh PerunScriptHandler) mkFundsLockScript(pcts *types.Script) *types.Script {
-	fundsArgs := types.PackBytes(pcts.Hash().Bytes())
 	return &types.Script{
 		CodeHash: psh.pflsCodeHash,
 		HashType: psh.pflsHashType,
-		Args:     fundsArgs.AsSlice(),
+		Args:     pcts.Hash().Bytes(),
 	}
 }
 
