@@ -17,6 +17,7 @@ import (
 )
 
 var zeroHash types.Hash = types.Hash{}
+var defaultFeeShannon uint64 = 1 * 100_000_000
 
 // PerunTransactionBuilder is a transaction builder specifically for Perun
 // channels. It allows creating transactions corresponding to Perun on-chain
@@ -47,6 +48,8 @@ type PerunTransactionBuilder struct {
 
 	ckbChangeCellIndex   int
 	udtChangeCellIndices map[types.Hash]int
+
+	feeShannon uint64
 }
 
 type LiveCellFetcher interface {
@@ -71,6 +74,7 @@ func NewPerunTransactionBuilder(client LiveCellFetcher, iterators map[types.Hash
 		ckbChangeCellIndex:       -1,
 		udtChangeCellIndices:     udtChangeCellIndices,
 		changeAddress:            changeAddress,
+		feeShannon:               defaultFeeShannon,
 	}
 
 	return b, nil
@@ -100,6 +104,7 @@ func NewPerunTransactionBuilderWithDeployment(
 		changeAddress:            changeAddress,
 		scriptGroups:             make([]*ckbtransaction.ScriptGroup, 0, 10),
 		scriptGroupMap:           make(map[types.Hash]int),
+		feeShannon:               defaultFeeShannon,
 	}
 
 	return b, nil
@@ -191,9 +196,9 @@ func (ptb *PerunTransactionBuilder) Build(contexts ...interface{}) (*ckbtransact
 
 	// Final balancing of transaction. Every additional output/input were added,
 	// we now only have to make sure that all amounts are correct.
-	//	if err := ptb.balanceTransaction(); err != nil {
-	//		return nil, fmt.Errorf("final balancing of transaction: %w", err)
-	//	}
+	if err := ptb.balanceTransaction(); err != nil {
+		return nil, fmt.Errorf("balancing transaction: %w", err)
+	}
 
 	tx := ptb.BuildTransaction()
 	tx.ScriptGroups = ptb.copyValidScriptGroups()
