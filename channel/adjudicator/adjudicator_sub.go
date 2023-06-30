@@ -124,7 +124,15 @@ func (a *PollingSubscription) emitEventIfNecessary(
 		a.fatalErrors <- fmt.Errorf("a live cell was found but newStatus is nil")
 		return false
 	}
-	if oldStatus != nil && bytes.Equal(oldStatus.AsSlice(), newStatus.AsSlice()) {
+
+	// If oldStatus is nil, then this is the first live cell we ever found, so we signal a status change but do not emit
+	// an event.
+	if oldStatus == nil {
+		return true
+	}
+
+	// If the status has not changed, we do not emit an event and signal that the status has not changed.
+	if bytes.Equal(oldStatus.AsSlice(), newStatus.AsSlice()) {
 		return false
 	}
 	if !encoding.ToBool(*oldStatus.Funded()) {
