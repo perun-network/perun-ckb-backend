@@ -87,12 +87,15 @@ func TestScriptHandler(t *testing.T) {
 		tx, err := b.Build()
 		require.NoError(t, err)
 
-		require.NoError(t, checkTransactionBalance(tx, mockIterator), "transaction should be properly balanced")
+		require.NoError(t, checkTransactionBalance(tx, mockIterator, transaction.DefaultFeeShannon), "transaction should be properly balanced")
 	})
 
 }
 
-func checkTransactionBalance(tx *ckbtransaction.TransactionWithScriptGroups, mockIterator *txtest.MockIterator) error {
+func checkTransactionBalance(
+	tx *ckbtransaction.TransactionWithScriptGroups,
+	mockIterator *txtest.MockIterator,
+	expectedFeeShannon uint64) error {
 	inputs := mockIterator.GetInputs()
 	findInInputs := func(cellInput *types.CellInput) *types.TransactionInput {
 		for _, input := range inputs {
@@ -119,7 +122,7 @@ func checkTransactionBalance(tx *ckbtransaction.TransactionWithScriptGroups, moc
 		outputCKBAmount += output.Capacity
 	}
 
-	if inputCKBAmount != outputCKBAmount {
+	if inputCKBAmount != (outputCKBAmount + expectedFeeShannon) {
 		return fmt.Errorf("input and output amounts do not match: %d != %d", inputCKBAmount, outputCKBAmount)
 	}
 

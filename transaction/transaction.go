@@ -17,7 +17,11 @@ import (
 )
 
 var zeroHash types.Hash = types.Hash{}
-var defaultFeeShannon uint64 = 1 * 100_000_000
+
+const (
+	DefaultFeeShannon uint64 = CKBYTE
+	CKBYTE                   = 1 * 100_000_000
+)
 
 // PerunTransactionBuilder is a transaction builder specifically for Perun
 // channels. It allows creating transactions corresponding to Perun on-chain
@@ -74,7 +78,7 @@ func NewPerunTransactionBuilder(client LiveCellFetcher, iterators map[types.Hash
 		ckbChangeCellIndex:       -1,
 		udtChangeCellIndices:     udtChangeCellIndices,
 		changeAddress:            changeAddress,
-		feeShannon:               defaultFeeShannon,
+		feeShannon:               DefaultFeeShannon,
 	}
 
 	return b, nil
@@ -104,7 +108,7 @@ func NewPerunTransactionBuilderWithDeployment(
 		changeAddress:            changeAddress,
 		scriptGroups:             make([]*ckbtransaction.ScriptGroup, 0, 10),
 		scriptGroupMap:           make(map[types.Hash]int),
-		feeShannon:               defaultFeeShannon,
+		feeShannon:               DefaultFeeShannon,
 	}
 
 	return b, nil
@@ -200,9 +204,27 @@ func (ptb *PerunTransactionBuilder) Build(contexts ...interface{}) (*ckbtransact
 		return nil, fmt.Errorf("balancing transaction: %w", err)
 	}
 
+	if err := ptb.handleCKBFee(); err != nil {
+		return nil, fmt.Errorf("handling CKB fee: %w", err)
+	}
+
 	tx := ptb.BuildTransaction()
 	tx.ScriptGroups = ptb.copyValidScriptGroups()
 	return tx, nil
+}
+
+func (ptb *PerunTransactionBuilder) handleCKBFee() error {
+	if ptb.ckbChangeCellIndex == -1 {
+		return fmt.Errorf("no CKB change cell found")
+	}
+
+	ckbChangeCell := ptb.Outputs[ptb.ckbChangeCellIndex]
+	if ckbChangeCell.Capacity <= ptb.feeShannon {
+		// TODO: Handle proper change cell deletion/update.
+		panic(fmt.Sprintf("insufficient CKB change cell capacity: %d < %d", ckbChangeCell.Capacity, ptb.feeShannon))
+	}
+
+	return nil
 }
 
 // copyValidScriptGroups only returns the script groups that are valid.
@@ -417,6 +439,8 @@ func (ptb *PerunTransactionBuilder) processInputs(contexts ...interface{}) error
 func (ptb *PerunTransactionBuilder) balanceTransaction() error {
 	alreadyProvidedFunding := NewAssetInformation(ptb.knownUDTs)
 	requiredFunding := NewAssetInformation(ptb.knownUDTs)
+	// paymentScriptCapacity := ptb.changeAddress.Script.OccupiedCapacity()
+	requiredFunding.AddAssetAmount(zeroHash, ptb.feeShannon)
 
 	// First go over the outputs and accumulate the required funding expected by
 	// a user making some channel action.
@@ -478,7 +502,8 @@ func (ptb *PerunTransactionBuilder) balanceTransaction() error {
 	}
 
 	// Do the final balancing.
-	if err := ptb.completeCKBCapacity(alreadyProvidedFunding.assetAmounts[zeroHash], requiredFunding.assetAmounts[zeroHash]); err != nil {
+	ckbAmountPlusFee := requiredFunding.CKBAmount()
+	if err := ptb.completeCKBCapacity(alreadyProvidedFunding.assetAmounts[zeroHash], ckbAmountPlusFee); err != nil {
 		return fmt.Errorf("final balancing of CKB capacity: %w", err)
 	}
 
@@ -577,14 +602,9 @@ func (ptb *PerunTransactionBuilder) scriptGroupsForHash(assetHash types.Hash) (*
 }
 
 func (ptb *PerunTransactionBuilder) completeCKBCapacity(alreadyProvidedCKBAmount, requiredCKBAmount uint64) error {
-	if alreadyProvidedCKBAmount > requiredCKBAmount {
+	if alreadyProvidedCKBAmount >= requiredCKBAmount {
 		// We provided more funding than required, set the difference as change.
-		return ptb.addOrUpdateCKBChangeCell(alreadyProvidedCKBAmount - requiredCKBAmount)
-	}
-
-	if alreadyProvidedCKBAmount == requiredCKBAmount {
-		// Balanced, as all things should be...
-		return nil
+		return ptb.addOrUpdateChangeCell(zeroHash, alreadyProvidedCKBAmount-requiredCKBAmount)
 	}
 
 	if alreadyProvidedCKBAmount < requiredCKBAmount {
