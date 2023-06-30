@@ -125,6 +125,31 @@ func (ptb *PerunTransactionBuilder) Open(oi *OpenInfo) error {
 	return err
 }
 
+func (ptb *PerunTransactionBuilder) Abort(ai *AbortInfo) error {
+	_, err := ptb.psh.buildAbortTransaction(ptb, nil, ai)
+	return err
+}
+
+func (ptb *PerunTransactionBuilder) Fund(fi *FundInfo) error {
+	_, err := ptb.psh.buildFundTransaction(ptb, nil, fi)
+	return err
+}
+
+func (ptb *PerunTransactionBuilder) Dispute(di *DisputeInfo) error {
+	_, err := ptb.psh.buildDisputeTransaction(ptb, nil, di)
+	return err
+}
+
+func (ptb *PerunTransactionBuilder) Close(ci *CloseInfo) error {
+	_, err := ptb.psh.buildCloseTransaction(ptb, nil, ci)
+	return err
+}
+
+func (ptb *PerunTransactionBuilder) ForceClose(fci *ForceCloseInfo) error {
+	_, err := ptb.psh.buildForceCloseTransaction(ptb, nil, fci)
+	return err
+}
+
 func (ptb *PerunTransactionBuilder) Build(contexts ...interface{}) (*ckbtransaction.TransactionWithScriptGroups, error) {
 	// Initialize all required script groups that we expect when building
 	// transactions for Perun channels.
