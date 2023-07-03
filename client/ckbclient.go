@@ -2,8 +2,10 @@ package client
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"math"
 	"time"
@@ -125,6 +127,13 @@ func (c Client) Start(ctx context.Context, params *channel.Params, state *channe
 	if err != nil {
 		return nil, fmt.Errorf("building open transaction: %w", err)
 	}
+	jsonmsg, err := json.Marshal(tx)
+	if err != nil {
+		panic(err)
+	}
+	if err := ioutil.WriteFile("tx.json", jsonmsg, 0644); err != nil {
+		panic(err)
+	}
 	if err := c.submitTx(ctx, tx); err != nil {
 		return nil, fmt.Errorf("submitting transaction: %w", err)
 	}
@@ -216,7 +225,7 @@ func (c Client) mkMyCKBCellIterator() (collector.CellIterator, types.Hash, error
 		WithData:         true,
 	}
 	iter := collector.NewLiveCellIterator(c.client, key)
-	return iter, defaultLockScript.Hash(), nil
+	return NewCKBOnlyIterator(iter), defaultLockScript.Hash(), nil
 }
 
 func (c Client) createOrGetChannelToken(ctx context.Context, iter collector.CellIterator) (backend.Token, error) {
