@@ -635,6 +635,10 @@ func (ptb *PerunTransactionBuilder) addInputsAndChangeForFunding(assetHash types
 	clonedProvidedFunding := alreadyProvidedFunding.Clone()
 	fundedAmount := &clonedProvidedFunding
 
+	if fundedAmount.AssetAmount(assetHash) < requestedAmount {
+		return fmt.Errorf("not enough funds for asset: %#x", assetHash.Bytes())
+	}
+
 	// We have at least the required amount of funds for the UDT available, check
 	// if we need to add a change cell.
 	if fundedAmount.AssetAmount(assetHash) == requestedAmount {
