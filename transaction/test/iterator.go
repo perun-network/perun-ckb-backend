@@ -154,3 +154,9 @@ func WithOutput(o *types.CellOutput) TransactionInputOpt {
 		ti.Output = o
 	}
 }
+
+func WithDataGenerator(dg func() []byte) TransactionInputOpt {
+	return func(ti *types.TransactionInput) {
+		ti.OutputData = dg()
+	}
+}
