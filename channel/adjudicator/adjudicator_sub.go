@@ -21,9 +21,6 @@ const (
 	DefaultSubscriptionPollingInterval = time.Duration(4) * time.Second
 )
 
-var ErrSubscriptionClosedByContext = errors.New("subscription closed by context")
-var ErrChannelConcluded = errors.New("channel concluded")
-
 type PollingSubscription struct {
 	PollingInterval   time.Duration
 	client            client.CKBClient
@@ -64,10 +61,10 @@ func (a *PollingSubscription) run(ctx context.Context) {
 			finish(err)
 			return
 		case <-a.concluded:
-			finish(ErrChannelConcluded)
+			finish(nil)
 			return
 		case <-ctx.Done():
-			finish(ErrSubscriptionClosedByContext)
+			finish(nil)
 			return
 		case <-time.After(a.PollingInterval):
 			blockNumber, newStatus, err := a.pollStatus(ctx)
