@@ -102,7 +102,7 @@ var _ CKBClient = (*Client)(nil)
 
 func (c Client) Start(ctx context.Context, params *channel.Params, state *channel.State) (*types.Script, error) {
 	// TODO: Override defaulthash logic.
-	iter, _, err := c.mkMyCellIterator()
+	iter, _, err := c.mkMyCKBCellIterator()
 	if err != nil {
 		return nil, fmt.Errorf("creating cell iterator: %w", err)
 	}
@@ -162,7 +162,7 @@ func iteratorsForDeployment(cl rpc.Client, deployment backend.Deployment, sender
 		return nil, fmt.Errorf("creating cell iterator for default lockscript: %w", err)
 	}
 	// NOTE: This is to gather CKBytes.
-	iters[zeroHash] = iter
+	iters[zeroHash] = NewCKBOnlyIterator(iter)
 
 	// Iterator for udts:
 	for _, udt := range deployment.SUDTs {
@@ -202,18 +202,20 @@ func (c Client) submitTxWithArgument(ctx context.Context, txTypeArgument ...inte
 	return c.submitTx(ctx, tx)
 }
 
-// mkMyCellIterator returns a celliterator together with the associated script
+// mkMyCKBCellIterator returns a celliterator together with the associated script
 // hash it is meant to be used with.
-func (c Client) mkMyCellIterator() (collector.CellIterator, types.Hash, error) {
-	addr, err := c.signer.Address.Encode()
-	if err != nil {
-		return nil, types.Hash{}, fmt.Errorf("encoding sender address: %w", err)
-	}
+func (c Client) mkMyCKBCellIterator() (collector.CellIterator, types.Hash, error) {
 	defaultLockScript := c.signer.Address.Script
-	iter, err := collector.NewLiveCellIteratorFromAddress(c.client, addr)
-	if err != nil {
-		return nil, types.Hash{}, fmt.Errorf("creating cell iterator: %w", err)
+	key := &indexer.SearchKey{
+		Script:     defaultLockScript,
+		ScriptType: types.ScriptTypeLock,
+		// Use `ScriptSearchModeExact` to make sure we only get cells that have no
+		// type script set and could be SUDT cells.
+		ScriptSearchMode: types.ScriptSearchModeExact,
+		Filter:           nil,
+		WithData:         true,
 	}
+	iter := collector.NewLiveCellIterator(c.client, key)
 	return iter, defaultLockScript.Hash(), nil
 }
 
