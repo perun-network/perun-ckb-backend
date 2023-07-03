@@ -198,12 +198,6 @@ func (ptb *PerunTransactionBuilder) Build(contexts ...interface{}) (*ckbtransact
 		return nil, fmt.Errorf("processing inputs: %w", err)
 	}
 
-	// Final balancing of transaction. Every additional output/input were added,
-	// we now only have to make sure that all amounts are correct.
-	if err := ptb.balanceTransaction(); err != nil {
-		return nil, fmt.Errorf("balancing transaction: %w", err)
-	}
-
 	if err := ptb.handleCKBFee(); err != nil {
 		return nil, fmt.Errorf("handling CKB fee: %w", err)
 	}
@@ -434,6 +428,8 @@ func (ptb *PerunTransactionBuilder) processInputs(contexts ...interface{}) error
 
 // balanceTransaction balances the CKBytes and UDTs cells for the given
 // transaction.
+// NOTE: This method is NOT idempotent. It should only be called once all
+// user-defined inputs and outputs have been added.
 func (ptb *PerunTransactionBuilder) balanceTransaction() error {
 	alreadyProvidedFunding := NewAssetInformation(ptb.knownUDTs)
 	requiredFunding := NewAssetInformation(ptb.knownUDTs)
@@ -577,8 +573,11 @@ func (ptb *PerunTransactionBuilder) addOrUpdateUDTChangeCell(assetHash types.Has
 	ptb.SimpleTransactionBuilder.Outputs = append(ptb.SimpleTransactionBuilder.Outputs, outputCell)
 	ptb.SimpleTransactionBuilder.OutputsData = append(ptb.SimpleTransactionBuilder.OutputsData, data)
 
+	changeIndex := len(ptb.SimpleTransactionBuilder.Outputs) - 1
 	lockScriptGroup, typeScriptGroup := ptb.scriptGroupsForHash(assetHash)
-	appendOutputToGroups(lockScriptGroup, typeScriptGroup, uint32(len(ptb.SimpleTransactionBuilder.Outputs)-1))
+	appendOutputToGroups(lockScriptGroup, typeScriptGroup, uint32(changeIndex))
+
+	ptb.udtChangeCellIndices[assetHash] = changeIndex
 	return nil
 }
 
@@ -701,11 +700,11 @@ func appendOutputToGroups(lockScriptGroup, typeScriptGroup *ckbtransaction.Scrip
 }
 
 func (ptb *PerunTransactionBuilder) addChangeAndDeductCellCapacity(assetHash types.Hash, change uint64, alreadyProvidedFunding *AssetInformation) error {
-	// Adding the change cell will subtract the required capacity for the UDT
+	// Adding the change cell will subtract the required CKB capacity for the UDT
 	// from the already provided amount since we add everything to the provided
 	// amount by default.
 	udtCapacity := ptb.requiredCapacity(assetHash)
-	alreadyProvidedFunding.assetAmounts[assetHash] -= udtCapacity
+	alreadyProvidedFunding.assetAmounts[zeroHash] -= udtCapacity
 
 	return ptb.addOrUpdateChangeCell(assetHash, change)
 }
