@@ -385,7 +385,7 @@ func (ai AssetInformation) AssetAmount(hash types.Hash) uint64 {
 }
 
 func (ai AssetInformation) CKBAmount() uint64 {
-	return ai.assetAmounts[types.Hash{}]
+	return ai.assetAmounts[zeroHash]
 }
 
 // AddValuesFromOutput adds the capacity of the given cell together with the
@@ -433,7 +433,6 @@ func (ptb *PerunTransactionBuilder) processInputs(contexts ...interface{}) error
 func (ptb *PerunTransactionBuilder) balanceTransaction() error {
 	alreadyProvidedFunding := NewAssetInformation(ptb.knownUDTs)
 	requiredFunding := NewAssetInformation(ptb.knownUDTs)
-	// paymentScriptCapacity := ptb.changeAddress.Script.OccupiedCapacity()
 	requiredFunding.AddAssetAmount(zeroHash, ptb.feeShannon)
 
 	// First go over the outputs and accumulate the required funding expected by
@@ -567,7 +566,7 @@ func (ptb *PerunTransactionBuilder) addOrUpdateUDTChangeCell(assetHash types.Has
 	}
 	outputCell.Type = &udtScript
 
-	requiredCapacity := outputCell.OccupiedCapacity(data)
+	requiredCapacity := ptb.requiredCapacity(assetHash)
 	outputCell.Capacity = requiredCapacity
 
 	ptb.SimpleTransactionBuilder.Outputs = append(ptb.SimpleTransactionBuilder.Outputs, outputCell)
@@ -619,7 +618,11 @@ func (ptb *PerunTransactionBuilder) completeCKBCapacity(alreadyProvidedCKBAmount
 func (ptb *PerunTransactionBuilder) addInputsAndChangeForFunding(assetHash types.Hash, requestedAmount uint64, alreadyProvidedFunding *AssetInformation) error {
 	iter := ptb.iterators[assetHash]
 	if iter == nil {
-		return fmt.Errorf("no iterator for asset %x registered", assetHash)
+		return fmt.Errorf("no iterator for asset %#x registered", assetHash.Bytes())
+	}
+
+	if !iter.HasNext() {
+		return fmt.Errorf("empty iterator for asset %#x", assetHash.Bytes())
 	}
 
 	alreadyProvidedAssetAmount := alreadyProvidedFunding.AssetAmount(assetHash)
@@ -635,7 +638,8 @@ func (ptb *PerunTransactionBuilder) addInputsAndChangeForFunding(assetHash types
 	clonedProvidedFunding := alreadyProvidedFunding.Clone()
 	fundedAmount := &clonedProvidedFunding
 
-	if fundedAmount.AssetAmount(assetHash) < requestedAmount {
+	fundedAssetValue := fundedAmount.AssetAmount(assetHash)
+	if fundedAssetValue < requestedAmount {
 		return fmt.Errorf("not enough funds for asset: %#x", assetHash.Bytes())
 	}
 
@@ -726,10 +730,10 @@ func (ptb *PerunTransactionBuilder) requiredCapacity(assetHash types.Hash) uint6
 		Lock:     ptb.defaultLockScript(),
 		Type:     typeScript,
 	}
-	return calculateCellCapacity(cell)
+	return CalculateCellCapacity(cell)
 }
 
-func calculateCellCapacity(cell types.CellOutput) uint64 {
+func CalculateCellCapacity(cell types.CellOutput) uint64 {
 	if cell.Type == nil {
 		return cell.OccupiedCapacity([]byte{})
 	} else {

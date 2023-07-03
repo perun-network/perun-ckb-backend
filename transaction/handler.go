@@ -24,6 +24,8 @@ type PerunScriptHandler struct {
 	pclsDep types.CellDep
 	pflsDep types.CellDep
 
+	sudtDeps map[types.Hash]types.CellDep
+
 	pctsCodeHash    types.Hash
 	pctsHashType    types.ScriptHashType
 	pclsCodeHash    types.Hash
@@ -43,6 +45,7 @@ func NewPerunScriptHandlerWithDeployment(deployment backend.Deployment) *PerunSc
 		pctsDep:              deployment.PCTSDep,
 		pclsDep:              deployment.PCLSDep,
 		pflsDep:              deployment.PFLSDep,
+		sudtDeps:             deployment.SUDTDeps,
 		pctsCodeHash:         deployment.PCTSCodeHash,
 		pctsHashType:         deployment.PCTSHashType,
 		pclsCodeHash:         deployment.PCLSCodeHash,
@@ -111,6 +114,7 @@ func (psh *PerunScriptHandler) buildOpenTransaction(builder collector.Transactio
 	// Add required cell dependencies for Perun scripts.
 	builder.AddCellDep(&psh.defaultLockScriptDep)
 	builder.AddCellDep(&psh.pctsDep)
+	psh.AddSudtCellDeps(builder)
 	// Add channel token as input.
 	channelToken := openInfo.ChannelToken.AsCellInput()
 	builder.AddInput(&channelToken)
@@ -144,12 +148,19 @@ func (psh *PerunScriptHandler) buildOpenTransaction(builder collector.Transactio
 	return true, nil
 }
 
+func (psh *PerunScriptHandler) AddSudtCellDeps(builder collector.TransactionBuilder) {
+	for _, d := range psh.sudtDeps {
+		builder.AddCellDep(&d)
+	}
+}
+
 func (psh *PerunScriptHandler) buildCloseTransaction(builder collector.TransactionBuilder, group *transaction.ScriptGroup, closeInfo *CloseInfo) (bool, error) {
 	// TODO: How do we make sure that we unlock the channel?
 
 	builder.AddCellDep(&psh.pctsDep)
 	builder.AddCellDep(&psh.pclsDep)
 	builder.AddCellDep(&psh.pflsDep)
+	psh.AddSudtCellDeps(builder)
 
 	idx := builder.AddInput(&closeInfo.ChannelInput)
 	for idx := range closeInfo.AssetInputs {
@@ -199,6 +210,7 @@ func (psh *PerunScriptHandler) buildAbortTransaction(builder collector.Transacti
 	builder.AddCellDep(&psh.pctsDep)
 	builder.AddCellDep(&psh.pclsDep)
 	builder.AddCellDep(&psh.pflsDep)
+	psh.AddSudtCellDeps(builder)
 
 	idx := builder.AddInput(&abortInfo.ChannelInput)
 	for _, assetInput := range abortInfo.AssetInputs {
@@ -243,6 +255,7 @@ func (psh *PerunScriptHandler) buildForceCloseTransaction(builder collector.Tran
 	builder.AddCellDep(&psh.pctsDep)
 	builder.AddCellDep(&psh.pclsDep)
 	builder.AddCellDep(&psh.pflsDep)
+	psh.AddSudtCellDeps(builder)
 
 	idx := builder.AddInput(&forceCloseInfo.ChannelInput)
 	for _, assetInput := range forceCloseInfo.AssetInputs {
@@ -292,6 +305,7 @@ func (psh *PerunScriptHandler) buildFundTransaction(builder collector.Transactio
 	builder.AddCellDep(&psh.defaultLockScriptDep)
 	builder.AddCellDep(&psh.pclsDep)
 	builder.AddCellDep(&psh.pctsDep)
+	psh.AddSudtCellDeps(builder)
 	builder.AddHeaderDep(fundInfo.Header)
 
 	// Channel cell input.

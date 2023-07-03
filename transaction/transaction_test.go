@@ -113,12 +113,17 @@ func TestScriptHandler(t *testing.T) {
 		b, err := transaction.NewPerunTransactionBuilder(client, iters, map[types.Hash]types.Script{sudtTypeScript.Hash(): *sudtTypeScript}, psh, senderCkbAddr)
 		require.NoError(t, err, "creating perun transaction builder")
 		b.Register(mockHandler)
+		maxSUDTCellCapacity := transaction.CalculateCellCapacity(types.CellOutput{
+			Capacity: 0,
+			Lock:     defaultLock,
+			Type:     sudtTypeScript,
+		})
 		// Open
 		state := test.NewRandomState(rng,
 			test.WithNumParts(2),
 			test.WithAssets(asset.CKBAsset, &asset.SUDTAsset{
 				TypeScript:  *sudtTypeScript,
-				MaxCapacity: 1_000 * 1_000 * 1_000,
+				MaxCapacity: maxSUDTCellCapacity,
 			}),
 			test.WithNumLocked(0),
 			test.WithBalancesInRange(big.NewInt(0).Mul(big.NewInt(100), big.NewInt(100_000_000)), big.NewInt(0).Mul(big.NewInt(10_000), big.NewInt(100_000_000))),
