@@ -287,11 +287,11 @@ func (c Client) Dispute(ctx context.Context, id channel.ID, state *channel.State
 		return fmt.Errorf("creating Perun transaction builder: %w", err)
 	}
 	if err := builder.Dispute(di); err != nil {
-		return fmt.Errorf("creating open transaction: %w", err)
+		return fmt.Errorf("creating dispute transaction: %w", err)
 	}
 	tx, err := builder.Build()
 	if err != nil {
-		return fmt.Errorf("building open transaction: %w", err)
+		return fmt.Errorf("building dispute transaction: %w", err)
 	}
 	return c.submitTx(ctx, tx)
 }
@@ -327,11 +327,11 @@ func (c Client) Close(ctx context.Context, id channel.ID, state *channel.State, 
 		return fmt.Errorf("creating Perun transaction builder: %w", err)
 	}
 	if err := builder.Close(ci); err != nil {
-		return fmt.Errorf("creating open transaction: %w", err)
+		return fmt.Errorf("creating close transaction: %w", err)
 	}
 	tx, err := builder.Build()
 	if err != nil {
-		return fmt.Errorf("building open transaction: %w", err)
+		return fmt.Errorf("building close transaction: %w", err)
 	}
 	return c.submitTx(ctx, tx)
 }
@@ -396,11 +396,11 @@ func (c Client) ForceClose(ctx context.Context, id channel.ID, state *channel.St
 		return fmt.Errorf("creating Perun transaction builder: %w", err)
 	}
 	if err := builder.ForceClose(fci); err != nil {
-		return fmt.Errorf("creating open transaction: %w", err)
+		return fmt.Errorf("creating force close transaction: %w", err)
 	}
 	tx, err := builder.Build()
 	if err != nil {
-		return fmt.Errorf("building open transaction: %w", err)
+		return fmt.Errorf("building force close transaction: %w", err)
 	}
 	return c.submitTx(ctx, tx)
 }
@@ -434,11 +434,11 @@ func (c Client) Abort(ctx context.Context, script *types.Script, params *channel
 		return fmt.Errorf("creating Perun transaction builder: %w", err)
 	}
 	if err := builder.Abort(ai); err != nil {
-		return fmt.Errorf("creating open transaction: %w", err)
+		return fmt.Errorf("creating abort transaction: %w", err)
 	}
 	tx, err := builder.Build()
 	if err != nil {
-		return fmt.Errorf("building open transaction: %w", err)
+		return fmt.Errorf("building abort transaction: %w", err)
 	}
 	return c.submitTx(ctx, tx)
 }
