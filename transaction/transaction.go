@@ -437,20 +437,11 @@ func (ptb *PerunTransactionBuilder) balanceTransaction() error {
 
 	// First go over the outputs and accumulate the required funding expected by
 	// a user making some channel action.
-	for idx, outputCell := range ptb.SimpleTransactionBuilder.Outputs {
-		outputData := ptb.SimpleTransactionBuilder.OutputsData[idx]
-		requiredFunding.AddValuesFromOutput(outputCell, outputData)
-	}
+	ptb.accumulateOutputs(requiredFunding)
 
 	// We know the required funding, now we need to check and see what is already
 	// provided.
-	for _, input := range ptb.SimpleTransactionBuilder.Inputs {
-		inputCell, inputCellData, err := ptb.resolveInputCell(input)
-		if err != nil {
-			return fmt.Errorf("resolving input cell: %w", err)
-		}
-		alreadyProvidedFunding.AddValuesFromOutput(inputCell, inputCellData)
-	}
+	ptb.accumulateInputs(alreadyProvidedFunding)
 
 	if alreadyProvidedFunding.EqualAssets(*requiredFunding) {
 		// Everything is in order, the user built a transaction that is already
@@ -475,8 +466,8 @@ func (ptb *PerunTransactionBuilder) balanceTransaction() error {
 		if alreadyProvidedAmount < requiredAmount {
 			// We need more inputs to fund the required amount for the given UDT.
 			// This might require a change cell for the UDT modifying the
-			// provided/required amount of CKB capacity.
-			if err := ptb.addInputsAndChangeForFunding(assetHash, requiredAmount-alreadyProvidedAmount, alreadyProvidedFunding); err != nil {
+			// required amount of CKB capacity.
+			if err := ptb.addInputsAndChangeForFunding(assetHash, requiredAmount-alreadyProvidedAmount, requiredFunding, alreadyProvidedFunding); err != nil {
 				return fmt.Errorf("adding inputs and change for UDT %x funding: %w", assetHash, err)
 			}
 			continue
@@ -487,7 +478,7 @@ func (ptb *PerunTransactionBuilder) balanceTransaction() error {
 			// This uses the CKBBytes of the original "input" cell containing the
 			// SUDTs.
 			change := alreadyProvidedAmount - requiredAmount
-			if err := ptb.addChangeAndDeductCellCapacity(assetHash, change, alreadyProvidedFunding); err != nil {
+			if err := ptb.addChangeAndAdjustRequiredFunding(assetHash, change, requiredFunding); err != nil {
 				return fmt.Errorf("adding change cell for UDT %x: %w", assetHash, err)
 			}
 			continue
@@ -495,11 +486,30 @@ func (ptb *PerunTransactionBuilder) balanceTransaction() error {
 	}
 
 	// Do the final balancing.
-	ckbAmountPlusFee := requiredFunding.CKBAmount()
-	if err := ptb.completeCKBCapacity(alreadyProvidedFunding.assetAmounts[zeroHash], ckbAmountPlusFee); err != nil {
+	if err := ptb.completeCKBCapacity(requiredFunding, alreadyProvidedFunding); err != nil {
 		return fmt.Errorf("final balancing of CKB capacity: %w", err)
 	}
 
+	return nil
+}
+
+func (ptb *PerunTransactionBuilder) accumulateOutputs(requiredFunding *AssetInformation) {
+	outputs := ptb.SimpleTransactionBuilder.Outputs
+	outputData := ptb.SimpleTransactionBuilder.OutputsData
+	for idx, outputCell := range outputs {
+		outputData := outputData[idx]
+		requiredFunding.AddValuesFromOutput(outputCell, outputData)
+	}
+}
+
+func (ptb *PerunTransactionBuilder) accumulateInputs(providedFunding *AssetInformation) error {
+	for _, input := range ptb.SimpleTransactionBuilder.Inputs {
+		inputCell, inputCellData, err := ptb.resolveInputCell(input)
+		if err != nil {
+			return fmt.Errorf("resolving input cell: %w", err)
+		}
+		providedFunding.AddValuesFromOutput(inputCell, inputCellData)
+	}
 	return nil
 }
 
@@ -597,33 +607,62 @@ func (ptb *PerunTransactionBuilder) scriptGroupsForHash(assetHash types.Hash) (*
 	return lockScriptGroup, typeScriptGroup
 }
 
-func (ptb *PerunTransactionBuilder) completeCKBCapacity(alreadyProvidedCKBAmount, requiredCKBAmount uint64) error {
-	if alreadyProvidedCKBAmount >= requiredCKBAmount {
-		// We provided more funding than required, set the difference as change.
+func (ptb *PerunTransactionBuilder) completeCKBCapacity(requiredFunding, alreadyProvidedFunding *AssetInformation) error {
+	alreadyProvidedCKBAmount := alreadyProvidedFunding.assetAmounts[zeroHash]
+	requiredCKBAmount := requiredFunding.assetAmounts[zeroHash]
+	if alreadyProvidedCKBAmount >= (requiredCKBAmount + ptb.ckbChangeCellCapacity()) {
+		// We provided more funding than required AND we can accommodate a CKB
+		// change cell, set the difference as change.
 		return ptb.addOrUpdateChangeCell(zeroHash, alreadyProvidedCKBAmount-requiredCKBAmount)
 	}
 
 	if alreadyProvidedCKBAmount < requiredCKBAmount {
 		// We are missing CKB, complete funding by adding inputs from the CKB
 		// iterator.
-		alreadyProvidedFunding := NewAssetInformation(ptb.knownUDTs)
-		alreadyProvidedFunding.assetAmounts[zeroHash] = alreadyProvidedCKBAmount
-		return ptb.addInputsAndChangeForFunding(zeroHash, requiredCKBAmount, alreadyProvidedFunding)
+		return ptb.addInputsAndChangeForCKB(alreadyProvidedCKBAmount, requiredCKBAmount, requiredFunding, alreadyProvidedFunding)
+	}
+	return nil
+}
+
+func (ptb *PerunTransactionBuilder) addInputsAndChangeForCKB(alreadyProvidedCKBAmount, requestedCKBAmount uint64, requiredFunding, alreadyProvidedFunding *AssetInformation) error {
+	ckbIter := ptb.iterators[zeroHash]
+
+	requiredCKBAmount := requestedCKBAmount - alreadyProvidedCKBAmount
+	amountAddedByInputs, err := ptb.addInputsForFunding(ckbIter, zeroHash, requiredCKBAmount)
+	if err != nil {
+		return fmt.Errorf("adding inputs for ckb funding: %w", err)
+	}
+	alreadyProvidedFunding.MergeWithAssetInformation(amountAddedByInputs)
+
+	alreadyProvidedCKBAmount = alreadyProvidedFunding.CKBAmount()
+	requiredCKBAmount = requiredFunding.CKBAmount()
+
+	// We need to make sure, that we have enough CKB to pay for the storage
+	// required for a CKB change cell.
+	if alreadyProvidedCKBAmount < (requiredCKBAmount + ptb.ckbChangeCellCapacity()) {
+		requiredCKBAmount = (requiredCKBAmount + ptb.ckbChangeCellCapacity()) - alreadyProvidedCKBAmount
+		amountAddedByInputs, err := ptb.addInputsForFunding(ckbIter, zeroHash, requiredCKBAmount)
+		if err != nil {
+			return fmt.Errorf("adding inputs for ckb change funding: %w", err)
+		}
+		alreadyProvidedFunding.MergeWithAssetInformation(amountAddedByInputs)
+	}
+
+	// We now definitely have enough CKB to pay for the storage of all change
+	// cells.
+	requiredCKBAmount = requiredFunding.CKBAmount()
+	alreadyProvidedCKBAmount = alreadyProvidedFunding.CKBAmount()
+	change := alreadyProvidedCKBAmount - requiredCKBAmount
+	if err := ptb.addChangeAndAdjustRequiredFunding(zeroHash, change, requiredFunding); err != nil {
+		return fmt.Errorf("adding change cell for CKB: %w", err)
 	}
 	return nil
 }
 
 // addInputsAndChangeForFunding adds inputs and potentially change cells to the
 // transaction to fund the required amount.
-func (ptb *PerunTransactionBuilder) addInputsAndChangeForFunding(assetHash types.Hash, requestedAmount uint64, alreadyProvidedFunding *AssetInformation) error {
+func (ptb *PerunTransactionBuilder) addInputsAndChangeForFunding(assetHash types.Hash, requestedAmount uint64, requiredFunding, alreadyProvidedFunding *AssetInformation) error {
 	iter := ptb.iterators[assetHash]
-	if iter == nil {
-		return fmt.Errorf("no iterator for asset %#x registered", assetHash.Bytes())
-	}
-
-	if !iter.HasNext() {
-		return fmt.Errorf("empty iterator for asset %#x", assetHash.Bytes())
-	}
 
 	alreadyProvidedAssetAmount := alreadyProvidedFunding.AssetAmount(assetHash)
 	if alreadyProvidedAssetAmount < requestedAmount {
@@ -635,23 +674,23 @@ func (ptb *PerunTransactionBuilder) addInputsAndChangeForFunding(assetHash types
 		alreadyProvidedFunding.MergeWithAssetInformation(amountAddedByInputs)
 	}
 
-	clonedProvidedFunding := alreadyProvidedFunding.Clone()
-	fundedAmount := &clonedProvidedFunding
-
+	fundedAmount := alreadyProvidedFunding.Clone()
 	fundedAssetValue := fundedAmount.AssetAmount(assetHash)
 	if fundedAssetValue < requestedAmount {
 		return fmt.Errorf("not enough funds for asset: %#x", assetHash.Bytes())
 	}
 
-	// We have at least the required amount of funds for the UDT available, check
-	// if we need to add a change cell.
+	// We have at least the required amount of funds for the asset available,
+	// check if we need to add a change cell.
 	if fundedAmount.AssetAmount(assetHash) == requestedAmount {
 		// Perfect funding, no change cell needed.
 		return nil
 	}
 
+	// We need a change cell, this will increase the required capacity of this TX
+	// by the minimum cell capacity for this asset.
 	change := fundedAmount.AssetAmount(assetHash) - requestedAmount
-	if err := ptb.addChangeAndDeductCellCapacity(assetHash, change, alreadyProvidedFunding); err != nil {
+	if err := ptb.addChangeAndAdjustRequiredFunding(assetHash, change, requiredFunding); err != nil {
 		return fmt.Errorf("adding change cell for asset %#x: %w", assetHash.Bytes(), err)
 	}
 
@@ -659,6 +698,14 @@ func (ptb *PerunTransactionBuilder) addInputsAndChangeForFunding(assetHash types
 }
 
 func (ptb *PerunTransactionBuilder) addInputsForFunding(iter collector.CellIterator, assetHash types.Hash, requiredAmount uint64) (AssetInformation, error) {
+	if iter == nil {
+		return AssetInformation{}, fmt.Errorf("no iterator for asset %#x registered", assetHash.Bytes())
+	}
+
+	if !iter.HasNext() {
+		return AssetInformation{}, fmt.Errorf("empty iterator for asset %#x", assetHash.Bytes())
+	}
+
 	fundedAmount := NewAssetInformation(ptb.knownUDTs)
 
 	// Fetch inputs from the correct iterator until we fullfill our needs.
@@ -707,17 +754,17 @@ func appendOutputToGroups(lockScriptGroup, typeScriptGroup *ckbtransaction.Scrip
 	}
 }
 
-func (ptb *PerunTransactionBuilder) addChangeAndDeductCellCapacity(assetHash types.Hash, change uint64, alreadyProvidedFunding *AssetInformation) error {
+func (ptb *PerunTransactionBuilder) addChangeAndAdjustRequiredFunding(assetHash types.Hash, change uint64, requiredFunding *AssetInformation) error {
 	// Adding the change cell will subtract the required CKB capacity for the UDT
 	// from the already provided amount since we add everything to the provided
 	// amount by default.
-	udtCapacity := ptb.requiredCapacity(assetHash)
-	alreadyProvidedFunding.assetAmounts[zeroHash] -= udtCapacity
+	cellCapacity := ptb.requiredCapacity(assetHash)
+	requiredFunding.assetAmounts[zeroHash] += cellCapacity
 
 	return ptb.addOrUpdateChangeCell(assetHash, change)
 }
 
-// requiredCapacity returns the required amount of CKBytes to accomodate the
+// requiredCapacity returns the required amount of CKBytes to accommodate the
 // storage requirement for the given assets hash.
 func (ptb *PerunTransactionBuilder) requiredCapacity(assetHash types.Hash) uint64 {
 	var typeScript *types.Script
@@ -822,4 +869,10 @@ func (ptb *PerunTransactionBuilder) groupForScript(script *types.Script) (*ckbtr
 // fill in the lock script args field.
 func (ptb *PerunTransactionBuilder) defaultLockScript() *types.Script {
 	return ptb.changeAddress.Script
+}
+
+// Returns the capacity required to accommodate the change cell only holding
+// CKBytes using the default lock-script.
+func (ptb *PerunTransactionBuilder) ckbChangeCellCapacity() uint64 {
+	return ptb.requiredCapacity(zeroHash)
 }

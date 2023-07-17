@@ -150,6 +150,69 @@ func TestScriptHandler(t *testing.T) {
 			"transaction should be properly balanced")
 	})
 
+	t.Run("BalancingFundingEqualsFundsOfCell", func(t *testing.T) {
+		ckbInFundingCells := funding + changeAmount
+		sudtTypeScript := btest.NewRandomScript(rng)
+		mockIterator := mkMockIterator(txtest.WithTypeScript(nil), txtest.WithCapacityAtLeast(ckbInFundingCells))
+		sudtMockIterator := mkMockIterator(
+			txtest.WithTypeScript(sudtTypeScript),
+			txtest.WithDataGenerator(func() []byte {
+				d, err := molecule2.PackUint128(big.NewInt(rng.Int63n(math.MaxInt64)))
+				if err != nil {
+					panic(err)
+				}
+				return d.AsSlice()
+			}),
+		)
+		iters := map[types.Hash]collector.CellIterator{
+			zeroHash:              mockIterator,
+			sudtTypeScript.Hash(): sudtMockIterator,
+		}
+		channelTokenOutpoint := btest.NewRandomOutpoint(rng)
+		mockIterator.GenerateInput(rng, txtest.WithOutPoint(channelTokenOutpoint))
+		liveCellMap := liveCellMapFromIterators(mockIterator, sudtMockIterator)
+		client := txtest.NewMockClient(txtest.WithMockLiveCells(liveCellMap))
+		b, err := transaction.NewPerunTransactionBuilder(client, iters, map[types.Hash]types.Script{sudtTypeScript.Hash(): *sudtTypeScript}, psh, senderCkbAddr)
+		require.NoError(t, err, "creating perun transaction builder")
+		b.Register(mockHandler)
+		maxSUDTCellCapacity := transaction.CalculateCellCapacity(types.CellOutput{
+			Capacity: 0,
+			Lock:     defaultLock,
+			Type:     sudtTypeScript,
+		})
+		// Open
+		state := test.NewRandomState(rng,
+			test.WithNumParts(2),
+			test.WithAssets(asset.CKBAsset, &asset.SUDTAsset{
+				TypeScript:  *sudtTypeScript,
+				MaxCapacity: maxSUDTCellCapacity,
+			}),
+			test.WithNumLocked(0),
+			test.WithBalances([]*big.Int{big.NewInt(0).SetUint64(ckbInFundingCells), big.NewInt(100)},
+				[]*big.Int{big.NewInt(0).SetUint64(ckbInFundingCells), big.NewInt(100)}),
+		)
+		params := test.NewRandomParams(rng,
+			test.WithNumParts(2),
+			test.WithLedgerChannel(true),
+			test.WithVirtualChannel(false),
+			test.WithoutApp())
+		oi := transaction.NewOpenInfo([32]byte{}, btest.NewRandomToken(rng,
+			btest.WithOutpoint(*channelTokenOutpoint)),
+			params,
+			state)
+		require.NoError(t, b.Open(oi), "executing opening transaction handler")
+
+		tx, err := b.Build()
+		require.NoError(t, err)
+
+		require.NoError(t, checkSudtTransactionBalance(tx,
+			mockIterator,
+			sudtMockIterator,
+			*sudtTypeScript,
+			transaction.DefaultFeeShannon),
+			"transaction should be properly balanced")
+	})
+
 }
 
 func checkTransactionBalance(
