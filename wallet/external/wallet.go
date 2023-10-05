@@ -26,3 +26,9 @@ func (w Wallet) LockAll() {}
 func (w Wallet) IncrementUsage(address wallet.Address) {}
 
 func (w Wallet) DecrementUsage(address wallet.Address) {}
+
+func NewWallet(client Client) *Wallet {
+	return &Wallet{
+		client: client,
+	}
+}
