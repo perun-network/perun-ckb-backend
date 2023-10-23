@@ -136,7 +136,7 @@ func (c Client) Start(ctx context.Context, params *channel.Params, state *channe
 // fetch the live cells for the account associated with this client can be
 // injected if it was necessary in the outer scope.
 func (c Client) newPerunTransactionBuilder(withIterators map[types.Hash]collector.CellIterator) (*transaction.PerunTransactionBuilder, error) {
-	iters, err := iteratorsForDeployment(c.client, c.deployment, c.signer.Address)
+	iters, err := iteratorsForDeployment(c.client, c.deployment, c.signer.Address())
 	if err != nil {
 		return nil, fmt.Errorf("creating cell iterators: %w", err)
 	}
@@ -146,7 +146,7 @@ func (c Client) newPerunTransactionBuilder(withIterators map[types.Hash]collecto
 		iters[hash] = iter
 	}
 
-	return transaction.NewPerunTransactionBuilderWithDeployment(c.client, c.deployment, iters, c.signer.Address)
+	return transaction.NewPerunTransactionBuilderWithDeployment(c.client, c.deployment, iters, c.signer.Address())
 }
 
 func iteratorsForDeployment(cl rpc.Client, deployment backend.Deployment, sender address.Address) (map[types.Hash]collector.CellIterator, error) {
@@ -180,7 +180,8 @@ func iteratorsForDeployment(cl rpc.Client, deployment backend.Deployment, sender
 }
 
 func (c Client) submitTx(ctx context.Context, tx *ckbtransaction.TransactionWithScriptGroups) error {
-	_, err := c.signer.SignTransaction(tx)
+	sTx, err := c.signer.SignTransaction(tx)
+	*tx = *sTx
 	if err != nil {
 		return fmt.Errorf("signing transaction: %w", err)
 	}
@@ -205,7 +206,7 @@ func (c Client) submitTxWithArgument(ctx context.Context, txTypeArgument ...inte
 // mkMyCKBCellIterator returns a celliterator together with the associated script
 // hash it is meant to be used with.
 func (c Client) mkMyCKBCellIterator() (collector.CellIterator, types.Hash, error) {
-	defaultLockScript := c.signer.Address.Script
+	defaultLockScript := c.signer.Address().Script
 	key := &indexer.SearchKey{
 		Script:     defaultLockScript,
 		ScriptType: types.ScriptTypeLock,

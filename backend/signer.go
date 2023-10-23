@@ -8,29 +8,41 @@ import (
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types"
 )
 
-// Signer is the signer used by the backend implementation.
-type Signer struct {
+type Signer interface {
+	// SignTransaction signs the transaction and returns the signed transaction or an error.
+	SignTransaction(tx *transaction.TransactionWithScriptGroups) (*transaction.TransactionWithScriptGroups, error)
+	// Address returns the address of the signer.
+	Address() address.Address
+}
+
+// LocalSigner is the signer used by the backend implementation.
+type LocalSigner struct {
 	key      secp256k1.PrivateKey
-	Address  address.Address
+	Addr     address.Address
 	TxSigner signer.TransactionSigner
 }
 
-func NewSigner(addr address.Address, key secp256k1.PrivateKey) *Signer {
-	return &Signer{
+func NewSigner(addr address.Address, key secp256k1.PrivateKey) *LocalSigner {
+	return &LocalSigner{
 		key:      key,
-		Address:  addr,
+		Addr:     addr,
 		TxSigner: *signer.NewTransactionSigner(),
 	}
 }
 
-func NewSignerInstance(addr address.Address, key secp256k1.PrivateKey, network types.Network) *Signer {
-	return &Signer{
+func NewSignerInstance(addr address.Address, key secp256k1.PrivateKey, network types.Network) *LocalSigner {
+	return &LocalSigner{
 		key:      key,
-		Address:  addr,
+		Addr:     addr,
 		TxSigner: *signer.GetTransactionSignerInstance(network),
 	}
 }
 
-func (s Signer) SignTransaction(tx *transaction.TransactionWithScriptGroups) ([]int, error) {
-	return s.TxSigner.SignTransactionByPrivateKeys(tx, s.key.Key.String())
+func (s LocalSigner) SignTransaction(tx *transaction.TransactionWithScriptGroups) (*transaction.TransactionWithScriptGroups, error) {
+	_, err := s.TxSigner.SignTransactionByPrivateKeys(tx, s.key.Key.String())
+	return tx, err
+}
+
+func (s LocalSigner) Address() address.Address {
+	return s.Addr
 }
