@@ -17,6 +17,10 @@ func init() {
 
 type backend struct{}
 
+func (b backend) NewAppID() channel.AppID {
+	panic("no app channels")
+}
+
 var Backend = backend{}
 
 func (b backend) CalcID(params *channel.Params) channel.ID {

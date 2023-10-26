@@ -67,6 +67,7 @@ func TestScriptHandler(t *testing.T) {
 		b.Register(mockHandler)
 		// Open
 		state := test.NewRandomState(rng,
+			test.WithoutApp(),
 			test.WithNumParts(2),
 			test.WithNumAssets(1),
 			test.WithNumLocked(0),
@@ -120,6 +121,7 @@ func TestScriptHandler(t *testing.T) {
 		})
 		// Open
 		state := test.NewRandomState(rng,
+			test.WithoutApp(),
 			test.WithNumParts(2),
 			test.WithAssets(asset.CKBAsset, &asset.SUDTAsset{
 				TypeScript:  *sudtTypeScript,
@@ -182,6 +184,7 @@ func TestScriptHandler(t *testing.T) {
 		})
 		// Open
 		state := test.NewRandomState(rng,
+			test.WithoutApp(),
 			test.WithNumParts(2),
 			test.WithAssets(asset.CKBAsset, &asset.SUDTAsset{
 				TypeScript:  *sudtTypeScript,

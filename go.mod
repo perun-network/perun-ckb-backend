@@ -2,7 +2,7 @@ module perun.network/perun-ckb-backend
 
 go 1.19
 
-require perun.network/go-perun v0.10.6
+require perun.network/go-perun v0.10.7-0.20230808153546-74844191e56e
 
 require (
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.1.0
