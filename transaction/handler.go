@@ -339,7 +339,7 @@ func (psh *PerunScriptHandler) buildFundTransaction(builder collector.Transactio
 		paymentOutput := psh.mkPaymentOutput(fundsLockScript, balance)
 		builder.AddOutput(paymentOutput, nil)
 	} else {
-		return false, fmt.Errorf("balance %d is less than minimum capacity of the pfls %d", balance, psh.pflsMinCapacity)
+		return false, fmt.Errorf("party balance %d is less than minimum capacity of the pfls %d", balance, psh.pflsMinCapacity)
 	}
 
 	err = psh.AddAssetsToOutputs(builder, fundInfo.State, partyIndex, fundsLockScript, 0)

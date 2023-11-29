@@ -181,11 +181,12 @@ func iteratorsForDeployment(cl rpc.Client, deployment backend.Deployment, sender
 
 func (c Client) submitTx(ctx context.Context, tx *ckbtransaction.TransactionWithScriptGroups) error {
 	sTx, err := c.signer.SignTransaction(tx)
-	*tx = *sTx
+	// TODO: Why this step?
+	// *tx = *sTx
 	if err != nil {
 		return fmt.Errorf("signing transaction: %w", err)
 	}
-	return c.sendAndAwait(ctx, tx.TxView)
+	return c.sendAndAwait(ctx, sTx)
 }
 
 // submitTxWithArgument submits a transaction whose type is determined by the

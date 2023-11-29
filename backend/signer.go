@@ -10,7 +10,7 @@ import (
 
 type Signer interface {
 	// SignTransaction signs the transaction and returns the signed transaction or an error.
-	SignTransaction(tx *transaction.TransactionWithScriptGroups) (*transaction.TransactionWithScriptGroups, error)
+	SignTransaction(tx *transaction.TransactionWithScriptGroups) (*types.Transaction, error)
 	// Address returns the address of the signer.
 	Address() address.Address
 }
@@ -38,9 +38,9 @@ func NewSignerInstance(addr address.Address, key secp256k1.PrivateKey, network t
 	}
 }
 
-func (s LocalSigner) SignTransaction(tx *transaction.TransactionWithScriptGroups) (*transaction.TransactionWithScriptGroups, error) {
+func (s LocalSigner) SignTransaction(tx *transaction.TransactionWithScriptGroups) (*types.Transaction, error) {
 	_, err := s.TxSigner.SignTransactionByPrivateKeys(tx, s.key.Key.String())
-	return tx, err
+	return tx.TxView, err
 }
 
 func (s LocalSigner) Address() address.Address {
