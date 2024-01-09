@@ -49,7 +49,8 @@ func (b backend) Verify(addr wallet.Address, state *channel.State, sig wallet.Si
 
 // NewAsset returns an empty asset.SUDTAsset.
 func (b backend) NewAsset() channel.Asset {
-	return &asset.SUDTAsset{}
+	// FIXME: Unite SUDTAsset and native asset in same type.
+	return asset.CKBAsset
 }
 
 var MaxBalance = new(big.Int).SetUint64(math.MaxUint64)
