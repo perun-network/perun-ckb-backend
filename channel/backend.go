@@ -17,6 +17,10 @@ func init() {
 
 type backend struct{}
 
+func (b backend) NewAppID() channel.AppID {
+	panic("no app channels")
+}
+
 var Backend = backend{}
 
 func (b backend) CalcID(params *channel.Params) channel.ID {
@@ -43,9 +47,9 @@ func (b backend) Verify(addr wallet.Address, state *channel.State, sig wallet.Si
 	return wallet.VerifySignature(s.AsSlice(), sig, addr)
 }
 
-// NewAsset returns an empty asset.SUDTAsset.
+// NewAsset returns an empty (and thus invalid) asset for unmarshalling into.
 func (b backend) NewAsset() channel.Asset {
-	return &asset.SUDTAsset{}
+	return asset.NewInvalidAsset()
 }
 
 var MaxBalance = new(big.Int).SetUint64(math.MaxUint64)

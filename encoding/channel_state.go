@@ -27,8 +27,15 @@ func PackChannelState(state *pchannel.State) (molecule.ChannelState, error) {
 func PackBalances(state *pchannel.State) (molecule.Balances, error) {
 	balancesBuilder := molecule.NewBalancesBuilder()
 	sudtAllocBuilder := molecule.NewSUDTAllocationBuilder()
-	for _, a := range state.Assets {
-		if a.Equal(asset.CKBAsset) {
+	for _, pAsset := range state.Assets {
+		a, err := asset.IsCompatibleAsset(pAsset)
+		if err != nil {
+			return molecule.Balances{}, err
+		}
+		if a.IsInvalid() {
+			return molecule.Balances{}, errors.New("invalid asset")
+		}
+		if a.IsCKBytes {
 			d, err := PackCKByteDistribution(
 				[2]*big.Int{
 					state.Balance(0, a),
@@ -97,8 +104,15 @@ func PackSUDTDistribution(d [2]*big.Int) (molecule.SUDTDistribution, error) {
 
 func GetSUDTBalancesSlice(state *pchannel.State) ([]asset.SUDTBalances, error) {
 	sudtBalancesSlice := make([]asset.SUDTBalances, 0)
-	for _, a := range state.Assets {
-		if a.Equal(asset.CKBAsset) {
+	for _, pAsset := range state.Assets {
+		a, err := asset.IsCompatibleAsset(pAsset)
+		if err != nil {
+			return nil, err
+		}
+		if a.IsInvalid() {
+			return nil, errors.New("invalid asset")
+		}
+		if a.IsCKBytes {
 			continue
 		} else {
 			sudtAsset, err := asset.IsSUDTAsset(a)

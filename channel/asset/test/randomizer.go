@@ -12,7 +12,7 @@ type Randomizer struct{}
 
 func (*Randomizer) NewRandomAsset(*rand.Rand) channel.Asset {
 	// TODO: Also allow to generate random SUDT asset.
-	return asset.CKBAsset
+	return asset.NewCKBytesAsset()
 }
 
 var _ test.Randomizer = (*Randomizer)(nil)

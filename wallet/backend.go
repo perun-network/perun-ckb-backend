@@ -2,6 +2,7 @@ package wallet
 
 import (
 	"errors"
+	"fmt"
 	"io"
 
 	"github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
@@ -46,11 +47,11 @@ func (b backend) VerifySignature(msg []byte, sig wallet.Sig, a wallet.Address) (
 	hash := blake2b.Sum256(msg)
 	sigWithoutPadding, err := RemovePadding(sig)
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("removing padding: %w", err)
 	}
 	signature, err := ecdsa.ParseDERSignature(sigWithoutPadding)
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("parsing DER signature: %w", err)
 	}
 	return signature.Verify(hash[:], addr.PubKey), nil
 }

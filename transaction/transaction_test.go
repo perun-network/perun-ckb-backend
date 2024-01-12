@@ -5,7 +5,6 @@ import (
 	"math/big"
 	"testing"
 
-	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/collector"
 	ckbtransaction "github.com/nervosnetwork/ckb-sdk-go/v2/transaction"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types"
@@ -67,6 +66,7 @@ func TestScriptHandler(t *testing.T) {
 		b.Register(mockHandler)
 		// Open
 		state := test.NewRandomState(rng,
+			test.WithoutApp(),
 			test.WithNumParts(2),
 			test.WithNumAssets(1),
 			test.WithNumLocked(0),
@@ -95,7 +95,7 @@ func TestScriptHandler(t *testing.T) {
 		sudtMockIterator := mkMockIterator(
 			txtest.WithTypeScript(sudtTypeScript),
 			txtest.WithDataGenerator(func() []byte {
-				d, err := molecule2.PackUint128(big.NewInt(rng.Int63n(math.MaxInt64)))
+				d, err := molecule2.PackUint128(big.NewInt(rng.Int63())) // TODO: use actual random Uint128
 				if err != nil {
 					panic(err)
 				}
@@ -120,11 +120,9 @@ func TestScriptHandler(t *testing.T) {
 		})
 		// Open
 		state := test.NewRandomState(rng,
+			test.WithoutApp(),
 			test.WithNumParts(2),
-			test.WithAssets(asset.CKBAsset, &asset.SUDTAsset{
-				TypeScript:  *sudtTypeScript,
-				MaxCapacity: maxSUDTCellCapacity,
-			}),
+			test.WithAssets(asset.NewCKBytesAsset(), asset.NewSUDTAsset(asset.NewSUDT(*sudtTypeScript, maxSUDTCellCapacity))),
 			test.WithNumLocked(0),
 			test.WithBalancesInRange(big.NewInt(0).Mul(big.NewInt(100), big.NewInt(100_000_000)), big.NewInt(0).Mul(big.NewInt(10_000), big.NewInt(100_000_000))),
 		)
@@ -157,7 +155,7 @@ func TestScriptHandler(t *testing.T) {
 		sudtMockIterator := mkMockIterator(
 			txtest.WithTypeScript(sudtTypeScript),
 			txtest.WithDataGenerator(func() []byte {
-				d, err := molecule2.PackUint128(big.NewInt(rng.Int63n(math.MaxInt64)))
+				d, err := molecule2.PackUint128(big.NewInt(rng.Int63())) // TODO: use actual random Uint128
 				if err != nil {
 					panic(err)
 				}
@@ -182,11 +180,9 @@ func TestScriptHandler(t *testing.T) {
 		})
 		// Open
 		state := test.NewRandomState(rng,
+			test.WithoutApp(),
 			test.WithNumParts(2),
-			test.WithAssets(asset.CKBAsset, &asset.SUDTAsset{
-				TypeScript:  *sudtTypeScript,
-				MaxCapacity: maxSUDTCellCapacity,
-			}),
+			test.WithAssets(asset.NewCKBytesAsset(), asset.NewSUDTAsset(asset.NewSUDT(*sudtTypeScript, maxSUDTCellCapacity))),
 			test.WithNumLocked(0),
 			test.WithBalances([]*big.Int{big.NewInt(0).SetUint64(ckbInFundingCells), big.NewInt(100)},
 				[]*big.Int{big.NewInt(0).SetUint64(ckbInFundingCells), big.NewInt(100)}),
