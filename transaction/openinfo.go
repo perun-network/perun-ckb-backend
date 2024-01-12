@@ -63,9 +63,10 @@ func (oi OpenInfo) GetPCTS() *types.Script {
 func initialFundedStatus(state *channel.State) molecule.Bool {
 	// TODO: Verify that sum of max_capacity of the assets is 0 instead of that there are no assets.
 	// We shortcut here, because assets with 0 max_capacity make no sense.
+	CKBytes := asset.NewCKBytesAsset()
 	if len(state.Assets) == 0 &&
-		state.Assets[0].Equal(asset.CKBAsset) &&
-		state.Balance(1, asset.CKBAsset).Sign() == 0 {
+		state.Assets[0].Equal(CKBytes) &&
+		state.Balance(1, CKBytes).Sign() == 0 {
 		return encoding.True
 	}
 	return encoding.False

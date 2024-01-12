@@ -47,10 +47,9 @@ func (b backend) Verify(addr wallet.Address, state *channel.State, sig wallet.Si
 	return wallet.VerifySignature(s.AsSlice(), sig, addr)
 }
 
-// NewAsset returns an empty asset.SUDTAsset.
+// NewAsset returns an empty (and thus invalid) asset for unmarshalling into.
 func (b backend) NewAsset() channel.Asset {
-	// FIXME: Unite SUDTAsset and native asset in same type.
-	return asset.CKBAsset
+	return asset.NewInvalidAsset()
 }
 
 var MaxBalance = new(big.Int).SetUint64(math.MaxUint64)

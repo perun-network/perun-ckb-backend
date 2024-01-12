@@ -28,7 +28,7 @@ func setup(rng *rand.Rand) *gptest.Setup {
 				Append(gptest.WithParts(getRandomAddress(), getRandomAddress())).
 				Append(gptest.WithLedgerChannel(true)).
 				Append(gptest.WithVirtualChannel(false)).
-				Append(gptest.WithAssets(asset.CKBAsset)).
+				Append(gptest.WithAssets(asset.NewCKBytesAsset())).
 				Append(gptest.WithBalancesInRange(
 					new(big.Int).SetUint64(0),
 					channel.MaxBalance,

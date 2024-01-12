@@ -480,7 +480,7 @@ func (psh PerunScriptHandler) mkWitnessForceClose() []byte {
 }
 
 func GetCKByteBalance(index int, state *channel.State) (uint64, error) {
-	assetIdx, ok := state.AssetIndex(asset.CKBAsset)
+	assetIdx, ok := state.AssetIndex(asset.NewCKBytesAsset())
 	if !ok {
 		return 0, nil
 	}

@@ -123,10 +123,7 @@ func TestScriptHandler(t *testing.T) {
 		state := test.NewRandomState(rng,
 			test.WithoutApp(),
 			test.WithNumParts(2),
-			test.WithAssets(asset.CKBAsset, &asset.SUDTAsset{
-				TypeScript:  *sudtTypeScript,
-				MaxCapacity: maxSUDTCellCapacity,
-			}),
+			test.WithAssets(asset.NewCKBytesAsset(), asset.NewSUDTAsset(asset.NewSUDT(*sudtTypeScript, maxSUDTCellCapacity))),
 			test.WithNumLocked(0),
 			test.WithBalancesInRange(big.NewInt(0).Mul(big.NewInt(100), big.NewInt(100_000_000)), big.NewInt(0).Mul(big.NewInt(10_000), big.NewInt(100_000_000))),
 		)
@@ -186,10 +183,7 @@ func TestScriptHandler(t *testing.T) {
 		state := test.NewRandomState(rng,
 			test.WithoutApp(),
 			test.WithNumParts(2),
-			test.WithAssets(asset.CKBAsset, &asset.SUDTAsset{
-				TypeScript:  *sudtTypeScript,
-				MaxCapacity: maxSUDTCellCapacity,
-			}),
+			test.WithAssets(asset.NewCKBytesAsset(), asset.NewSUDTAsset(asset.NewSUDT(*sudtTypeScript, maxSUDTCellCapacity))),
 			test.WithNumLocked(0),
 			test.WithBalances([]*big.Int{big.NewInt(0).SetUint64(ckbInFundingCells), big.NewInt(100)},
 				[]*big.Int{big.NewInt(0).SetUint64(ckbInFundingCells), big.NewInt(100)}),
