@@ -5,7 +5,6 @@ import (
 	"math/big"
 	"testing"
 
-	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/collector"
 	ckbtransaction "github.com/nervosnetwork/ckb-sdk-go/v2/transaction"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types"
@@ -96,7 +95,7 @@ func TestScriptHandler(t *testing.T) {
 		sudtMockIterator := mkMockIterator(
 			txtest.WithTypeScript(sudtTypeScript),
 			txtest.WithDataGenerator(func() []byte {
-				d, err := molecule2.PackUint128(big.NewInt(rng.Int63n(math.MaxInt64)))
+				d, err := molecule2.PackUint128(big.NewInt(rng.Int63())) // TODO: use actual random Uint128
 				if err != nil {
 					panic(err)
 				}
@@ -156,7 +155,7 @@ func TestScriptHandler(t *testing.T) {
 		sudtMockIterator := mkMockIterator(
 			txtest.WithTypeScript(sudtTypeScript),
 			txtest.WithDataGenerator(func() []byte {
-				d, err := molecule2.PackUint128(big.NewInt(rng.Int63n(math.MaxInt64)))
+				d, err := molecule2.PackUint128(big.NewInt(rng.Int63())) // TODO: use actual random Uint128
 				if err != nil {
 					panic(err)
 				}
