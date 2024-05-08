@@ -2,6 +2,7 @@ package asset
 
 import (
 	"errors"
+
 	"github.com/Pilatuz/bigz/uint128"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types/molecule"

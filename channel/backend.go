@@ -2,9 +2,10 @@ package channel
 
 import (
 	"fmt"
-	"golang.org/x/crypto/blake2b"
 	"math"
 	"math/big"
+
+	"golang.org/x/crypto/blake2b"
 	"perun.network/go-perun/channel"
 	"perun.network/go-perun/wallet"
 	"perun.network/perun-ckb-backend/channel/asset"
@@ -45,7 +46,7 @@ func (b backend) Verify(addr wallet.Address, state *channel.State, sig wallet.Si
 
 // NewAsset returns an empty asset.SUDTAsset.
 func (b backend) NewAsset() channel.Asset {
-	return &asset.SUDTAsset{}
+	return asset.CKBAsset
 }
 
 var MaxBalance = new(big.Int).SetUint64(math.MaxUint64)
