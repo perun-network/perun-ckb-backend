@@ -470,7 +470,7 @@ func (c Client) sendAndAwait(ctx context.Context, tx *types.Transaction) error {
 	}
 
 	// Wait for the transaction to be committed on-chain.
-	txWithStatus, err := c.client.GetTransaction(ctx, *txHash)
+	txWithStatus, err := c.client.GetTransaction(ctx, *txHash, nil)
 	if err != nil {
 		return fmt.Errorf("initially polling transaction: %w", err)
 	}
@@ -484,7 +484,7 @@ func (c Client) sendAndAwait(ctx context.Context, tx *types.Transaction) error {
 		case <-ctx.Done():
 			return fmt.Errorf("context done: %w", ctx.Err())
 		case <-ticker.C:
-			txWithStatus, err = c.client.GetTransaction(ctx, *txHash)
+			txWithStatus, err = c.client.GetTransaction(ctx, *txHash, nil)
 			if err != nil {
 				return fmt.Errorf("polling transaction: %w", err)
 			}

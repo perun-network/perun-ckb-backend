@@ -2,6 +2,7 @@ package test
 
 import (
 	"context"
+
 	"github.com/nervosnetwork/ckb-sdk-go/v2/indexer"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/rpc"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types"
@@ -18,6 +19,7 @@ type MockRPCClient struct {
 	close                            func()
 	dryRunTransaction                func(ctx context.Context, transaction *types.Transaction) (*types.DryRunTransactionResult, error)
 	estimateCycles                   func(ctx context.Context, transaction *types.Transaction) (*types.EstimateCycles, error)
+	generateEpochs                   func(ctx context.Context, number uint64) (uint64, error)
 	getBannedAddresses               func(ctx context.Context) ([]*types.BannedAddress, error)
 	getBlock                         func(ctx context.Context, hash types.Hash) (*types.Block, error)
 	getBlockByNumber                 func(ctx context.Context, number uint64) (*types.Block, error)
@@ -31,22 +33,25 @@ type MockRPCClient struct {
 	getCellsCapacity                 func(ctx context.Context, searchKey *indexer.SearchKey) (*indexer.Capacity, error)
 	getConsensus                     func(ctx context.Context) (*types.Consensus, error)
 	getCurrentEpoch                  func(ctx context.Context) (*types.Epoch, error)
+	getDeploymentsInfo               func(ctx context.Context) (*types.DeploymentsInfo, error)
 	getEpochByNumber                 func(ctx context.Context, number uint64) (*types.Epoch, error)
 	getFeeRateStatics                func(ctx context.Context, target interface{}) (*types.FeeRateStatics, error)
+	getFeeRateStatistics             func(ctx context.Context, target interface{}) (*types.FeeRateStatistics, error)
 	getForkBlock                     func(ctx context.Context, blockHash types.Hash) (*types.Block, error)
 	getHeader                        func(ctx context.Context, hash types.Hash) (*types.Header, error)
 	getHeaderByNumber                func(ctx context.Context, number uint64) (*types.Header, error)
 	getIndexerTip                    func(ctx context.Context) (*indexer.TipHeader, error)
-	getLiveCell                      func(ctx context.Context, outPoint *types.OutPoint, withData bool) (*types.CellWithStatus, error)
+	getLiveCell                      func(ctx context.Context, outPoint *types.OutPoint, withData bool, includeTxPool *bool) (*types.CellWithStatus, error)
 	getPackedBlock                   func(ctx context.Context, hash types.Hash) (*types.Block, error)
 	getPackedBlockWithCycles         func(ctx context.Context, hash types.Hash) (*types.BlockWithCycles, error)
 	getPackedHeader                  func(ctx context.Context, hash types.Hash) (*types.Header, error)
 	getPackedHeaderByNumber          func(ctx context.Context, number uint64) (*types.Header, error)
 	getPeers                         func(ctx context.Context) ([]*types.RemoteNode, error)
+	getPoolTxDetailInfo              func(ctx context.Context, hash types.Hash) (*types.PoolTxDetailInfo, error)
 	getRawTxPool                     func(ctx context.Context) (*types.RawTxPool, error)
 	getTipBlockNumber                func(ctx context.Context) (uint64, error)
 	getTipHeader                     func(ctx context.Context) (*types.Header, error)
-	getTransaction                   func(ctx context.Context, hash types.Hash) (*types.TransactionWithStatus, error)
+	getTransaction                   func(ctx context.Context, hash types.Hash, onlyCommited *bool) (*types.TransactionWithStatus, error)
 	getTransactionAndWitnessProof    func(ctx context.Context, txHashes []string, blockHash *types.Hash) (*types.TransactionAndWitnessProof, error)
 	getTransactionProof              func(ctx context.Context, txHashes []string, blockHash *types.Hash) (*types.TransactionProof, error)
 	getTransactions                  func(ctx context.Context, searchKey *indexer.SearchKey, order indexer.SearchOrder, limit uint64, afterCursor string) (*indexer.TxsWithCell, error)
@@ -58,6 +63,7 @@ type MockRPCClient struct {
 	setBan                           func(ctx context.Context, address string, command string, banTime uint64, absolute bool, reason string) error
 	setNetworkActive                 func(ctx context.Context, state bool) error
 	syncState                        func(ctx context.Context) (*types.SyncState, error)
+	testTxPoolAccept                 func(ctx context.Context, tx *types.Transaction) (*types.EntryCompleted, error)
 	txPoolInfo                       func(ctx context.Context) (*types.TxPoolInfo, error)
 	verifyTransactionAndWitnessProof func(ctx context.Context, proof *types.TransactionAndWitnessProof) ([]*types.Hash, error)
 	verifyTransactionProof           func(ctx context.Context, proof *types.TransactionProof) ([]*types.Hash, error)
@@ -100,6 +106,9 @@ func NewMockRPCClient() *MockRPCClient {
 		estimateCycles: func(ctx context.Context, transaction *types.Transaction) (*types.EstimateCycles, error) {
 			panic("unimplemented")
 		},
+		generateEpochs: func(ctx context.Context, number uint64) (uint64, error) {
+			panic("unimplemented")
+		},
 		getBannedAddresses: func(ctx context.Context) ([]*types.BannedAddress, error) {
 			panic("unimplemented")
 		},
@@ -139,6 +148,9 @@ func NewMockRPCClient() *MockRPCClient {
 		getCurrentEpoch: func(ctx context.Context) (*types.Epoch, error) {
 			panic("unimplemented")
 		},
+		getDeploymentsInfo: func(ctx context.Context) (*types.DeploymentsInfo, error) {
+			panic("unimplemented")
+		},
 		getEpochByNumber: func(ctx context.Context, number uint64) (*types.Epoch, error) {
 			panic("unimplemented")
 		},
@@ -157,7 +169,7 @@ func NewMockRPCClient() *MockRPCClient {
 		getIndexerTip: func(ctx context.Context) (*indexer.TipHeader, error) {
 			panic("unimplemented")
 		},
-		getLiveCell: func(ctx context.Context, outPoint *types.OutPoint, withData bool) (*types.CellWithStatus, error) {
+		getLiveCell: func(ctx context.Context, outPoint *types.OutPoint, withData bool, includeTxPool *bool) (*types.CellWithStatus, error) {
 			panic("unimplemented")
 		},
 		getPackedBlock: func(ctx context.Context, hash types.Hash) (*types.Block, error) {
@@ -175,6 +187,9 @@ func NewMockRPCClient() *MockRPCClient {
 		getPeers: func(ctx context.Context) ([]*types.RemoteNode, error) {
 			panic("unimplemented")
 		},
+		getPoolTxDetailInfo: func(ctx context.Context, hash types.Hash) (*types.PoolTxDetailInfo, error) {
+			panic("unimplemented")
+		},
 		getRawTxPool: func(ctx context.Context) (*types.RawTxPool, error) {
 			panic("unimplemented")
 		},
@@ -184,7 +199,7 @@ func NewMockRPCClient() *MockRPCClient {
 		getTipHeader: func(ctx context.Context) (*types.Header, error) {
 			panic("unimplemented")
 		},
-		getTransaction: func(ctx context.Context, hash types.Hash) (*types.TransactionWithStatus, error) {
+		getTransaction: func(ctx context.Context, hash types.Hash, onlyCommited *bool) (*types.TransactionWithStatus, error) {
 			panic("unimplemented")
 		},
 		getTransactionAndWitnessProof: func(ctx context.Context, txHashes []string, blockHash *types.Hash) (*types.TransactionAndWitnessProof, error) {
@@ -221,6 +236,9 @@ func NewMockRPCClient() *MockRPCClient {
 			panic("unimplemented")
 		},
 		txPoolInfo: func(ctx context.Context) (*types.TxPoolInfo, error) {
+			panic("unimplemented")
+		},
+		testTxPoolAccept: func(ctx context.Context, tx *types.Transaction) (*types.EntryCompleted, error) {
 			panic("unimplemented")
 		},
 		verifyTransactionAndWitnessProof: func(ctx context.Context, proof *types.TransactionAndWitnessProof) ([]*types.Hash, error) {
@@ -307,6 +325,9 @@ func (m *MockRPCClient) SetGetEpochByNumber(f func(ctx context.Context, number u
 func (m *MockRPCClient) SetGetFeeRateStatics(f func(ctx context.Context, target interface{}) (*types.FeeRateStatics, error)) {
 	m.getFeeRateStatics = f
 }
+func (m *MockRPCClient) SetGetFeeRateStatistics(f func(ctx context.Context, target interface{}) (*types.FeeRateStatistics, error)) {
+	m.getFeeRateStatistics = f
+}
 func (m *MockRPCClient) SetGetForkBlock(f func(ctx context.Context, blockHash types.Hash) (*types.Block, error)) {
 	m.getForkBlock = f
 }
@@ -319,7 +340,7 @@ func (m *MockRPCClient) SetGetHeaderByNumber(f func(ctx context.Context, number 
 func (m *MockRPCClient) SetGetIndexerTip(f func(ctx context.Context) (*indexer.TipHeader, error)) {
 	m.getIndexerTip = f
 }
-func (m *MockRPCClient) SetGetLiveCell(f func(ctx context.Context, outPoint *types.OutPoint, withData bool) (*types.CellWithStatus, error)) {
+func (m *MockRPCClient) SetGetLiveCell(f func(ctx context.Context, outPoint *types.OutPoint, withData bool, includeTxPool *bool) (*types.CellWithStatus, error)) {
 	m.getLiveCell = f
 }
 func (m *MockRPCClient) SetGetPackedBlock(f func(ctx context.Context, hash types.Hash) (*types.Block, error)) {
@@ -346,7 +367,7 @@ func (m *MockRPCClient) SetGetTipBlockNumber(f func(ctx context.Context) (uint64
 func (m *MockRPCClient) SetGetTipHeader(f func(ctx context.Context) (*types.Header, error)) {
 	m.getTipHeader = f
 }
-func (m *MockRPCClient) SetGetTransaction(f func(ctx context.Context, hash types.Hash) (*types.TransactionWithStatus, error)) {
+func (m *MockRPCClient) SetGetTransaction(f func(ctx context.Context, hash types.Hash, onlyCommited *bool) (*types.TransactionWithStatus, error)) {
 	m.getTransaction = f
 }
 func (m *MockRPCClient) SetGetTransactionAndWitnessProof(f func(ctx context.Context, txHashes []string, blockHash *types.Hash) (*types.TransactionAndWitnessProof, error)) {
@@ -442,6 +463,11 @@ func (m *MockRPCClient) EstimateCycles(ctx context.Context, transaction *types.T
 	return m.estimateCycles(ctx, transaction)
 }
 
+func (m *MockRPCClient) GenerateEpochs(ctx context.Context, numEpochs uint64) (uint64, error) {
+	// Implement the method logic here
+	return m.generateEpochs(ctx, numEpochs)
+}
+
 // GetBannedAddresses implements rpc.Client
 func (m *MockRPCClient) GetBannedAddresses(ctx context.Context) ([]*types.BannedAddress, error) {
 	return m.getBannedAddresses(ctx)
@@ -507,6 +533,10 @@ func (m *MockRPCClient) GetCurrentEpoch(ctx context.Context) (*types.Epoch, erro
 	return m.getCurrentEpoch(ctx)
 }
 
+func (m *MockRPCClient) GetDeploymentsInfo(ctx context.Context) (*types.DeploymentsInfo, error) {
+	return m.getDeploymentsInfo(ctx)
+}
+
 // GetEpochByNumber implements rpc.Client
 func (m *MockRPCClient) GetEpochByNumber(ctx context.Context, number uint64) (*types.Epoch, error) {
 	return m.getEpochByNumber(ctx, number)
@@ -515,6 +545,10 @@ func (m *MockRPCClient) GetEpochByNumber(ctx context.Context, number uint64) (*t
 // GetFeeRateStatics implements rpc.Client
 func (m *MockRPCClient) GetFeeRateStatics(ctx context.Context, target interface{}) (*types.FeeRateStatics, error) {
 	return m.getFeeRateStatics(ctx, target)
+}
+
+func (m *MockRPCClient) GetFeeRateStatistics(ctx context.Context, target interface{}) (*types.FeeRateStatistics, error) {
+	return m.getFeeRateStatistics(ctx, target)
 }
 
 // GetForkBlock implements rpc.Client
@@ -538,8 +572,8 @@ func (m *MockRPCClient) GetIndexerTip(ctx context.Context) (*indexer.TipHeader, 
 }
 
 // GetLiveCell implements rpc.Client
-func (m *MockRPCClient) GetLiveCell(ctx context.Context, outPoint *types.OutPoint, withData bool) (*types.CellWithStatus, error) {
-	return m.getLiveCell(ctx, outPoint, withData)
+func (m *MockRPCClient) GetLiveCell(ctx context.Context, outPoint *types.OutPoint, withData bool, includeTxPool *bool) (*types.CellWithStatus, error) {
+	return m.getLiveCell(ctx, outPoint, withData, includeTxPool)
 }
 
 // GetPackedBlock implements rpc.Client
@@ -567,6 +601,10 @@ func (m *MockRPCClient) GetPeers(ctx context.Context) ([]*types.RemoteNode, erro
 	return m.getPeers(ctx)
 }
 
+func (m *MockRPCClient) GetPoolTxDetailInfo(ctx context.Context, hash types.Hash) (*types.PoolTxDetailInfo, error) {
+	return m.getPoolTxDetailInfo(ctx, hash)
+}
+
 // GetRawTxPool implements rpc.Client
 func (m *MockRPCClient) GetRawTxPool(ctx context.Context) (*types.RawTxPool, error) {
 	return m.getRawTxPool(ctx)
@@ -583,8 +621,8 @@ func (m *MockRPCClient) GetTipHeader(ctx context.Context) (*types.Header, error)
 }
 
 // GetTransaction implements rpc.Client
-func (m *MockRPCClient) GetTransaction(ctx context.Context, hash types.Hash) (*types.TransactionWithStatus, error) {
-	return m.getTransaction(ctx, hash)
+func (m *MockRPCClient) GetTransaction(ctx context.Context, hash types.Hash, onlyCommited *bool) (*types.TransactionWithStatus, error) {
+	return m.getTransaction(ctx, hash, onlyCommited)
 }
 
 // GetTransactionAndWitnessProof implements rpc.Client
@@ -640,6 +678,10 @@ func (m *MockRPCClient) SetNetworkActive(ctx context.Context, state bool) error 
 // SyncState implements rpc.Client
 func (m *MockRPCClient) SyncState(ctx context.Context) (*types.SyncState, error) {
 	return m.syncState(ctx)
+}
+
+func (m *MockRPCClient) TestTxPoolAccept(ctx context.Context, tx *types.Transaction) (*types.EntryCompleted, error) {
+	return m.testTxPoolAccept(ctx, tx)
 }
 
 // TxPoolInfo implements rpc.Client

@@ -27,7 +27,7 @@ func NewMockClient(opts ...MockClientOpt) *MockClient {
 }
 
 // GetLiveCell implements transaction.LiveCellFetcher
-func (mc *MockClient) GetLiveCell(_ context.Context, outPoint *types.OutPoint, withData bool) (*types.CellWithStatus, error) {
+func (mc *MockClient) GetLiveCell(_ context.Context, outPoint *types.OutPoint, withData bool, includeTxPool *bool) (*types.CellWithStatus, error) {
 	key := MakeKeyFromOutpoint(outPoint)
 	return mc.CellMap[key], nil
 }

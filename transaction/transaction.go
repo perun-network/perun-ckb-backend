@@ -59,7 +59,7 @@ type PerunTransactionBuilder struct {
 type LiveCellFetcher interface {
 	// GetLiveCell returns the information about a cell by out_point if it is live.
 	// If second with_data argument set to true, will return cell data and data_hash if it is live.
-	GetLiveCell(ctx context.Context, outPoint *types.OutPoint, withData bool) (*types.CellWithStatus, error)
+	GetLiveCell(ctx context.Context, outPoint *types.OutPoint, withData bool, includeTxPool *bool) (*types.CellWithStatus, error)
 }
 
 func NewPerunTransactionBuilder(client LiveCellFetcher, iterators map[types.Hash]collector.CellIterator, knownUDTs map[types.Hash]types.Script, psh *PerunScriptHandler, changeAddress address.Address) (*PerunTransactionBuilder, error) {
@@ -259,7 +259,7 @@ func (ptb *PerunTransactionBuilder) initializeScriptGroups() error {
 	// Create all script groups that are required by the inputs specified by the
 	// user of this transaction.
 	for idx, input := range ptb.SimpleTransactionBuilder.Inputs {
-		inputCell, err := ptb.cl.GetLiveCell(context.Background(), input.PreviousOutput, false)
+		inputCell, err := ptb.cl.GetLiveCell(context.Background(), input.PreviousOutput, false, nil)
 		if err != nil {
 			return fmt.Errorf("getting live cell when resolving script groups: %w", err)
 		}
@@ -796,7 +796,7 @@ func CalculateCellCapacity(cell types.CellOutput) uint64 {
 // they exist.
 func (ptb *PerunTransactionBuilder) resolveInputCell(input *types.CellInput) (*types.CellOutput, []byte, error) {
 	// TODO: Use an injectable context.
-	cell, err := ptb.cl.GetLiveCell(context.Background(), input.PreviousOutput, true)
+	cell, err := ptb.cl.GetLiveCell(context.Background(), input.PreviousOutput, true, nil)
 	if err != nil {
 		return nil, nil, fmt.Errorf("resolving input cell: %w", err)
 	}
@@ -837,7 +837,7 @@ func (ptb *PerunTransactionBuilder) callHandlers(group *ckbtransaction.ScriptGro
 }
 
 func (ptb *PerunTransactionBuilder) processInputLockScript(input *types.CellInput, groups []*ckbtransaction.ScriptGroup, contexts ...interface{}) error {
-	cell, err := ptb.cl.GetLiveCell(context.Background(), input.PreviousOutput, false)
+	cell, err := ptb.cl.GetLiveCell(context.Background(), input.PreviousOutput, false, nil)
 	if err != nil {
 		return fmt.Errorf("resolving input cell: %w", err)
 	}
@@ -845,7 +845,7 @@ func (ptb *PerunTransactionBuilder) processInputLockScript(input *types.CellInpu
 }
 
 func (ptb *PerunTransactionBuilder) processInputTypeScript(input *types.CellInput, groups []*ckbtransaction.ScriptGroup, contexts ...interface{}) error {
-	cell, err := ptb.cl.GetLiveCell(context.Background(), input.PreviousOutput, false)
+	cell, err := ptb.cl.GetLiveCell(context.Background(), input.PreviousOutput, false, nil)
 	if err != nil {
 		return fmt.Errorf("resolving input cell: %w", err)
 	}
