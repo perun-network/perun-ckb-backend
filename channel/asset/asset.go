@@ -3,6 +3,7 @@ package asset
 import (
 	"errors"
 	"fmt"
+
 	"github.com/Pilatuz/bigz/uint128"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types/molecule"
@@ -29,7 +30,7 @@ func (a Asset) MarshalBinary() (data []byte, err error) {
 	return append([]byte{SUDTMagic}, e...), nil
 }
 
-func (a Asset) UnmarshalBinary(data []byte) error {
+func (a *Asset) UnmarshalBinary(data []byte) error {
 	if len(data) < 1 {
 		return errors.New("asset invalid: empty")
 	}
