@@ -599,9 +599,9 @@ func (c Client) getChannelLiveCellWithCache(ctx context.Context, id channel.ID) 
 		return cell, status, nil
 	}
 	liveChannelCells, err := c.getAllChannelLiveCells(ctx)
-	log.Println("getChannelLiveCellWithCache: getAllChannelLiveCells returned error: ", err)
+	//log.Println("getChannelLiveCellWithCache: getAllChannelLiveCells returned error: ", err)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("getChannelLiveCellWithCache: getAllChannelLiveCells returned error: %w", err)
 	}
 	cell, status, err := c.getFirstChannelLiveCellWithID(liveChannelCells, id)
 	if err != nil {
