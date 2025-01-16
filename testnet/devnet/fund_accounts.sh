@@ -9,7 +9,7 @@ genesis_tx_index=$(ckb-cli wallet get-live-cells --address $genesis | awk '/outp
 genesis_tx_amount=$(ckb-cli wallet get-live-cells --address $genesis | awk '/capacity/ {print $3}')
 FUNDINGTX="fundingtx.json"
 FUNDING_AMOUNT=1000
-CHANGE_AMOUNT=$(python -c "print(\"{:.8f}\".format($genesis_tx_amount - 2.0 * 10.0 * $FUNDING_AMOUNT - 1.0))")
+CHANGE_AMOUNT=$(python3 -c "print(\"{:.8f}\".format($genesis_tx_amount - 2.0 * 10.0 * $FUNDING_AMOUNT - 1.0))")
 
 add_output() {
   ckb-cli tx add-output --tx-file $FUNDINGTX --to-sighash-address $1 --capacity $2

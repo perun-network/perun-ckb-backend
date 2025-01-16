@@ -8,12 +8,12 @@ import (
 )
 
 func TestRunSetupScript(t *testing.T) {
-	err := testnet.RunSetupScript()
+	err := testnet.RunSetupScript(".")
 	require.NoError(t, err, "failed to run setup script")
 }
 
 func TestSetup(t *testing.T) {
-	err := testnet.StartDevnet()
+	err := testnet.StartDevnet(".")
 	require.NoError(t, err, "failed to start devnet")
 
 	err = testnet.StopDevnet()

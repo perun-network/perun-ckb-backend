@@ -2,6 +2,7 @@ package test
 
 import (
 	"math/rand"
+
 	"perun.network/go-perun/wallet"
 	"perun.network/go-perun/wallet/test"
 	ckbwallet "perun.network/perun-ckb-backend/wallet"
