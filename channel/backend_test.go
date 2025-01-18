@@ -3,6 +3,8 @@ package channel_test
 import (
 	"math/big"
 	"math/rand"
+	"testing"
+
 	gpchannel "perun.network/go-perun/channel"
 	gptest "perun.network/go-perun/channel/test"
 	gpwallet "perun.network/go-perun/wallet"
@@ -10,7 +12,6 @@ import (
 	"perun.network/perun-ckb-backend/channel/asset"
 	"perun.network/perun-ckb-backend/wallet"
 	pkgtest "polycry.pt/poly-go/test"
-	"testing"
 )
 
 func setup(rng *rand.Rand) *gptest.Setup {
