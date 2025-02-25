@@ -146,6 +146,17 @@ func (ptb *PerunTransactionBuilder) Fund(fi *FundInfo) error {
 
 func (ptb *PerunTransactionBuilder) Dispute(di *DisputeInfo) error {
 	_, err := ptb.psh.buildDisputeTransaction(ptb, nil, di)
+
+	return err
+}
+
+func (ptb *PerunTransactionBuilder) DisputeVC(di *VcDisputeInfo) error {
+	var err error
+	if di.first {
+		_, err = ptb.psh.buildFirstVCDisputeTransaction(ptb, nil, di)
+	} else {
+		_, err = ptb.psh.buildVCDisputeProgressTransaction(ptb, nil, di)
+	}
 	return err
 }
 
@@ -156,6 +167,16 @@ func (ptb *PerunTransactionBuilder) Close(ci *CloseInfo) error {
 
 func (ptb *PerunTransactionBuilder) ForceClose(fci *ForceCloseInfo) error {
 	_, err := ptb.psh.buildForceCloseTransaction(ptb, nil, fci)
+	return err
+}
+
+func (ptb *PerunTransactionBuilder) ForceCloseWithVC(fcvi *ForceCloseWithVCInfo) error {
+	var err error
+	if fcvi.firstForceClose {
+		_, err = ptb.psh.buildFirstForceCloseWithVCTransaction(ptb, nil, fcvi)
+	} else {
+		_, err = ptb.psh.buildSecondForceCloseWithVCTransaction(ptb, nil, fcvi)
+	}
 	return err
 }
 

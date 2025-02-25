@@ -14,18 +14,16 @@ type DisputeInfo struct {
 	PCTS        *types.Script
 	SigA        molecule.Bytes
 	SigB        molecule.Bytes
-	VCDispute   molecule.VCDispute
 }
 
-func NewDisputeInfo(channelCell types.OutPoint, status molecule.ChannelStatus, params *channel.Params, header types.Hash, pcts *types.Script, sigA molecule.Bytes, sigB molecule.Bytes, vcDispute molecule.VCDispute) *DisputeInfo {
+func NewDisputeInfo(channelCell types.OutPoint, status molecule.ChannelStatus, params *channel.Params, header types.Hash, ts *types.Script, sigA molecule.Bytes, sigB molecule.Bytes) *DisputeInfo {
 	return &DisputeInfo{
 		ChannelCell: channelCell,
 		Status:      status,
 		Params:      params,
 		Header:      header,
-		PCTS:        pcts,
+		PCTS:        ts,
 		SigA:        sigA,
 		SigB:        sigB,
-		VCDispute:   vcDispute,
 	}
 }

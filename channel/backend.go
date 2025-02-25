@@ -2,9 +2,10 @@ package channel
 
 import (
 	"fmt"
-	"golang.org/x/crypto/blake2b"
 	"math"
 	"math/big"
+
+	"golang.org/x/crypto/blake2b"
 	"perun.network/go-perun/channel"
 	"perun.network/go-perun/wallet"
 	"perun.network/perun-ckb-backend/channel/asset"
@@ -29,6 +30,10 @@ func (b backend) CalcID(params *channel.Params) channel.ID {
 		panic(err)
 	}
 	return blake2b.Sum256(cp.AsSlice())
+}
+
+func (b backend) CalcVCID(params *channel.Params) channel.ID {
+	panic("no virtual channels")
 }
 
 func (b backend) Sign(account wallet.Account, state *channel.State) (wallet.Sig, error) {

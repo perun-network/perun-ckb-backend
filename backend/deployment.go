@@ -14,6 +14,8 @@ type Deployment struct {
 
 	PCTSDep types.CellDep
 	PCLSDep types.CellDep
+	VCTSDep types.CellDep
+	VCLSDep types.CellDep
 	PFLSDep types.CellDep
 
 	PCTSCodeHash types.Hash
@@ -25,6 +27,12 @@ type Deployment struct {
 	PFLSCodeHash    types.Hash
 	PFLSHashType    types.ScriptHashType
 	PFLSMinCapacity uint64
+
+	VCTSCodeHash types.Hash
+	VCTSHashType types.ScriptHashType
+
+	VCLSCodeHash types.Hash
+	VCLSHashType types.ScriptHashType
 
 	DefaultLockScript    types.Script
 	DefaultLockScriptDep types.CellDep
