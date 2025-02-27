@@ -96,3 +96,10 @@ func (di *VcDisputeInfo) mkInitialVirtualChannelStatus() molecule.VirtualChannel
 		FirstForceClose(encoding.False).
 		Build()
 }
+
+func (di *VcDisputeInfo) updateDisputed() *VcDisputeInfo {
+	builder := di.LCStatus.AsBuilder()
+	newStatus := builder.VcDisputed(encoding.True).Build()
+	di.LCStatus = newStatus
+	return di
+}

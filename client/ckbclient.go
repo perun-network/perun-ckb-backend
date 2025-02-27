@@ -62,7 +62,7 @@ type CKBClient interface {
 	// later than the expiration of the challenge duration.
 	ForceClose(ctx context.Context, id channel.ID, state *channel.State, params *channel.Params) error
 
-	ForceCloseWithVC(ctx context.Context, id channel.ID, vcid channel.ID, state *channel.State, params *channel.Params) error
+	ForceCloseWithVC(ctx context.Context, id channel.ID, vcid channel.ID, state *channel.State, vcstate *channel.State, sigs []wallet.Sig, vcSigs []wallet.Sig, params *channel.Params) error
 
 	// GetChannelWithID returns an on-chain channel with the given channel ID.
 	// Note: Only the channel ID field in the state must be checked, as the pcts verifies the integrity of said
@@ -334,9 +334,9 @@ func (c Client) DisputeVC(ctx context.Context, id channel.ID, state *channel.Sta
 
 	encodedIndexMap := encoding.PackIndexMap(indexMap)
 
-	virtualChannelCell, vcStatus, err := c.getVirtualChannelLiveCellWithCache(ctx, id)
+	virtualChannelCells, vcStatuses, err := c.getVirtualChannelLiveCellWithCache(ctx, id)
 
-	if virtualChannelCell == nil {
+	if virtualChannelCells == nil {
 		parentCell, status, err := c.getChannelLiveCellWithCache(ctx, parentID)
 		if err != nil {
 			return fmt.Errorf("getting channel live cell: %w", err)
@@ -357,11 +357,42 @@ func (c Client) DisputeVC(ctx context.Context, id channel.ID, state *channel.Sta
 			&encodedIndexMap,
 			true,
 		)
-	} else {
+	} else if len(virtualChannelCells) > 1 {
+		// Merge two virtual channels into one.
+		mergeVCInfo := transaction.NewVCMergeInfo(
+			virtualChannelCells[0].OutPoint,
+			virtualChannelCells[1].OutPoint,
+			vcStatuses[0],
+			vcStatuses[1],
+			virtualChannelCells[0].BlockNumber,
+			virtualChannelCells[1].BlockNumber,
+			header.Hash,
+			virtualChannelCells[0].Output.Type,
+			*parentSigA, *parentSigB,
+			&vcDispute,
+		)
+		builder, err := c.newPerunTransactionBuilder(nil)
+		if err != nil {
+			return fmt.Errorf("creating Perun transaction builder: %w", err)
+		}
+		if err := builder.MergeVC(mergeVCInfo); err != nil {
+			return fmt.Errorf("creating dispute transaction: %w", err)
+		}
+		tx, err := builder.Build()
+		if err != nil {
+			return fmt.Errorf("building dispute transaction: %w", err)
+		}
+		return c.submitTx(ctx, tx)
+
+	} else { // Dispute Progress or update
 		parentCell, status, err := c.getChannelLiveCellWithCache(ctx, parentID)
 		if err != nil {
 			return fmt.Errorf("getting channel live cell: %w", err)
 		}
+
+		virtualChannelCell := virtualChannelCells[0]
+		vcStatus := vcStatuses[0]
+
 		di = transaction.NewVCDisputeInfo(
 			parentCell.OutPoint,
 			virtualChannelCell.OutPoint,
@@ -502,22 +533,40 @@ func (c Client) ForceClose(ctx context.Context, id channel.ID, state *channel.St
 	return c.submitTx(ctx, tx)
 }
 
-func (c Client) ForceCloseWithVC(ctx context.Context, id channel.ID, vcid channel.ID, state *channel.State, params *channel.Params) error {
+func (c Client) ForceCloseWithVC(ctx context.Context, id channel.ID, vcid channel.ID, state *channel.State, vcstate *channel.State, sigs []wallet.Sig, vcSigs []wallet.Sig, params *channel.Params) error {
 	// TODO: Implement this.
 	channelCell, _, err := c.getChannelLiveCellWithCache(ctx, id)
 	if err != nil {
 		return fmt.Errorf("getting channel live cell: %w", err)
 	}
-	virtualChannelCell, vcStatus, err := c.getVirtualChannelLiveCellWithCache(ctx, vcid)
+
+	occupiedChannelCapacity := channelCell.Output.OccupiedCapacity(channelCell.OutputData)
+
+	virtualChannelCells, vcStatuses, err := c.getVirtualChannelLiveCellWithCache(ctx, vcid)
 	if err != nil {
 		return fmt.Errorf("getting virtual channel live cell: %w", err)
 	}
 
+	if len(virtualChannelCells) > 1 {
+		return fmt.Errorf("expected only one virtual channel, got %d", len(virtualChannelCells))
+	}
+
+	virtualChannelCell := virtualChannelCells[0]
+	vcStatus := vcStatuses[0]
+
 	pcts := channelCell.Output.Type
+	vcts := virtualChannelCell.Output.Type
 	assets, err := c.getAssets(ctx, pcts)
 	if err != nil {
 		return fmt.Errorf("retrieving assets locked in channel: %w", err)
 	}
+
+	sigA := encoding.PackSignature(sigs[0])
+	sigB := encoding.PackSignature(sigs[1])
+
+	vcSigA := encoding.PackSignature(vcSigs[0])
+	vcSigB := encoding.PackSignature(vcSigs[1])
+	vcDispute := encoding.PackVCDispute(vcSigA, vcSigB)
 
 	header, err := c.client.GetTipHeader(ctx)
 	if err != nil {
@@ -527,10 +576,16 @@ func (c Client) ForceCloseWithVC(ctx context.Context, id channel.ID, vcid channe
 	fcvi := transaction.NewForceCloseWithVCInfo(
 		channelCell.OutPoint,
 		virtualChannelCell.OutPoint,
+		vcts,
 		state,
+		vcstate,
+		vcStatus,
+		*sigA, *sigB,
+		&vcDispute,
 		params,
-		header.Hash,
+		[]types.Hash{header.Hash},
 		mkCellInputs(assets),
+		occupiedChannelCapacity,
 		encoding.ToBool(*vcStatus.FirstForceClose()),
 	)
 
@@ -736,7 +791,7 @@ func (c Client) getExactChannelLiveCell(ctx context.Context, pcts *types.Script)
 	return cells.Objects[0], nil
 }
 
-func (c Client) getExactVirtualChannelLiveCell(ctx context.Context, vcts *types.Script) (*indexer.LiveCell, error) {
+func (c Client) getExactVirtualChannelLiveCell(ctx context.Context, vcts *types.Script) ([]*indexer.LiveCell, error) {
 	searchKey := &indexer.SearchKey{
 		Script:           vcts,
 		ScriptType:       types.ScriptTypeType,
@@ -750,13 +805,13 @@ func (c Client) getExactVirtualChannelLiveCell(ctx context.Context, vcts *types.
 		log.Println("getExactVirtualChannelLiveCell: GetCells error: ", err)
 		return nil, err
 	}
-	if len(cells.Objects) > 1 {
-		return nil, errors.New("more than one live cell found for channel")
+	if len(cells.Objects) > 2 {
+		return nil, errors.New("more than two live cell found for the virtual channel")
 	}
 	if len(cells.Objects) == 0 {
 		return nil, ErrNoChannelLiveCell
 	}
-	return cells.Objects[0], nil
+	return cells.Objects, nil
 }
 
 func (c Client) isValidChannelLiveCell(cell *indexer.LiveCell) bool {
@@ -820,19 +875,24 @@ func (c Client) getChannelLiveCellWithCache(ctx context.Context, id channel.ID) 
 	return cell, status, err
 }
 
-func (c Client) getVirtualChannelLiveCellWithCache(ctx context.Context, id channel.ID) (*indexer.LiveCell, *molecule.VirtualChannelStatus, error) {
+func (c Client) getVirtualChannelLiveCellWithCache(ctx context.Context, id channel.ID) ([]*indexer.LiveCell, []*molecule.VirtualChannelStatus, error) {
 	script, cached := c.vccache.Get(id)
 	log.Println("getVirtualChannelLiveCellWithCache: cached?", cached)
 	if cached {
-		cell, err := c.getExactVirtualChannelLiveCell(ctx, script)
+		cells, err := c.getExactVirtualChannelLiveCell(ctx, script)
 		if err != nil {
 			return nil, nil, err
 		}
-		status, err := molecule.VirtualChannelStatusFromSlice(cell.OutputData, false)
-		if err != nil {
-			return nil, nil, fmt.Errorf("converting cell outputdata to VirtualChannelStatus: %w", err)
+		statuses := make([]*molecule.VirtualChannelStatus, len(cells))
+		for i, cell := range cells {
+			status, err := molecule.VirtualChannelStatusFromSlice(cell.OutputData, false)
+			if err != nil {
+				return nil, nil, fmt.Errorf("converting cell outputdata to VirtualChannelStatus: %w", err)
+			}
+			statuses[i] = status
 		}
-		return cell, status, nil
+
+		return cells, statuses, nil
 	}
 	liveChannelCells, err := c.getAllVirtualChannelLiveCells(ctx)
 	log.Println("getVirtualChannelLiveCellWithCache: getAllVirtualChannelLiveCells returned error: ", err)
@@ -847,5 +907,5 @@ func (c Client) getVirtualChannelLiveCellWithCache(ctx context.Context, id chann
 	if errCache != nil {
 		return c.getVirtualChannelLiveCellWithCache(ctx, id)
 	}
-	return cell, status, err
+	return []*indexer.LiveCell{cell}, []*molecule.VirtualChannelStatus{status}, err
 }

@@ -160,6 +160,12 @@ func (ptb *PerunTransactionBuilder) DisputeVC(di *VcDisputeInfo) error {
 	return err
 }
 
+func (ptb *PerunTransactionBuilder) MergeVC(vmi *VcMergeInfo) error {
+	var err error
+	_, err = ptb.psh.buildVCMergeTransaction(ptb, nil, vmi)
+	return err
+}
+
 func (ptb *PerunTransactionBuilder) Close(ci *CloseInfo) error {
 	_, err := ptb.psh.buildCloseTransaction(ptb, nil, ci)
 	return err

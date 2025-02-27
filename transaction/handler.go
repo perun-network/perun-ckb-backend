@@ -422,6 +422,7 @@ func (psh *PerunScriptHandler) buildFirstVCDisputeTransaction(builder collector.
 		Lock:     channelLockScript,
 		Type:     disputeInfo.PCTS,
 	}
+	disputeInfo.updateDisputed()
 	channelCell.Capacity = channelCell.OccupiedCapacity(disputeInfo.LCStatus.AsSlice())
 	builder.AddOutput(&channelCell, disputeInfo.LCStatus.AsSlice())
 
@@ -477,6 +478,8 @@ func (psh *PerunScriptHandler) buildVCDisputeProgressTransaction(builder collect
 		Lock:     channelLockScript,
 		Type:     disputeInfo.PCTS,
 	}
+	// Set disputed flag to true.
+	disputeInfo.updateDisputed()
 	channelCell.Capacity = channelCell.OccupiedCapacity(disputeInfo.LCStatus.AsSlice())
 	builder.AddOutput(&channelCell, disputeInfo.LCStatus.AsSlice())
 
@@ -492,12 +495,148 @@ func (psh *PerunScriptHandler) buildVCDisputeProgressTransaction(builder collect
 	return true, nil
 }
 
-func (psh *PerunScriptHandler) buildVCMergeTransaction(builder collector.TransactionBuilder, group *transaction.ScriptGroup, disputeInfo *VcDisputeInfo) (bool, error) {
-	//TODO: Implement this function.
-	return false, nil
+func (psh *PerunScriptHandler) buildVCMergeTransaction(builder collector.TransactionBuilder, group *transaction.ScriptGroup, disputeInfo *VcMergeInfo) (bool, error) {
+	builder.AddCellDep(&psh.vctsDep)
+	builder.AddCellDep(&psh.vclsDep)
+	builder.AddCellDep(&psh.vctsDep)
+	builder.AddCellDep(&psh.vclsDep)
+	builder.AddHeaderDep(disputeInfo.Header)
+
+	// Inputs
+	vc0InputIndex := builder.AddInput(&types.CellInput{
+		PreviousOutput: &disputeInfo.VCCell0,
+	})
+	err := builder.SetWitness(uint(vc0InputIndex), types.WitnessTypeInputType, psh.mkWitnessVCDispute(
+		*disputeInfo.VCDispute.SigA(),
+		*disputeInfo.VCDispute.SigB(),
+		disputeInfo.ParentSigA,
+		disputeInfo.ParentSigB))
+	if err != nil {
+		return false, err
+	}
+
+	vc1InputIndex := builder.AddInput(&types.CellInput{
+		PreviousOutput: &disputeInfo.VCCell1,
+	})
+	err = builder.SetWitness(uint(vc1InputIndex), types.WitnessTypeInputType, psh.mkWitnessVCDispute(
+		*disputeInfo.VCDispute.SigA(),
+		*disputeInfo.VCDispute.SigB(),
+		disputeInfo.ParentSigA,
+		disputeInfo.ParentSigB))
+	if err != nil {
+		return false, err
+	}
+
+	// Choose the virtual channel cell with the lower block number.
+	vcChannelLockscript := psh.mkVirtualChannelLockScript()
+	vcCell := types.CellOutput{
+		Capacity: 0,
+		Lock:     vcChannelLockscript,
+		Type:     disputeInfo.VCTS,
+	}
+	if disputeInfo.BlockNum0 < disputeInfo.BlockNum1 {
+		vcCell.Capacity = vcCell.OccupiedCapacity(disputeInfo.VCStatus0.AsSlice())
+		builder.AddOutput(&vcCell, disputeInfo.VCStatus0.AsSlice())
+	} else {
+		vcCell.Capacity = vcCell.OccupiedCapacity(disputeInfo.VCStatus1.AsSlice())
+		builder.AddOutput(&vcCell, disputeInfo.VCStatus1.AsSlice())
+	}
+
+	return true, nil
 }
 
 func (psh *PerunScriptHandler) buildFirstForceCloseWithVCTransaction(builder collector.TransactionBuilder, group *transaction.ScriptGroup, forceCloseWithVCInfo *ForceCloseWithVCInfo) (bool, error) {
+	builder.AddCellDep(&psh.pctsDep)
+	builder.AddCellDep(&psh.pclsDep)
+	builder.AddCellDep(&psh.pflsDep)
+	builder.AddCellDep(&psh.vctsDep)
+	builder.AddCellDep(&psh.vclsDep)
+	psh.AddSudtCellDeps(builder)
+
+	for _, h := range forceCloseWithVCInfo.Headers {
+		builder.AddHeaderDep(h)
+	}
+
+	// Channel cell input.
+	channelInputIndex := builder.AddInput(&types.CellInput{
+		PreviousOutput: &forceCloseWithVCInfo.ChannelCell,
+	})
+	err := builder.SetWitness(uint(channelInputIndex), types.WitnessTypeInputType, psh.mkWitnessDispute(
+		forceCloseWithVCInfo.SigA,
+		forceCloseWithVCInfo.SigB,
+	))
+	if err != nil {
+		return false, err
+	}
+
+	for _, assetInput := range forceCloseWithVCInfo.AssetInputs {
+		builder.AddInput(&assetInput)
+	}
+
+	// Virtual channel cell input.
+	vcInputIndex := builder.AddInput(&types.CellInput{
+		PreviousOutput: &forceCloseWithVCInfo.VCCell,
+	})
+	err = builder.SetWitness(uint(vcInputIndex), types.WitnessTypeInputType, psh.mkWitnessVCDispute(
+		*forceCloseWithVCInfo.VCDispute.SigA(),
+		*forceCloseWithVCInfo.VCDispute.SigB(),
+		forceCloseWithVCInfo.SigA,
+		forceCloseWithVCInfo.SigB))
+	if err != nil {
+		return false, err
+	}
+
+	// Outputs
+	// Add the payment output for each participant.
+	for i, addr := range forceCloseWithVCInfo.Params.Parts {
+		payoutScript := address.AsParticipant(addr).PaymentScript
+		paymentMinCapacity := payoutScript.OccupiedCapacity()
+		// payout ckbytes
+		balance, err := GetCKByteBalance(i, forceCloseWithVCInfo.State)
+		if err != nil {
+			return false, err
+		}
+
+		// Extract payout from virtual channel.
+		vcBalance, err := GetCKByteBalance(i, forceCloseWithVCInfo.VCState)
+		if err != nil {
+			return false, err
+		}
+		// Add the payout back to the original balance
+		balance += vcBalance
+
+		// The capacity of the channel's live cell is added to the balance of the first party.
+		if i == 0 {
+			balance += forceCloseWithVCInfo.ChannelCapacity
+		}
+		additionalBalance := uint64(0)
+		if balance >= paymentMinCapacity {
+			paymentOutput := psh.mkPaymentOutput(payoutScript, balance)
+			builder.AddOutput(paymentOutput, nil)
+		} else {
+			additionalBalance = balance
+		}
+
+		err = psh.AddAssetsToOutputs(builder, forceCloseWithVCInfo.State, i, payoutScript, additionalBalance)
+		if err != nil {
+			return false, err
+		}
+	}
+
+	// VC Output
+	forceCloseWithVCInfo.updateFirstForceClose()
+	vcChannelLockscript := psh.mkVirtualChannelLockScript()
+	vcCell := types.CellOutput{
+		Capacity: 0,
+		Lock:     vcChannelLockscript,
+		Type:     forceCloseWithVCInfo.VCTS,
+	}
+	vcCell.Capacity = vcCell.OccupiedCapacity(forceCloseWithVCInfo.VCStatus.AsSlice())
+	builder.AddOutput(&vcCell, forceCloseWithVCInfo.VCStatus.AsSlice())
+	return true, nil
+}
+
+func (psh *PerunScriptHandler) buildSecondForceCloseWithVCTransaction(builder collector.TransactionBuilder, group *transaction.ScriptGroup, forceCloseWithVCInfo *ForceCloseWithVCInfo) (bool, error) {
 	//TODO: Implement this function.
 	builder.AddCellDep(&psh.pctsDep)
 	builder.AddCellDep(&psh.pclsDep)
@@ -506,21 +645,74 @@ func (psh *PerunScriptHandler) buildFirstForceCloseWithVCTransaction(builder col
 	builder.AddCellDep(&psh.vclsDep)
 	psh.AddSudtCellDeps(builder)
 
+	for _, h := range forceCloseWithVCInfo.Headers {
+		builder.AddHeaderDep(h)
+	}
+
 	// Channel cell input.
 	channelInputIndex := builder.AddInput(&types.CellInput{
 		PreviousOutput: &forceCloseWithVCInfo.ChannelCell,
 	})
+	err := builder.SetWitness(uint(channelInputIndex), types.WitnessTypeInputType, psh.mkWitnessDispute(
+		forceCloseWithVCInfo.SigA,
+		forceCloseWithVCInfo.SigB,
+	))
+	if err != nil {
+		return false, err
+	}
 
 	for _, assetInput := range forceCloseWithVCInfo.AssetInputs {
 		builder.AddInput(&assetInput)
 	}
 
-	return false, nil
-}
+	// Virtual channel cell input.
+	vcInputIndex := builder.AddInput(&types.CellInput{
+		PreviousOutput: &forceCloseWithVCInfo.VCCell,
+	})
+	err = builder.SetWitness(uint(vcInputIndex), types.WitnessTypeInputType, psh.mkWitnessVCDispute(
+		*forceCloseWithVCInfo.VCDispute.SigA(),
+		*forceCloseWithVCInfo.VCDispute.SigB(),
+		forceCloseWithVCInfo.SigA,
+		forceCloseWithVCInfo.SigB))
+	if err != nil {
+		return false, err
+	}
 
-func (psh *PerunScriptHandler) buildSecondForceCloseWithVCTransaction(builder collector.TransactionBuilder, group *transaction.ScriptGroup, forceCloseWithVCInfo *ForceCloseWithVCInfo) (bool, error) {
-	//TODO: Implement this function.
-	return false, nil
+	// Outputs
+	// Add the payment output for each participant.
+	for i, addr := range forceCloseWithVCInfo.Params.Parts {
+		payoutScript := address.AsParticipant(addr).PaymentScript
+		paymentMinCapacity := payoutScript.OccupiedCapacity()
+		// payout ckbytes
+		balance, err := GetCKByteBalance(i, forceCloseWithVCInfo.State)
+		if err != nil {
+			return false, err
+		}
+		// Extract payout from virtual channel.
+		vcBalance, err := GetCKByteBalance(i, forceCloseWithVCInfo.VCState)
+		if err != nil {
+			return false, err
+		}
+		// Add the payout back to the original balance
+		balance += vcBalance
+		// The capacity of the channel's live cell is added to the balance of the first party.
+		if i == 0 {
+			balance += forceCloseWithVCInfo.ChannelCapacity
+		}
+		additionalBalance := uint64(0)
+		if balance >= paymentMinCapacity {
+			paymentOutput := psh.mkPaymentOutput(payoutScript, balance)
+			builder.AddOutput(paymentOutput, nil)
+		} else {
+			additionalBalance = balance
+		}
+
+		err = psh.AddAssetsToOutputs(builder, forceCloseWithVCInfo.State, i, payoutScript, additionalBalance)
+		if err != nil {
+			return false, err
+		}
+	}
+	return true, nil
 }
 
 func (psh PerunScriptHandler) mkWitnessDispute(sigA, sigB molecule.Bytes) []byte {
