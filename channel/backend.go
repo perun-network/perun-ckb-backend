@@ -2,33 +2,36 @@ package channel
 
 import (
 	"fmt"
-	"golang.org/x/crypto/blake2b"
 	"math"
 	"math/big"
+
+	"golang.org/x/crypto/blake2b"
 	"perun.network/go-perun/channel"
 	"perun.network/go-perun/wallet"
 	"perun.network/perun-ckb-backend/channel/asset"
 	"perun.network/perun-ckb-backend/encoding"
 )
 
+const CKBBackendID = 3
+
 func init() {
-	channel.SetBackend(Backend)
+	channel.SetBackend(Backend, CKBBackendID)
 }
 
 type backend struct{}
 
-func (b backend) NewAppID() channel.AppID {
+func (b backend) NewAppID() (channel.AppID, error) {
 	panic("no app channels")
 }
 
 var Backend = backend{}
 
-func (b backend) CalcID(params *channel.Params) channel.ID {
+func (b backend) CalcID(params *channel.Params) (channel.ID, error) {
 	cp, err := encoding.PackChannelParameters(params)
 	if err != nil {
 		panic(err)
 	}
-	return blake2b.Sum256(cp.AsSlice())
+	return blake2b.Sum256(cp.AsSlice()), nil
 }
 
 func (b backend) Sign(account wallet.Account, state *channel.State) (wallet.Sig, error) {

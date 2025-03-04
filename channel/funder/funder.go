@@ -5,17 +5,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/nervosnetwork/ckb-sdk-go/v2/types"
-	"github.com/nervosnetwork/ckb-sdk-go/v2/types/molecule"
 	"log"
 	"math"
+	"time"
+
+	"github.com/nervosnetwork/ckb-sdk-go/v2/types"
+	"github.com/nervosnetwork/ckb-sdk-go/v2/types/molecule"
 	"perun.network/go-perun/channel"
 	"perun.network/perun-ckb-backend/backend"
 	"perun.network/perun-ckb-backend/client"
 	"perun.network/perun-ckb-backend/encoding"
 	molecule2 "perun.network/perun-ckb-backend/encoding/molecule"
 	"perun.network/perun-ckb-backend/wallet/address"
-	"time"
 )
 
 const DefaultPollingInterval = time.Duration(5) * time.Second
@@ -92,11 +93,11 @@ func (f Funder) Fund(ctx context.Context, req channel.FundingReq) error {
 	// TODO: Verify channel fundable, such as:
 	// - no ckbytes allocation in initial state in (0, pflsMinCapacity)
 	// - ...
-	_, err := address.IsParticipant(req.Params.Parts[0])
+	_, err := address.IsParticipant(req.Params.Parts[0][address.CKBBackendID])
 	if err != nil {
 		return fmt.Errorf("party a: %w", err)
 	}
-	_, err = address.IsParticipant(req.Params.Parts[1])
+	_, err = address.IsParticipant(req.Params.Parts[1][address.CKBBackendID])
 	if err != nil {
 		return fmt.Errorf("party b: %w", err)
 	}

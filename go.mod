@@ -1,8 +1,8 @@
 module perun.network/perun-ckb-backend
 
-go 1.19
+go 1.22
 
-require perun.network/go-perun v0.10.7-0.20230808153546-74844191e56e
+require perun.network/go-perun v0.13.0
 
 require (
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.2.0
@@ -24,6 +24,7 @@ require (
 	github.com/deckarep/golang-set/v2 v2.6.0 // indirect
 	github.com/ethereum/go-ethereum v1.13.10 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
+	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/websocket v1.5.1 // indirect
 	github.com/holiman/uint256 v1.2.4 // indirect
 	github.com/minio/blake2b-simd v0.0.0-20160723061019-3f5f724cb5b1 // indirect

@@ -12,6 +12,7 @@ import (
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types/numeric"
 	"github.com/stretchr/testify/require"
 	"perun.network/go-perun/channel/test"
+	"perun.network/go-perun/wallet"
 	btest "perun.network/perun-ckb-backend/backend/test"
 	"perun.network/perun-ckb-backend/channel/asset"
 	molecule2 "perun.network/perun-ckb-backend/encoding/molecule"
@@ -70,13 +71,16 @@ func TestScriptHandler(t *testing.T) {
 			test.WithNumParts(2),
 			test.WithNumAssets(1),
 			test.WithNumLocked(0),
+			test.WithBackend(txtest.CKBBackendID),
+			test.WithBackendIDs([]wallet.BackendID{txtest.CKBBackendID}),
 			test.WithBalancesInRange(big.NewInt(0).Mul(big.NewInt(100), big.NewInt(100_000_000)), big.NewInt(0).Mul(big.NewInt(10_000), big.NewInt(100_000_000))),
 		)
 		params := test.NewRandomParams(rng,
 			test.WithNumParts(2),
 			test.WithLedgerChannel(true),
 			test.WithVirtualChannel(false),
-			test.WithoutApp())
+			test.WithoutApp(),
+			test.WithBackend(txtest.CKBBackendID))
 		oi := transaction.NewOpenInfo([32]byte{}, btest.NewRandomToken(rng,
 			btest.WithOutpoint(*channelTokenOutpoint)),
 			params,
@@ -123,6 +127,8 @@ func TestScriptHandler(t *testing.T) {
 			test.WithoutApp(),
 			test.WithNumParts(2),
 			test.WithAssets(asset.NewCKBytesAsset(), asset.NewSUDTAsset(asset.NewSUDT(*sudtTypeScript, maxSUDTCellCapacity))),
+			test.WithBackend(txtest.CKBBackendID),
+			test.WithBackendIDs([]wallet.BackendID{txtest.CKBBackendID}),
 			test.WithNumLocked(0),
 			test.WithBalancesInRange(big.NewInt(0).Mul(big.NewInt(100), big.NewInt(100_000_000)), big.NewInt(0).Mul(big.NewInt(10_000), big.NewInt(100_000_000))),
 		)
@@ -130,6 +136,7 @@ func TestScriptHandler(t *testing.T) {
 			test.WithNumParts(2),
 			test.WithLedgerChannel(true),
 			test.WithVirtualChannel(false),
+			test.WithBackend(txtest.CKBBackendID),
 			test.WithoutApp())
 		oi := transaction.NewOpenInfo([32]byte{}, btest.NewRandomToken(rng,
 			btest.WithOutpoint(*channelTokenOutpoint)),
@@ -183,6 +190,8 @@ func TestScriptHandler(t *testing.T) {
 			test.WithoutApp(),
 			test.WithNumParts(2),
 			test.WithAssets(asset.NewCKBytesAsset(), asset.NewSUDTAsset(asset.NewSUDT(*sudtTypeScript, maxSUDTCellCapacity))),
+			test.WithBackend(txtest.CKBBackendID),
+			test.WithBackendIDs([]wallet.BackendID{txtest.CKBBackendID}),
 			test.WithNumLocked(0),
 			test.WithBalances([]*big.Int{big.NewInt(0).SetUint64(ckbInFundingCells), big.NewInt(100)},
 				[]*big.Int{big.NewInt(0).SetUint64(ckbInFundingCells), big.NewInt(100)}),
@@ -191,6 +200,7 @@ func TestScriptHandler(t *testing.T) {
 			test.WithNumParts(2),
 			test.WithLedgerChannel(true),
 			test.WithVirtualChannel(false),
+			test.WithBackend(txtest.CKBBackendID),
 			test.WithoutApp())
 		oi := transaction.NewOpenInfo([32]byte{}, btest.NewRandomToken(rng,
 			btest.WithOutpoint(*channelTokenOutpoint)),

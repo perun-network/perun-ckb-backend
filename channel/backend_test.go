@@ -3,6 +3,8 @@ package channel_test
 import (
 	"math/big"
 	"math/rand"
+	"testing"
+
 	gpchannel "perun.network/go-perun/channel"
 	gptest "perun.network/go-perun/channel/test"
 	gpwallet "perun.network/go-perun/wallet"
@@ -10,25 +12,26 @@ import (
 	"perun.network/perun-ckb-backend/channel/asset"
 	"perun.network/perun-ckb-backend/wallet"
 	pkgtest "polycry.pt/poly-go/test"
-	"testing"
 )
 
 func setup(rng *rand.Rand) *gptest.Setup {
-	getRandomAddress := func() gpwallet.Address {
+	getRandomAddress := func() map[gpwallet.BackendID]gpwallet.Address {
 		acc, err := wallet.NewAccount()
 		if err != nil {
 			panic(err)
 		}
-		return acc.Address()
+		return map[gpwallet.BackendID]gpwallet.Address{channel.CKBBackendID: acc.Address()}
 	}
 	newParamsAndState := func(opts ...gptest.RandomOpt) (*gpchannel.Params, *gpchannel.State) {
 		return gptest.NewRandomParamsAndState(
 			rng,
 			gptest.WithoutApp().
-				Append(gptest.WithParts(getRandomAddress(), getRandomAddress())).
+				Append(gptest.WithParts([]map[gpwallet.BackendID]gpwallet.Address{getRandomAddress(), getRandomAddress()})).
 				Append(gptest.WithLedgerChannel(true)).
 				Append(gptest.WithVirtualChannel(false)).
 				Append(gptest.WithAssets(asset.NewCKBytesAsset())).
+				Append(gptest.WithBackend(channel.CKBBackendID)).
+				Append(gptest.WithBackendIDs([]gpwallet.BackendID{channel.CKBBackendID})).
 				Append(gptest.WithBalancesInRange(
 					new(big.Int).SetUint64(0),
 					channel.MaxBalance,

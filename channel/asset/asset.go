@@ -14,9 +14,19 @@ import (
 var CKByteMagic byte = 0x00
 var SUDTMagic byte = 0x01
 
+var _ pchannel.Asset = (*Asset)(nil)
+
 type Asset struct {
 	IsCKBytes bool
 	SUDT      *SUDT
+}
+
+func (a Asset) Address() []byte {
+	if a.IsCKBytes {
+		return nil
+	}
+	enc, _ := a.SUDT.Encode()
+	return enc
 }
 
 func (a Asset) MarshalBinary() (data []byte, err error) {

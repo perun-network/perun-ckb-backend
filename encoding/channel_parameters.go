@@ -25,11 +25,11 @@ func PackChannelParameters(params *channel.Params) (molecule.ChannelParameters, 
 	if params.VirtualChannel {
 		return molecule.ChannelParameters{}, errors.New("virtual channels are not supported")
 	}
-	a, err := PackAddressToOnChainParticipant(params.Parts[0])
+	a, err := PackAddressToOnChainParticipant(params.Parts[0][address.CKBBackendID])
 	if err != nil {
 		return molecule.ChannelParameters{}, fmt.Errorf("packing first party: %w", err)
 	}
-	b, err := PackAddressToOnChainParticipant(params.Parts[1])
+	b, err := PackAddressToOnChainParticipant(params.Parts[1][address.CKBBackendID])
 	if err != nil {
 		return molecule.ChannelParameters{}, fmt.Errorf("packing second party: %w", err)
 	}
