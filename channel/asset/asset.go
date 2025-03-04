@@ -11,8 +11,10 @@ import (
 	molecule2 "perun.network/perun-ckb-backend/encoding/molecule"
 )
 
-var CKByteMagic byte = 0x00
-var SUDTMagic byte = 0x01
+var (
+	CKByteMagic byte = 0x00
+	SUDTMagic   byte = 0x01
+)
 
 var _ pchannel.Asset = (*Asset)(nil)
 

@@ -2,6 +2,7 @@ package test
 
 import (
 	"fmt"
+
 	"perun.network/perun-ckb-backend/wallet"
 )
 

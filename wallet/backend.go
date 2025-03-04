@@ -11,8 +11,7 @@ import (
 	"perun.network/perun-ckb-backend/wallet/address"
 )
 
-type backend struct {
-}
+type backend struct{}
 
 var Backend = backend{}
 

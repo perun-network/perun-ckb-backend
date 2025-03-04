@@ -3,6 +3,7 @@ package test
 import (
 	"math/big"
 	"math/rand"
+
 	"perun.network/perun-ckb-backend/encoding"
 
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types/molecule"

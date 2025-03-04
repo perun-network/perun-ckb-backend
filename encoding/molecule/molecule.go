@@ -3,8 +3,9 @@ package molecule
 import (
 	"encoding/binary"
 	"errors"
-	"github.com/Pilatuz/bigz/uint128"
 	"math/big"
+
+	"github.com/Pilatuz/bigz/uint128"
 
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types"

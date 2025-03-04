@@ -10,8 +10,8 @@ import (
 )
 
 func TestMarsahllingCKByte(t *testing.T) {
-	//rng := pkgtest.Prng(t)
-	//randomizer := &assetTest.Randomizer{}
+	// rng := pkgtest.Prng(t)
+	// randomizer := &assetTest.Randomizer{}
 	assetIn := asset.NewCKBytesAsset()
 	bytes, err := assetIn.MarshalBinary()
 	require.NoError(t, err)
@@ -35,5 +35,4 @@ func TestMarshallingSUDT(t *testing.T) {
 	err = assetOut.UnmarshalBinary(bytes)
 	require.NoError(t, err)
 	require.Equal(t, assetIn, &assetOut)
-
 }

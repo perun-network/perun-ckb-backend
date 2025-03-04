@@ -2,10 +2,11 @@ package encoding
 
 import (
 	"errors"
+	"math/big"
+
 	"github.com/Pilatuz/bigz/uint128"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types/molecule"
-	"math/big"
 	pchannel "perun.network/go-perun/channel"
 	"perun.network/perun-ckb-backend/channel/asset"
 	molecule2 "perun.network/perun-ckb-backend/encoding/molecule"

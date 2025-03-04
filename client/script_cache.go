@@ -2,6 +2,7 @@ package client
 
 import (
 	"errors"
+
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types"
 	"perun.network/go-perun/channel"
 	"polycry.pt/poly-go/sync"

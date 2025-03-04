@@ -6,14 +6,15 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math"
+	"time"
+
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types/molecule"
-	"math"
 	"perun.network/go-perun/channel"
 	"perun.network/perun-ckb-backend/client"
 	"perun.network/perun-ckb-backend/encoding"
 	molecule2 "perun.network/perun-ckb-backend/encoding/molecule"
-	"time"
 )
 
 const (
@@ -80,7 +81,6 @@ func (a *PollingSubscription) run(ctx context.Context) {
 				oldStatus = newStatus
 			}
 		}
-
 	}
 }
 

@@ -19,8 +19,10 @@ import (
 	"perun.network/perun-ckb-backend/wallet/address"
 )
 
-const DefaultPollingInterval = time.Duration(5) * time.Second
-const DefaultMaxIterationsUntilAbort = 12
+const (
+	DefaultPollingInterval         = time.Duration(5) * time.Second
+	DefaultMaxIterationsUntilAbort = 12
+)
 
 type Funder struct {
 	client                  client.CKBClient

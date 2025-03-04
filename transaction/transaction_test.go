@@ -218,13 +218,13 @@ func TestScriptHandler(t *testing.T) {
 			transaction.DefaultFeeShannon),
 			"transaction should be properly balanced")
 	})
-
 }
 
 func checkTransactionBalance(
 	tx *ckbtransaction.TransactionWithScriptGroups,
 	mockIterator *txtest.MockIterator,
-	expectedFeeShannon uint64) error {
+	expectedFeeShannon uint64,
+) error {
 	inputs := mockIterator.GetInputs()
 	findInInputs := func(cellInput *types.CellInput) *types.TransactionInput {
 		for _, input := range inputs {
@@ -263,7 +263,8 @@ func checkSudtTransactionBalance(
 	mockIterator *txtest.MockIterator,
 	sudtMockIterator *txtest.MockIterator,
 	sudtScript types.Script,
-	expectedFeeShannon uint64) error {
+	expectedFeeShannon uint64,
+) error {
 	ckbInputs := mockIterator.GetInputs()
 	sudtInputs := sudtMockIterator.GetInputs()
 	findInCKBInputs := func(cellInput *types.CellInput) *types.TransactionInput {

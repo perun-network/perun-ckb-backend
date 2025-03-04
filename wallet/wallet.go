@@ -2,9 +2,10 @@ package wallet
 
 import (
 	"errors"
+	"sync"
+
 	"perun.network/go-perun/wallet"
 	"perun.network/perun-ckb-backend/wallet/address"
-	"sync"
 )
 
 type EphemeralWallet struct {

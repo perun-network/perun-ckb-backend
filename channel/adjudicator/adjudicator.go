@@ -2,6 +2,7 @@ package adjudicator
 
 import (
 	"context"
+
 	"perun.network/go-perun/channel"
 	"perun.network/perun-ckb-backend/client"
 )
@@ -24,7 +25,6 @@ func (a Adjudicator) Withdraw(ctx context.Context, req channel.AdjudicatorReq, s
 	} else {
 		return a.client.ForceClose(ctx, req.Tx.ID, req.Tx.State, req.Params)
 	}
-
 }
 
 func (a Adjudicator) Progress(ctx context.Context, req channel.ProgressReq) error {
