@@ -104,6 +104,59 @@ func NewSetup(t *testing.T, rng *rand.Rand) *Setup {
 	return setup
 }
 
+func NewVirtualChannelSetup(t *testing.T, rng *rand.Rand) *Setup {
+	setup := &Setup{}
+	setup.t = t
+	setup.Rng = rng
+
+	sudtOwnerLockArg, err := parseSUDTOwnerLockArg(devNetDir + "/accounts/sudt-owner-lock-hash.txt")
+	require.NoError(t, err, "error getting SUDT owner lock arg")
+
+	d, sudtInfo, err := GetDeployment(devNetDir+"/contracts/migrations/dev/", devNetDir+"/system_scripts", sudtOwnerLockArg)
+	require.NoError(t, err, "error getting deployment")
+	setup.Deployment = d
+	setup.SUDTInfo = sudtInfo
+
+	setup.Asset = asset.NewCKBytesAsset()
+
+	wallets := make([]*ckbwallettest.TestEphemeralWallet, 3)
+	setup.EphemeralWallets = wallets
+
+	keyAlice, err := GetKey(devNetDir + "/accounts/alice.pk")
+	require.NoError(t, err, "error getting alice's private key")
+
+	keyBob, err := GetKey(devNetDir + "/accounts/bob.pk")
+	require.NoError(t, err, "error getting bob's private key")
+
+	keyIngrid, err := GetKey(devNetDir + "/accounts/ingrid.pk")
+	require.NoError(t, err, "error getting ingrid's private key")
+
+	aliceAccount := wallet.NewAccountFromPrivateKey(keyAlice)
+	bobAccount := wallet.NewAccountFromPrivateKey(keyBob)
+	ingridAccount := wallet.NewAccountFromPrivateKey(keyIngrid)
+
+	wallets[0] = ckbwallettest.NewTestEphemeralWallet(aliceAccount)
+	err = wallets[0].AddAccount(aliceAccount)
+	require.NoError(t, err, "error adding alice's account")
+
+	wallets[1] = ckbwallettest.NewTestEphemeralWallet(bobAccount)
+	err = wallets[1].AddAccount(bobAccount)
+	require.NoError(t, err, "error adding bob's account")
+
+	wallets[2] = ckbwallettest.NewTestEphemeralWallet(ingridAccount)
+	err = wallets[2].AddAccount(ingridAccount)
+	require.NoError(t, err, "error adding ingrid's account")
+
+	setup.WalletAccs = []*wallet.Account{aliceAccount, bobAccount, ingridAccount}
+	setup.AccKeys = []secp256k1.PrivateKey{*keyAlice, *keyBob, *keyIngrid}
+
+	funders, adjs := createFundersAndAdjudicators(t, setup.WalletAccs, setup.AccKeys, d, RpcNodeURL)
+	setup.Funders = funders
+	setup.Adjs = adjs
+
+	return setup
+}
+
 func parseSUDTOwnerLockArg(pathToSUDTOwnerLockArg string) (string, error) {
 	b, err := os.ReadFile(pathToSUDTOwnerLockArg)
 	if err != nil {

@@ -13,17 +13,18 @@ import (
 )
 
 func PackChannelParameters(params *channel.Params) (molecule.ChannelParameters, error) {
+	isLedgerChannel := True
+	isVirtualChannel := False
+
 	if len(params.Parts) != 2 {
 		return molecule.ChannelParameters{}, errors.New("only 2-party channels are supported")
-	}
-	if !params.LedgerChannel {
-		return molecule.ChannelParameters{}, errors.New("only ledger channels are supported")
 	}
 	if params.App != channel.NoApp() {
 		return molecule.ChannelParameters{}, errors.New("app channels are not supported")
 	}
 	if params.VirtualChannel {
-		return molecule.ChannelParameters{}, errors.New("virtual channels are not supported")
+		isLedgerChannel = False
+		isVirtualChannel = True
 	}
 	a, err := PackAddressToOnChainParticipant(params.Parts[0])
 	if err != nil {
@@ -41,8 +42,8 @@ func PackChannelParameters(params *channel.Params) (molecule.ChannelParameters, 
 
 	return molecule.NewChannelParametersBuilder().
 		App(NoApp).
-		IsLedgerChannel(True).
-		IsVirtualChannel(False).
+		IsLedgerChannel(isLedgerChannel).
+		IsVirtualChannel(isVirtualChannel).
 		PartyA(a).
 		PartyB(b).
 		Nonce(*nonce).

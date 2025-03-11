@@ -16,7 +16,7 @@ windows:
         - expect fund_accounts.expect && ckb-cli
   - panes:
       - shell_command:
-        - sleep 10.0
+        - sleep 15.0
         - ./deploy_contracts.sh
         - echo "Waiting 15 seconds before funding SUDTs"
         - sleep 15.0

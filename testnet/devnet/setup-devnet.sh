@@ -4,7 +4,7 @@ set -eu
 [ -n "${DEBUG:-}" ] && set -x || true
 
 # This script sets up the devnet for CKB.
-# Part of the setup are a miner, two accounts Alice and Bob, as well as the
+# Part of the setup are a miner, three accounts Alice, Bob, and Ingrid, as well as the
 # registration of two accounts governing the genesis cells.
 
 ACCOUNTS_DIR="accounts"
@@ -71,6 +71,7 @@ MINER_LOCK_ARG=$(cat $ACCOUNTS_DIR/miner.txt | awk '/lock_arg/ {print $2}')
 
 create_account "alice"
 create_account "bob"
+create_account "ingrid"
 
 ckb init --chain dev --ba-arg $MINER_LOCK_ARG --ba-message "0x" --force
 
