@@ -2,10 +2,11 @@ package encoding
 
 import (
 	"errors"
+	"math/big"
+
 	"github.com/Pilatuz/bigz/uint128"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types/molecule"
-	"math/big"
 	pchannel "perun.network/go-perun/channel"
 	"perun.network/perun-ckb-backend/channel/asset"
 	molecule2 "perun.network/perun-ckb-backend/encoding/molecule"
@@ -57,7 +58,62 @@ func PackBalances(state *pchannel.State) (molecule.Balances, error) {
 			sudtAllocBuilder.Push(b)
 		}
 	}
-	return balancesBuilder.Sudts(sudtAllocBuilder.Build()).Build(), nil
+	balancesBuilder.Sudts(sudtAllocBuilder.Build())
+
+	// Locked_Balances
+	lockedBalancesBuilder := molecule.NewLockedBalancesBuilder()
+	for _, subAlloc := range state.Locked {
+		sa, err := PackSubAlloc(&subAlloc, state)
+		if err != nil {
+			return molecule.Balances{}, err
+		}
+		lockedBalancesBuilder.Push(sa)
+	}
+
+	balancesBuilder.Locked(lockedBalancesBuilder.Build())
+
+	return balancesBuilder.Build(), nil
+}
+
+func PackSubAlloc(subAlloc *pchannel.SubAlloc, state *pchannel.State) (molecule.SubAlloc, error) {
+	subAllocBuilder := molecule.NewSubAllocBuilder()
+	subAllocBuilder.Id(*molecule2.PackByte32(subAlloc.ID))
+	sudtAllocBuilder := molecule.NewSUDTAllocationBuilder()
+	subBalancesBuilder := molecule.NewSubBalancesBuilder()
+	for _, pAsset := range state.Assets {
+		a, err := asset.IsCompatibleAsset(pAsset)
+		if err != nil {
+			return molecule.SubAlloc{}, err
+		}
+		if a.IsInvalid() {
+			return molecule.SubAlloc{}, errors.New("invalid asset")
+		}
+		if a.IsCKBytes {
+			d, err := PackCKByteDistribution(
+				[2]*big.Int{
+					state.Balance(0, a),
+					state.Balance(1, a),
+				})
+			if err != nil {
+				return molecule.SubAlloc{}, err
+			}
+			subBalancesBuilder.Ckbytes(d)
+		} else {
+			b, err := PackSUDTBalances(a,
+				[2]*big.Int{
+					state.Balance(0, a),
+					state.Balance(1, a),
+				})
+			if err != nil {
+				return molecule.SubAlloc{}, err
+			}
+			sudtAllocBuilder.Push(b)
+		}
+	}
+	subBalancesBuilder.Sudts(sudtAllocBuilder.Build())
+
+	subAllocBuilder.Balances(subBalancesBuilder.Build())
+	return subAllocBuilder.Build(), nil
 }
 
 func PackCKByteDistribution(d [2]*big.Int) (molecule.CKByteDistribution, error) {
