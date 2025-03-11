@@ -4,14 +4,12 @@ import (
 	"math/big"
 	"testing"
 
-	"github.com/stretchr/testify/require"
 	"perun.network/go-perun/client"
 	"perun.network/go-perun/log"
 	"perun.network/go-perun/wire"
 	"perun.network/perun-ckb-backend/channel/asset"
 	"perun.network/perun-ckb-backend/channel/test"
 	ctest "perun.network/perun-ckb-backend/client/test"
-	"perun.network/perun-ckb-backend/testnet"
 	"polycry.pt/poly-go/sync"
 	pkgtest "polycry.pt/poly-go/test"
 
@@ -19,10 +17,6 @@ import (
 )
 
 func TestPaymentHappy(t *testing.T) {
-	// Start devnet
-	require.NoError(t, testnet.StartDevnet("../testnet"), "failed to start devnet")
-	t.Cleanup(func() { testnet.StopDevnet() })
-
 	log.Info("Starting happy test")
 	rng := pkgtest.Prng(t)
 
