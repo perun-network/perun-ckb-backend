@@ -2,6 +2,7 @@ package adjudicator
 
 import (
 	"context"
+
 	"perun.network/go-perun/channel"
 	"perun.network/perun-ckb-backend/client"
 )
@@ -19,6 +20,9 @@ func (a Adjudicator) Register(ctx context.Context, req channel.AdjudicatorReq, s
 }
 
 func (a Adjudicator) Withdraw(ctx context.Context, req channel.AdjudicatorReq, stateMap channel.StateMap) error {
+	if req.Secondary { // Secondary withdraw already handled by first withdraw.
+		return nil
+	}
 	if req.Tx.State.IsFinal {
 		return a.client.Close(ctx, req.Tx.ID, req.Tx.State, req.Tx.Sigs, req.Params)
 	} else {
