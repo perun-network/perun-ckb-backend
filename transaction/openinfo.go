@@ -49,6 +49,7 @@ func mkInitialChannelStatus(state *channel.State) molecule.ChannelStatus {
 	return molecule.NewChannelStatusBuilder().
 		State(packedState).
 		Funded(initialFundedStatus(state)).
+		VcDisputed(encoding.False).
 		Disputed(encoding.False).
 		Build()
 }
