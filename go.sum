@@ -44,8 +44,8 @@ github.com/minio/blake2b-simd v0.0.0-20160723061019-3f5f724cb5b1 h1:lYpkrQH5ajf0
 github.com/minio/blake2b-simd v0.0.0-20160723061019-3f5f724cb5b1/go.mod h1:pD8RvIylQ358TN4wwqatJ8rNavkEINozVn9DtGI3dfQ=
 github.com/mmcloughlin/addchain v0.4.0 h1:SobOdjm2xLj1KkXN5/n0xTIWyZA2+s99UCY1iPfkHRY=
 github.com/mmcloughlin/addchain v0.4.0/go.mod h1:A86O+tHqZLMNO4w6ZZ4FlVQEadcoqkyU72HC5wJ4RlU=
-github.com/perun-network/ckb-sdk-go/v2 v2.2.1-0.20230601140721-2bf596fddd80 h1:45S239s+5oGVJHakd+BjfZmstG7wHnA8Tkeq43R9eFA=
-github.com/perun-network/ckb-sdk-go/v2 v2.2.1-0.20230601140721-2bf596fddd80/go.mod h1:nPpBML8fuaM1NgkKCwv2gSHiCv+xKH43fu8LA9LOQUg=
+github.com/perun-network/ckb-sdk-go/v2 v2.2.1-0.20250225125757-9acd41e70812 h1:4hJZb1ffWgjTeOfKQvG+apo0FTA/eF9uEUo8fzELUoc=
+github.com/perun-network/ckb-sdk-go/v2 v2.2.1-0.20250225125757-9acd41e70812/go.mod h1:nPpBML8fuaM1NgkKCwv2gSHiCv+xKH43fu8LA9LOQUg=
 github.com/pkg/errors v0.9.1 h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=
 github.com/pkg/errors v0.9.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
@@ -100,8 +100,8 @@ gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c/go.mod h1:JHkPIbrfpd72SG/EV
 gopkg.in/yaml.v3 v3.0.0-20200313102051-9f266ea9e77c/go.mod h1:K4uyk7z7BCEPqu6E+C64Yfv1cQ7kz7rIZviUmN+EgEM=
 gopkg.in/yaml.v3 v3.0.1 h1:fxVm/GzAzEWqLHuvctI91KS9hhNmmWOoWu0XTYJS7CA=
 gopkg.in/yaml.v3 v3.0.1/go.mod h1:K4uyk7z7BCEPqu6E+C64Yfv1cQ7kz7rIZviUmN+EgEM=
-perun.network/go-perun v0.12.0 h1:9Cdk5nHFYkegk+2FbqO9SjvgzUvduVWUiiJXrWkAwBA=
-perun.network/go-perun v0.12.0/go.mod h1:uH8iwi75alXDizxxDzH0A+6uqXPbagCpKfl8ECMv/cA=
+perun.network/go-perun v0.12.1-0.20250226133302-2bb1a5521eac h1:EQ7kdJBjPZwVU+e/BHsy+/V5lwHAA66q1xVOoHf21oc=
+perun.network/go-perun v0.12.1-0.20250226133302-2bb1a5521eac/go.mod h1:uH8iwi75alXDizxxDzH0A+6uqXPbagCpKfl8ECMv/cA=
 polycry.pt/poly-go v0.0.0-20220301085937-fb9d71b45a37 h1:iA5GzEa/hHfVlQpimEjPV09NATwHXxSjWNB0VVodtew=
 polycry.pt/poly-go v0.0.0-20220301085937-fb9d71b45a37/go.mod h1:XUBrNtqgEhN3EEOP/5gh7IBd3xVHKidCjXDZfl9+kMU=
 rsc.io/tmplfunc v0.0.3 h1:53XFQh69AfOa8Tw0Jm7t+GV7KZhOi6jzsCzTtKbMvzU=

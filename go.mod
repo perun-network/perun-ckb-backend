@@ -4,7 +4,7 @@ go 1.22
 
 toolchain go1.23.4
 
-require perun.network/go-perun v0.12.0
+require perun.network/go-perun v0.12.1-0.20250226133302-2bb1a5521eac
 
 require (
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.2.0
@@ -14,6 +14,7 @@ require (
 
 require (
 	github.com/Pilatuz/bigz v1.2.1
+	github.com/pkg/errors v0.9.1
 	github.com/stretchr/testify v1.8.4
 	polycry.pt/poly-go v0.0.0-20220301085937-fb9d71b45a37
 
@@ -31,7 +32,6 @@ require (
 	github.com/gorilla/websocket v1.5.1 // indirect
 	github.com/holiman/uint256 v1.2.4 // indirect
 	github.com/minio/blake2b-simd v0.0.0-20160723061019-3f5f724cb5b1 // indirect
-	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/shirou/gopsutil v3.21.11+incompatible // indirect
 	github.com/sirupsen/logrus v1.9.0 // indirect
@@ -48,4 +48,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace github.com/nervosnetwork/ckb-sdk-go/v2 v2.2.0 => github.com/perun-network/ckb-sdk-go/v2 v2.2.1-0.20230601140721-2bf596fddd80
+replace github.com/nervosnetwork/ckb-sdk-go/v2 v2.2.0 => github.com/perun-network/ckb-sdk-go/v2 v2.2.1-0.20250225125757-9acd41e70812

@@ -3,6 +3,7 @@ package address
 import (
 	"encoding/hex"
 	"errors"
+
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/address"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/systemscript"

@@ -44,6 +44,8 @@ func PackChannelParameters(params *channel.Params) (molecule.ChannelParameters, 
 		App(NoApp).
 		IsLedgerChannel(isLedgerChannel).
 		IsVirtualChannel(isVirtualChannel).
+		IsLedgerChannel(isLedgerChannel).
+		IsVirtualChannel(isVirtualChannel).
 		PartyA(a).
 		PartyB(b).
 		Nonce(*nonce).
