@@ -404,7 +404,7 @@ func (psh *PerunScriptHandler) buildFirstVCDisputeTransaction(builder collector.
 	// Channel cell input.
 	channelInputIndex := builder.AddInput(&types.CellInput{
 		Since:          0,
-		PreviousOutput: &disputeInfo.ChannelCell,
+		PreviousOutput: disputeInfo.ChannelCell,
 	})
 	err := builder.SetWitness(uint(channelInputIndex), types.WitnessTypeInputType, psh.mkWitnessVCDispute(
 		*disputeInfo.VCDispute.SigA(),
@@ -447,7 +447,7 @@ func (psh *PerunScriptHandler) buildVCDisputeProgressTransaction(builder collect
 	// Channel cell input.
 	channelInputIndex := builder.AddInput(&types.CellInput{
 		Since:          0,
-		PreviousOutput: &disputeInfo.ChannelCell,
+		PreviousOutput: disputeInfo.ChannelCell,
 	})
 	err := builder.SetWitness(uint(channelInputIndex), types.WitnessTypeInputType, psh.mkWitnessDispute(
 		disputeInfo.ParentSigA,
@@ -460,7 +460,7 @@ func (psh *PerunScriptHandler) buildVCDisputeProgressTransaction(builder collect
 	// Virtual Channel cell input.
 	vcInputIndex := builder.AddInput(&types.CellInput{
 		Since:          0,
-		PreviousOutput: &disputeInfo.VCCell,
+		PreviousOutput: disputeInfo.VCCell,
 	})
 	err = builder.SetWitness(uint(vcInputIndex), types.WitnessTypeInputType, psh.mkWitnessVCDispute(
 		*disputeInfo.VCDispute.SigA(),

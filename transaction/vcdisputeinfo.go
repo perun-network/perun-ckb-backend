@@ -10,10 +10,10 @@ import (
 )
 
 type VcDisputeInfo struct {
-	ChannelCell types.OutPoint
-	VCCell      types.OutPoint
-	LCStatus    molecule.ChannelStatus
-	VCStatus    molecule.VirtualChannelStatus
+	ChannelCell *types.OutPoint
+	VCCell      *types.OutPoint
+	LCStatus    *molecule.ChannelStatus
+	VCStatus    *molecule.VirtualChannelStatus
 	State       *channel.State
 	Params      *channel.Params
 	Header      types.Hash
@@ -43,10 +43,10 @@ func NewVCDisputeInfo(
 	first bool,
 ) *VcDisputeInfo {
 	return &VcDisputeInfo{
-		ChannelCell: *channelCell,
-		VCCell:      *vcCell,
-		LCStatus:    *lcstatus,
-		VCStatus:    *vcStatus,
+		ChannelCell: channelCell,
+		VCCell:      vcCell,
+		LCStatus:    lcstatus,
+		VCStatus:    vcStatus,
 		State:       state,
 		Params:      params,
 		Header:      header,
@@ -100,6 +100,6 @@ func (di *VcDisputeInfo) mkInitialVirtualChannelStatus() molecule.VirtualChannel
 func (di *VcDisputeInfo) updateDisputed() *VcDisputeInfo {
 	builder := di.LCStatus.AsBuilder()
 	newStatus := builder.VcDisputed(encoding.True).Build()
-	di.LCStatus = newStatus
+	di.LCStatus = &newStatus
 	return di
 }

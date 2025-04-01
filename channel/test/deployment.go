@@ -58,6 +58,16 @@ func (m Migration) MakeDeployment(systemScripts SystemScripts, sudtOwnerLockArg 
 		return backend.Deployment{}, SUDTInfo{}, fmt.Errorf("invalid sudt owner lock arg: %v", err)
 	}
 
+	// Virtual channel scripts.
+	vcts := m.CellRecipes[4]
+	if vcts.Name != "vcts" {
+		return backend.Deployment{}, SUDTInfo{}, fmt.Errorf("fifth cell recipe must be vcts")
+	}
+	vcls := m.CellRecipes[5]
+	if vcls.Name != "vcls" {
+		return backend.Deployment{}, SUDTInfo{}, fmt.Errorf("sixth cell recipe must be vcls")
+	}
+
 	return backend.Deployment{
 		Network: types.NetworkTest,
 		PCTSDep: types.CellDep{
@@ -74,6 +84,20 @@ func (m Migration) MakeDeployment(systemScripts SystemScripts, sudtOwnerLockArg 
 			},
 			DepType: types.DepTypeCode,
 		},
+		VCTSDep: types.CellDep{
+			OutPoint: &types.OutPoint{
+				TxHash: types.HexToHash(vcts.TxHash),
+				Index:  m.CellRecipes[0].Index,
+			},
+			DepType: types.DepTypeCode,
+		},
+		VCLSDep: types.CellDep{
+			OutPoint: &types.OutPoint{
+				TxHash: types.HexToHash(vcls.TxHash),
+				Index:  m.CellRecipes[0].Index,
+			},
+			DepType: types.DepTypeCode,
+		},
 		PFLSDep: types.CellDep{
 			OutPoint: &types.OutPoint{
 				TxHash: types.HexToHash(pfls.TxHash),
@@ -85,6 +109,10 @@ func (m Migration) MakeDeployment(systemScripts SystemScripts, sudtOwnerLockArg 
 		PCTSHashType:    types.HashTypeData1,
 		PCLSCodeHash:    types.HexToHash(pcls.DataHash),
 		PCLSHashType:    types.HashTypeData1,
+		VCTSCodeHash:    types.HexToHash(vcts.DataHash),
+		VCTSHashType:    types.HashTypeData1,
+		VCLSCodeHash:    types.HexToHash(vcls.DataHash),
+		VCLSHashType:    types.HashTypeData1,
 		PFLSCodeHash:    types.HexToHash(pfls.DataHash),
 		PFLSHashType:    types.HashTypeData1,
 		PFLSMinCapacity: PFLSMinCapacity,

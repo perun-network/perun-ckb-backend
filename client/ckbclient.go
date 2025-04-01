@@ -753,13 +753,13 @@ func (c Client) getAllChannelLiveCells(ctx context.Context) (*indexer.LiveCells,
 }
 
 func (c Client) getAllVirtualChannelLiveCells(ctx context.Context) (*indexer.LiveCells, error) {
-	pctsPrefix := &types.Script{
+	vctsPrefix := &types.Script{
 		CodeHash: c.deployment.VCTSCodeHash,
 		HashType: c.deployment.VCTSHashType,
 		Args:     []byte{},
 	}
 	searchKey := &indexer.SearchKey{
-		Script:           pctsPrefix,
+		Script:           vctsPrefix,
 		ScriptType:       types.ScriptTypeType,
 		ScriptSearchMode: types.ScriptSearchModePrefix,
 		Filter:           nil,
