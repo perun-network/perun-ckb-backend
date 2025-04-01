@@ -38,7 +38,7 @@ mkdir -p "$SYSTEM_SCRIPTS_DIR"
 ## so we have to do that in a second pass...
 ckb-cli util genesis-scripts --output-format json \
   | sed 's/code_hash: \(.*\)/code_hash: \"\1\"/; s/tx_hash: \(.*\)/tx_hash: \"\1\"/' \
-  | sed 's/"index": \([0-9]\+\),/echo "\\"index\\": $(python3 -c "print(\\\"\\\\\\"{}\\\\\\"\\\".format(hex(\1)))"),";/e' \
+  | sed 's/"index": \([0-9]\+\),/echo "\\"index\\": $(python -c "print(\\\"\\\\\\"{}\\\\\\"\\\".format(hex(\1)))"),";/e' \
   | jq . > "$SYSTEM_SCRIPTS_DIR/default_scripts.json"
 
 cd $DEVNET_DIR
