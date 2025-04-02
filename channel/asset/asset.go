@@ -1,26 +1,117 @@
 package asset
 
 import (
+	"bytes"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"perun.network/go-perun/wire/perunio"
 
 	"github.com/Pilatuz/bigz/uint128"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types/molecule"
 	pchannel "perun.network/go-perun/channel"
+	"perun.network/go-perun/channel/multi"
 	molecule2 "perun.network/perun-ckb-backend/encoding/molecule"
 )
 
 var (
-	CKByteMagic byte = 0x00
-	SUDTMagic   byte = 0x01
+	CKByteMagic  byte = 0x00
+	SUDTMagic    byte = 0x01
+	CKBBackendID      = 3
 )
 
 var _ pchannel.Asset = (*Asset)(nil)
+var _ multi.Asset = (*CKBAsset)(nil)
 
-type Asset struct {
-	IsCKBytes bool
-	SUDT      *SUDT
+type (
+	Asset struct {
+		IsCKBytes bool
+		SUDT      *SUDT
+	}
+
+	CKBAsset struct {
+		Asset Asset
+		id    CCID
+	}
+
+	// CCID is a unique identifier for a channel asset.
+	CCID struct {
+		backendID uint32
+		ledgerID  ContractLID
+	}
+
+	// ContractLID is a unique identifier for a contract.
+	ContractLID struct{ string }
+)
+
+// MarshalBinary marshals the CKBAsset into its binary representation.
+func (C CKBAsset) MarshalBinary() (data []byte, err error) {
+	var buf bytes.Buffer
+	err = perunio.Encode(&buf, C.id.ledgerID, C.id.backendID, C.Asset)
+	if err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+// UnmarshalBinary unmarshals the CKBAsset from its binary representation.
+func (C *CKBAsset) UnmarshalBinary(data []byte) error {
+	buf := bytes.NewBuffer(data)
+	return perunio.Decode(buf, &C.id.ledgerID, &C.id.backendID, &C.Asset)
+}
+
+// Equal returns true if the CKBAssets are the same.
+func (C CKBAsset) Equal(asset pchannel.Asset) bool {
+	return C.Asset.Equal(asset)
+}
+
+// Address returns the address of the asset.
+func (C CKBAsset) Address() []byte {
+	return C.Asset.Address()
+}
+
+// LedgerBackendID returns the ledger backend ID of the asset.
+func (C CKBAsset) LedgerBackendID() multi.LedgerBackendID {
+	return C.id
+}
+
+// MakeCCID makes a CCID for the given id.
+func MakeCCID(ledgerID ContractLID) CCID {
+	return CCID{uint32(CKBBackendID), ledgerID}
+}
+
+// UnmarshalBinary unmarshals the contractID from its binary representation.
+func (id *ContractLID) UnmarshalBinary(data []byte) error {
+	str := hex.EncodeToString(data) // Convert binary data to hex string
+	id.string = str
+	return nil
+}
+
+// MarshalBinary marshals the contractID into its binary representation.
+func (id ContractLID) MarshalBinary() ([]byte, error) {
+	if id.string == "" {
+		return nil, errors.New("nil ContractID")
+	}
+	return hex.DecodeString(id.string)
+}
+
+// MapKey returns the asset's map key representation.
+func (id ContractLID) MapKey() multi.LedgerIDMapKey {
+	if id.string == "" {
+		return ""
+	}
+	return multi.LedgerIDMapKey(id.string)
+}
+
+// BackendID returns the backend ID of the asset.
+func (c CCID) BackendID() uint32 {
+	return c.backendID
+}
+
+// LedgerID returns the ledger ID of the asset.
+func (c CCID) LedgerID() multi.LedgerID {
+	return c.ledgerID
 }
 
 func (a Asset) Address() []byte {
