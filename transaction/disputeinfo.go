@@ -4,6 +4,7 @@ import (
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types/molecule"
 	"perun.network/go-perun/channel"
+	"perun.network/perun-ckb-backend/encoding"
 )
 
 type DisputeInfo struct {
@@ -26,4 +27,11 @@ func NewDisputeInfo(channelCell types.OutPoint, status molecule.ChannelStatus, p
 		SigA:        sigA,
 		SigB:        sigB,
 	}
+}
+
+func (di *DisputeInfo) updateDisputed() *DisputeInfo {
+	builder := di.Status.AsBuilder()
+	newStatus := builder.Disputed(encoding.True).Build()
+	di.Status = newStatus
+	return di
 }

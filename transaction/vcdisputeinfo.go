@@ -21,6 +21,8 @@ type VcDisputeInfo struct {
 	VCTS        *types.Script
 	ParentSigA  molecule.Bytes
 	ParentSigB  molecule.Bytes
+	ParentHashA *types.Script
+	ParentHashB *types.Script
 	VCDispute   *molecule.VCDispute
 	IndexMap    *molecule.IndexMap
 	first       bool
@@ -36,8 +38,10 @@ func NewVCDisputeInfo(
 	header types.Hash,
 	pcts *types.Script,
 	vcts *types.Script,
-	sigA molecule.Bytes,
-	sigB molecule.Bytes,
+	parentSigA molecule.Bytes,
+	parentSigB molecule.Bytes,
+	parentHashA *types.Script,
+	parentHashB *types.Script,
 	vcDispute *molecule.VCDispute,
 	indexMap *molecule.IndexMap,
 	first bool,
@@ -52,8 +56,10 @@ func NewVCDisputeInfo(
 		Header:      header,
 		PCTS:        pcts,
 		VCTS:        vcts,
-		ParentSigA:  sigA,
-		ParentSigB:  sigB,
+		ParentSigA:  parentSigA,
+		ParentSigB:  parentSigB,
+		ParentHashA: parentHashA,
+		ParentHashB: parentHashB,
 		VCDispute:   vcDispute,
 		IndexMap:    indexMap,
 		first:       first,
@@ -80,14 +86,13 @@ func (di *VcDisputeInfo) mkInitialVirtualChannelStatus() molecule.VirtualChannel
 		panic(err)
 	}
 
-	parentsHashes := di.Params.Aux
+	var parentHashes [2]molecule.Byte32
+	parentHashes[0] = *molecule2.PackByte32(di.ParentHashA.Hash())
+	parentHashes[1] = *molecule2.PackByte32(di.ParentHashB.Hash())
+
 	parentVec := molecule.NewParentsVecBuilder()
 	for i := 0; i < 2; i++ {
-		var hash [32]byte
-		startIndex := i * 32
-		endIndex := 32 * (i + 1)
-		copy(hash[:], parentsHashes[startIndex:endIndex])
-		parentVec.Push(molecule.NewParentDataBuilder().IdxMap(*di.IndexMap).PctsHash(*molecule2.PackByte32(hash)).Build())
+		parentVec.Push(molecule.NewParentDataBuilder().IdxMap(*di.IndexMap).PctsHash(parentHashes[i]).Build())
 	}
 
 	return molecule.NewVirtualChannelStatusBuilder().
@@ -99,7 +104,7 @@ func (di *VcDisputeInfo) mkInitialVirtualChannelStatus() molecule.VirtualChannel
 
 func (di *VcDisputeInfo) updateDisputed() *VcDisputeInfo {
 	builder := di.LCStatus.AsBuilder()
-	newStatus := builder.VcDisputed(encoding.True).Build()
+	newStatus := builder.Disputed(encoding.True).VcDisputed(encoding.True).Build()
 	di.LCStatus = &newStatus
 	return di
 }

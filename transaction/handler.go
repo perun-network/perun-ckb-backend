@@ -389,6 +389,7 @@ func (psh *PerunScriptHandler) buildDisputeTransaction(builder collector.Transac
 		Lock:     channelLockScript,
 		Type:     disputeInfo.PCTS,
 	}
+	disputeInfo.updateDisputed()
 	channelCell.Capacity = channelCell.OccupiedCapacity(disputeInfo.Status.AsSlice())
 	builder.AddOutput(&channelCell, disputeInfo.Status.AsSlice())
 	return true, nil
@@ -406,11 +407,7 @@ func (psh *PerunScriptHandler) buildFirstVCDisputeTransaction(builder collector.
 		Since:          0,
 		PreviousOutput: disputeInfo.ChannelCell,
 	})
-	err := builder.SetWitness(uint(channelInputIndex), types.WitnessTypeInputType, psh.mkWitnessVCDispute(
-		*disputeInfo.VCDispute.SigA(),
-		*disputeInfo.VCDispute.SigB(),
-		disputeInfo.ParentSigA,
-		disputeInfo.ParentSigB))
+	err := builder.SetWitness(uint(channelInputIndex), types.WitnessTypeInputType, psh.mkWitnessVCDispute(disputeInfo.VCDispute))
 	if err != nil {
 		return false, err
 	}
@@ -432,7 +429,6 @@ func (psh *PerunScriptHandler) buildFirstVCDisputeTransaction(builder collector.
 	vcLockScript := psh.mkVirtualChannelLockScript()
 
 	vcChannelCell, vcChannelData := disputeInfo.mkInitialVirtualChannelCell(*vcLockScript, *vcTypeScript)
-	vcChannelCell.Capacity = vcChannelCell.OccupiedCapacity(disputeInfo.VCStatus.AsSlice())
 	builder.AddOutput(&vcChannelCell, vcChannelData)
 	return true, nil
 }
@@ -462,11 +458,7 @@ func (psh *PerunScriptHandler) buildVCDisputeProgressTransaction(builder collect
 		Since:          0,
 		PreviousOutput: disputeInfo.VCCell,
 	})
-	err = builder.SetWitness(uint(vcInputIndex), types.WitnessTypeInputType, psh.mkWitnessVCDispute(
-		*disputeInfo.VCDispute.SigA(),
-		*disputeInfo.VCDispute.SigB(),
-		disputeInfo.ParentSigA,
-		disputeInfo.ParentSigB))
+	err = builder.SetWitness(uint(vcInputIndex), types.WitnessTypeInputType, psh.mkWitnessVCDispute(disputeInfo.VCDispute))
 	if err != nil {
 		return false, err
 	}
@@ -506,11 +498,7 @@ func (psh *PerunScriptHandler) buildVCMergeTransaction(builder collector.Transac
 	vc0InputIndex := builder.AddInput(&types.CellInput{
 		PreviousOutput: &disputeInfo.VCCell0,
 	})
-	err := builder.SetWitness(uint(vc0InputIndex), types.WitnessTypeInputType, psh.mkWitnessVCDispute(
-		*disputeInfo.VCDispute.SigA(),
-		*disputeInfo.VCDispute.SigB(),
-		disputeInfo.ParentSigA,
-		disputeInfo.ParentSigB))
+	err := builder.SetWitness(uint(vc0InputIndex), types.WitnessTypeInputType, psh.mkWitnessVCDispute(disputeInfo.VCDispute))
 	if err != nil {
 		return false, err
 	}
@@ -518,11 +506,7 @@ func (psh *PerunScriptHandler) buildVCMergeTransaction(builder collector.Transac
 	vc1InputIndex := builder.AddInput(&types.CellInput{
 		PreviousOutput: &disputeInfo.VCCell1,
 	})
-	err = builder.SetWitness(uint(vc1InputIndex), types.WitnessTypeInputType, psh.mkWitnessVCDispute(
-		*disputeInfo.VCDispute.SigA(),
-		*disputeInfo.VCDispute.SigB(),
-		disputeInfo.ParentSigA,
-		disputeInfo.ParentSigB))
+	err = builder.SetWitness(uint(vc1InputIndex), types.WitnessTypeInputType, psh.mkWitnessVCDispute(disputeInfo.VCDispute))
 	if err != nil {
 		return false, err
 	}
@@ -577,11 +561,7 @@ func (psh *PerunScriptHandler) buildFirstForceCloseWithVCTransaction(builder col
 	vcInputIndex := builder.AddInput(&types.CellInput{
 		PreviousOutput: &forceCloseWithVCInfo.VCCell,
 	})
-	err = builder.SetWitness(uint(vcInputIndex), types.WitnessTypeInputType, psh.mkWitnessVCDispute(
-		*forceCloseWithVCInfo.VCDispute.SigA(),
-		*forceCloseWithVCInfo.VCDispute.SigB(),
-		forceCloseWithVCInfo.SigA,
-		forceCloseWithVCInfo.SigB))
+	err = builder.SetWitness(uint(vcInputIndex), types.WitnessTypeInputType, psh.mkWitnessVCDispute(forceCloseWithVCInfo.VCDispute))
 	if err != nil {
 		return false, err
 	}
@@ -669,11 +649,7 @@ func (psh *PerunScriptHandler) buildSecondForceCloseWithVCTransaction(builder co
 	vcInputIndex := builder.AddInput(&types.CellInput{
 		PreviousOutput: &forceCloseWithVCInfo.VCCell,
 	})
-	err = builder.SetWitness(uint(vcInputIndex), types.WitnessTypeInputType, psh.mkWitnessVCDispute(
-		*forceCloseWithVCInfo.VCDispute.SigA(),
-		*forceCloseWithVCInfo.VCDispute.SigB(),
-		forceCloseWithVCInfo.SigA,
-		forceCloseWithVCInfo.SigB))
+	err = builder.SetWitness(uint(vcInputIndex), types.WitnessTypeInputType, psh.mkWitnessVCDispute(forceCloseWithVCInfo.VCDispute))
 	if err != nil {
 		return false, err
 	}
@@ -717,14 +693,13 @@ func (psh *PerunScriptHandler) buildSecondForceCloseWithVCTransaction(builder co
 
 func (psh PerunScriptHandler) mkWitnessDispute(sigA, sigB molecule.Bytes) []byte {
 	disputeRedeemer := molecule.NewDisputeBuilder().SigA(sigA).SigB(sigB).Build()
-	witness := molecule.ChannelWitnessUnionFromDispute(disputeRedeemer)
+	witness := molecule.NewChannelWitnessBuilder().Set(molecule.ChannelWitnessUnionFromDispute(disputeRedeemer)).Build()
 	return witness.AsSlice()
 }
 
-func (psh PerunScriptHandler) mkWitnessVCDispute(sigA_AB, sigB_AB, sigA_AI, sigI_AI molecule.Bytes) []byte {
-	disputeRedeemer := molecule.NewVCDisputeBuilder().SigA(sigA_AB).SigB(sigB_AB).ParentStateSigs(
-		molecule.NewDisputeBuilder().SigA(sigA_AI).SigB(sigI_AI).Build()).Build()
-	return disputeRedeemer.AsSlice()
+func (psh PerunScriptHandler) mkWitnessVCDispute(vcDispute *molecule.VCDispute) []byte {
+	w := molecule.NewChannelWitnessBuilder().Set(molecule.ChannelWitnessUnionFromVCDispute(*vcDispute)).Build()
+	return w.AsSlice()
 }
 
 func (psh PerunScriptHandler) mkChannelLockScript() *types.Script {

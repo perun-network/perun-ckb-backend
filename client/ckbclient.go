@@ -325,12 +325,36 @@ func (c Client) DisputeVC(ctx context.Context, id channel.ID, state *channel.Sta
 	}
 	sigA := encoding.PackSignature(sigs[0])
 	sigB := encoding.PackSignature(sigs[1])
-	vcDispute := encoding.PackVCDispute(sigA, sigB)
+
 	if len(parentSigs) != 2 {
 		return fmt.Errorf("expected 2 parent signatures, got %d", len(parentSigs))
 	}
 	parentSigA := encoding.PackSignature(parentSigs[0])
 	parentSigB := encoding.PackSignature(parentSigs[1])
+	vcDispute := encoding.PackVCDispute(sigA, sigB, parentSigA, parentSigB)
+
+	// Get parents' hashes.
+	var parentIDs [2]channel.ID
+	for i := 0; i < 2; i++ {
+		var hash [32]byte
+		startIndex := i * 32
+		endIndex := 32 * (i + 1)
+		copy(hash[:], params.Aux[startIndex:endIndex])
+		parentIDs[i] = hash
+	}
+
+	if (parentIDs[0] != parentID && parentIDs[1] != parentID) || (parentIDs[0] == parentIDs[1]) {
+		return fmt.Errorf("parent channel ID %s not found in params", parentID)
+	}
+
+	_, parentHashA, _, _, err := c.GetChannelWithID(ctx, parentIDs[0])
+	if err != nil {
+		return fmt.Errorf("getting parent channel with ID: %w", err)
+	}
+	_, parentHashB, _, _, err := c.GetChannelWithID(ctx, parentIDs[1])
+	if err != nil {
+		return fmt.Errorf("getting parent channel with ID: %w", err)
+	}
 
 	encodedIndexMap := encoding.PackIndexMap(indexMap)
 
@@ -352,7 +376,8 @@ func (c Client) DisputeVC(ctx context.Context, id channel.ID, state *channel.Sta
 			header.Hash,
 			parentCell.Output.Type,
 			nil,
-			*parentSigA, *parentSigB,
+			*sigA, *sigB,
+			parentHashA, parentHashB,
 			&vcDispute,
 			&encodedIndexMap,
 			true,
@@ -368,7 +393,6 @@ func (c Client) DisputeVC(ctx context.Context, id channel.ID, state *channel.Sta
 			virtualChannelCells[1].BlockNumber,
 			header.Hash,
 			virtualChannelCells[0].Output.Type,
-			*parentSigA, *parentSigB,
 			&vcDispute,
 		)
 		builder, err := c.newPerunTransactionBuilder(nil)
@@ -403,7 +427,8 @@ func (c Client) DisputeVC(ctx context.Context, id channel.ID, state *channel.Sta
 			header.Hash,
 			parentCell.Output.Type,
 			virtualChannelCell.Output.Type,
-			*parentSigA, *parentSigB,
+			*sigA, *sigB,
+			parentHashA, parentHashB,
 			&vcDispute,
 			&encodedIndexMap,
 			false,
@@ -566,7 +591,7 @@ func (c Client) ForceCloseWithVC(ctx context.Context, id channel.ID, vcid channe
 
 	vcSigA := encoding.PackSignature(vcSigs[0])
 	vcSigB := encoding.PackSignature(vcSigs[1])
-	vcDispute := encoding.PackVCDispute(vcSigA, vcSigB)
+	vcDispute := encoding.PackVCDispute(vcSigA, vcSigB, sigA, sigB)
 
 	header, err := c.client.GetTipHeader(ctx)
 	if err != nil {

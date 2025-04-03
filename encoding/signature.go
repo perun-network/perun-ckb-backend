@@ -20,8 +20,15 @@ func PackSignature(sig gpwallet.Sig) *molecule.Bytes {
 	return types.PackBytes(sig)
 }
 
-func PackVCDispute(parentSigA, parentSigB *molecule.Bytes) molecule.VCDispute {
-	vcdispute := molecule.NewVCDisputeBuilder().SigA(*parentSigA).SigB(*parentSigB).Build()
+func PackVCDispute(sigA, sigB, parentSigA, parentSigB *molecule.Bytes) molecule.VCDispute {
+	vcdispute := molecule.NewVCDisputeBuilder().
+		SigA(*sigA).
+		SigB(*sigB).
+		ParentStateSigs(molecule.NewDisputeBuilder().
+			SigA(*parentSigA).
+			SigB(*parentSigB).
+			Build()).
+		Build()
 	return vcdispute
 }
 

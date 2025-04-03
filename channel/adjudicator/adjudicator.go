@@ -22,9 +22,10 @@ func (a Adjudicator) Register(ctx context.Context, req channel.AdjudicatorReq, s
 		for i, vcstate := range states {
 			indexMap := req.Tx.State.Locked[i].IndexMap
 
-			if err := a.client.DisputeVC(ctx, vcstate.State.ID, vcstate.State, vcstate.Sigs, req.Params, req.Tx.Sigs, req.Tx.ID, indexMap); err != nil {
+			if err := a.client.DisputeVC(ctx, vcstate.State.ID, vcstate.State, vcstate.Sigs, vcstate.Params, req.Tx.Sigs, req.Tx.ID, indexMap); err != nil {
 				return errors.WithMessage(err, "failed to dispute virtual channel")
 			}
+			return nil // Only one virtual channel is supported
 		}
 	}
 	return a.client.Dispute(ctx, req.Tx.ID, req.Tx.State, req.Tx.Sigs, req.Params)

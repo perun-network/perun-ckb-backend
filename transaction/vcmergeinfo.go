@@ -6,17 +6,15 @@ import (
 )
 
 type VcMergeInfo struct {
-	VCCell0    types.OutPoint
-	VCCell1    types.OutPoint
-	VCStatus0  molecule.VirtualChannelStatus
-	VCStatus1  molecule.VirtualChannelStatus
-	BlockNum0  uint64
-	BlockNum1  uint64
-	Header     types.Hash
-	VCTS       *types.Script
-	ParentSigA molecule.Bytes
-	ParentSigB molecule.Bytes
-	VCDispute  *molecule.VCDispute
+	VCCell0   types.OutPoint
+	VCCell1   types.OutPoint
+	VCStatus0 molecule.VirtualChannelStatus
+	VCStatus1 molecule.VirtualChannelStatus
+	BlockNum0 uint64
+	BlockNum1 uint64
+	Header    types.Hash
+	VCTS      *types.Script
+	VCDispute *molecule.VCDispute
 }
 
 func NewVCMergeInfo(
@@ -28,21 +26,17 @@ func NewVCMergeInfo(
 	blockNum1 uint64,
 	header types.Hash,
 	vcts *types.Script,
-	sigA molecule.Bytes,
-	sigB molecule.Bytes,
 	vcDispute *molecule.VCDispute,
 ) *VcMergeInfo {
 	return &VcMergeInfo{
-		VCCell0:    *vcCell0,
-		VCCell1:    *vcCell1,
-		VCStatus0:  *vcstatus0,
-		VCStatus1:  *vcStatus1,
-		BlockNum0:  blockNum0,
-		BlockNum1:  blockNum1,
-		Header:     header,
-		VCTS:       vcts,
-		ParentSigA: sigA,
-		ParentSigB: sigB,
-		VCDispute:  vcDispute,
+		VCCell0:   *vcCell0,
+		VCCell1:   *vcCell1,
+		VCStatus0: *vcstatus0,
+		VCStatus1: *vcStatus1,
+		BlockNum0: blockNum0,
+		BlockNum1: blockNum1,
+		Header:    header,
+		VCTS:      vcts,
+		VCDispute: vcDispute,
 	}
 }
