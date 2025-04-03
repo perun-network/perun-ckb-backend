@@ -45,7 +45,7 @@ func MakeRoleSetups(rng *rand.Rand, s *ckbchanneltest.Setup, names []string) []c
 		go func() {
 			for err := range errors {
 				if err != nil {
-					log.Printf("Error of %s: %s", names[i], err)
+					log.Panicf("Error of %s: %s", names[i], err)
 				}
 			}
 		}()

@@ -64,5 +64,6 @@ func makeVirtualChannelSetup(t *testing.T, rng *rand.Rand) clienttest.VirtualCha
 		BalanceDelta:       big.NewInt(0),
 		Rng:                rng,
 		WaitWatcherTimeout: 100 * time.Millisecond,
+		IsUTXO:             true,
 	}
 }
