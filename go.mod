@@ -4,7 +4,7 @@ go 1.22
 
 toolchain go1.23.4
 
-require perun.network/go-perun v0.12.1-0.20250226133302-2bb1a5521eac
+require perun.network/go-perun v0.12.1-0.20250402122501-0edd2b7e01cc
 
 require (
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.2.0
@@ -17,7 +17,6 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/stretchr/testify v1.8.4
 	polycry.pt/poly-go v0.0.0-20220301085937-fb9d71b45a37
-
 )
 
 require (

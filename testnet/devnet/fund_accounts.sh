@@ -9,8 +9,8 @@ genesis_tx_hash=$(ckb-cli wallet get-live-cells --address $genesis | awk '/tx_ha
 genesis_tx_index=$(ckb-cli wallet get-live-cells --address $genesis | awk '/output_index/ && !found {print $2; found=1}')
 genesis_tx_amount=$(ckb-cli wallet get-live-cells --address $genesis | awk '/capacity/ {print $3}')
 FUNDINGTX="fundingtx.json"
-FUNDING_AMOUNT=2000
-CHANGE_AMOUNT=$(python3 -c "print(\"{:.8f}\".format($genesis_tx_amount - 3.0 * 5.0 * $FUNDING_AMOUNT - 1.0))")
+FUNDING_AMOUNT=1000
+CHANGE_AMOUNT=$(python3 -c "print(\"{:.8f}\".format($genesis_tx_amount - 3.0 * 10.0 * $FUNDING_AMOUNT - 1.0))")
 
 add_output() {
   ckb-cli tx add-output --tx-file $FUNDINGTX --to-sighash-address $1 --capacity $2
@@ -18,15 +18,15 @@ add_output() {
 
 ckb-cli tx init --tx-file $FUNDINGTX
 
-for ((i=1; i <= 5; i++)); do
+for ((i=1; i <= 10; i++)); do
   add_output $alice $FUNDING_AMOUNT
 done
 
-for ((i=1; i <= 5; i++)); do
+for ((i=1; i <= 10; i++)); do
   add_output $bob $FUNDING_AMOUNT
 done
 
-for ((i=1; i <= 5; i++)); do
+for ((i=1; i <= 10; i++)); do
   add_output $ingrid $FUNDING_AMOUNT
 done
 
