@@ -85,8 +85,8 @@ func TestPaymentDispute(t *testing.T) {
 			[2]*big.Int{asset.CKByteToShannon(big.NewFloat(1000)), asset.CKByteToShannon(big.NewFloat(100))},
 			client.WithoutApp(),
 		),
-		NumPayments: [2]int{5, 0},
-		TxAmounts:   [2]*big.Int{asset.CKByteToShannon(big.NewFloat(20)), asset.CKByteToShannon(big.NewFloat(5))},
+		NumPayments: [2]int{2, 2},
+		TxAmounts:   [2]*big.Int{asset.CKByteToShannon(big.NewFloat(200)), asset.CKByteToShannon(big.NewFloat(50))},
 	}
 
 	var wg sync.WaitGroup

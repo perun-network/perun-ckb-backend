@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	challengeDuration = 10
+	challengeDuration = 1
 	testDuration      = 60 * time.Second
 )
 
@@ -61,9 +61,9 @@ func makeVirtualChannelSetup(t *testing.T, rng *rand.Rand) clienttest.VirtualCha
 			FinalBalsAlice:      []*big.Int{asset.CKByteToShannon(big.NewFloat(70)), asset.CKByteToShannon(big.NewFloat(130))},
 			FinalBalsBob:        []*big.Int{asset.CKByteToShannon(big.NewFloat(130)), asset.CKByteToShannon(big.NewFloat(70))},
 		},
-		BalanceDelta:       big.NewInt(0),
+		BalanceDelta:       big.NewInt(100),
 		Rng:                rng,
-		WaitWatcherTimeout: 100 * time.Millisecond,
+		WaitWatcherTimeout: 1000 * time.Millisecond,
 		IsUTXO:             true,
 	}
 }

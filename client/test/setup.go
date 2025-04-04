@@ -60,7 +60,7 @@ func MakeRoleSetups(rng *rand.Rand, s *ckbchanneltest.Setup, names []string) []c
 			Wallet:      s.EphemeralWallets[i],
 			Timeout:     DefaultTimeout,
 			// Scaled due to simbackend automining progressing faster than real time.
-			ChallengeDuration: uint64(10),
+			ChallengeDuration: uint64(1),
 			Errors:            errors,
 			BalanceReader:     ckbchanneltest.NewBalanceReader(balanceRPC, s.WalletAccs[i].Address()),
 		}

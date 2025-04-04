@@ -178,7 +178,7 @@ func (ptb *PerunTransactionBuilder) ForceClose(fci *ForceCloseInfo) error {
 
 func (ptb *PerunTransactionBuilder) ForceCloseWithVC(fcvi *ForceCloseWithVCInfo) error {
 	var err error
-	if fcvi.firstForceClose {
+	if !fcvi.firstForceClose {
 		_, err = ptb.psh.buildFirstForceCloseWithVCTransaction(ptb, nil, fcvi)
 	} else {
 		_, err = ptb.psh.buildSecondForceCloseWithVCTransaction(ptb, nil, fcvi)

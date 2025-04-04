@@ -44,9 +44,9 @@ ckb-cli util genesis-scripts --output-format json \
 
 cd $DEVNET_DIR
 
-SUDT_TX_HASH=$(cat ./contracts/migrations/dev/*.json | jq .cell_recipes[3].tx_hash)
-SUDT_TX_INDEX=$(cat ./contracts/migrations/dev/*.json | jq .cell_recipes[3].index)
-SUDT_DATA_HASH=$(cat ./contracts/migrations/dev/*.json | jq .cell_recipes[3].data_hash)
+SUDT_TX_HASH=$(cat ./contracts/migrations/dev/*.json | jq .cell_recipes[0].tx_hash)
+SUDT_TX_INDEX=$(cat ./contracts/migrations/dev/*.json | jq .cell_recipes[0].index)
+SUDT_DATA_HASH=$(cat ./contracts/migrations/dev/*.json | jq .cell_recipes[0].data_hash)
 
 # TODO: This only works as long as the tx index is 0-9.
 jq ".items.sudt.script_id.code_hash = $SUDT_DATA_HASH | .items.sudt.cell_dep.out_point.tx_hash = $SUDT_TX_HASH | .items.sudt.cell_dep.out_point.index = \"0x$SUDT_TX_INDEX\"" ./sudt-celldep-template.json > $SYSTEM_SCRIPTS_DIR/sudt-celldep.json

@@ -1,11 +1,13 @@
 package transaction
 
 import (
+	"encoding/hex"
+	"log"
+
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types/molecule"
 	"perun.network/go-perun/channel"
 	"perun.network/perun-ckb-backend/encoding"
-
 	molecule2 "perun.network/perun-ckb-backend/encoding/molecule"
 )
 
@@ -14,17 +16,16 @@ type VcDisputeInfo struct {
 	VCCell      *types.OutPoint
 	LCStatus    *molecule.ChannelStatus
 	VCStatus    *molecule.VirtualChannelStatus
-	State       *channel.State
+	VcState     *channel.State
+	ParentState *channel.State
 	Params      *channel.Params
 	Header      types.Hash
 	PCTS        *types.Script
 	VCTS        *types.Script
 	ParentSigA  molecule.Bytes
 	ParentSigB  molecule.Bytes
-	ParentHashA *types.Script
-	ParentHashB *types.Script
 	VCDispute   *molecule.VCDispute
-	IndexMap    *molecule.IndexMap
+	ParentsVec  *molecule.ParentsVec
 	first       bool
 }
 
@@ -33,17 +34,16 @@ func NewVCDisputeInfo(
 	vcCell *types.OutPoint,
 	lcstatus *molecule.ChannelStatus,
 	vcStatus *molecule.VirtualChannelStatus,
-	state *channel.State,
+	vcstate *channel.State,
+	parentState *channel.State,
 	params *channel.Params,
 	header types.Hash,
 	pcts *types.Script,
 	vcts *types.Script,
 	parentSigA molecule.Bytes,
 	parentSigB molecule.Bytes,
-	parentHashA *types.Script,
-	parentHashB *types.Script,
 	vcDispute *molecule.VCDispute,
-	indexMap *molecule.IndexMap,
+	parentVec *molecule.ParentsVec,
 	first bool,
 ) *VcDisputeInfo {
 	return &VcDisputeInfo{
@@ -51,17 +51,16 @@ func NewVCDisputeInfo(
 		VCCell:      vcCell,
 		LCStatus:    lcstatus,
 		VCStatus:    vcStatus,
-		State:       state,
+		VcState:     vcstate,
+		ParentState: parentState,
 		Params:      params,
 		Header:      header,
 		PCTS:        pcts,
 		VCTS:        vcts,
 		ParentSigA:  parentSigA,
 		ParentSigB:  parentSigB,
-		ParentHashA: parentHashA,
-		ParentHashB: parentHashB,
 		VCDispute:   vcDispute,
-		IndexMap:    indexMap,
+		ParentsVec:  parentVec,
 		first:       first,
 	}
 }
@@ -70,6 +69,7 @@ func (di *VcDisputeInfo) mkInitialVirtualChannelCell(vcLockScript, vcTypeScript 
 	di.VCTS = &vcTypeScript
 
 	vcStatus := di.mkInitialVirtualChannelStatus()
+	log.Println("mkInitialVirtualChannelStatus: ", "0x"+hex.EncodeToString(vcStatus.AsSlice()))
 	vcOutput := types.CellOutput{
 		Capacity: 0,
 		Lock:     &vcLockScript,
@@ -81,30 +81,25 @@ func (di *VcDisputeInfo) mkInitialVirtualChannelCell(vcLockScript, vcTypeScript 
 }
 
 func (di *VcDisputeInfo) mkInitialVirtualChannelStatus() molecule.VirtualChannelStatus {
-	packedState, err := encoding.PackChannelState(di.State)
+	packedState, err := encoding.PackChannelState(di.VcState)
 	if err != nil {
 		panic(err)
 	}
 
-	var parentHashes [2]molecule.Byte32
-	parentHashes[0] = *molecule2.PackByte32(di.ParentHashA.Hash())
-	parentHashes[1] = *molecule2.PackByte32(di.ParentHashB.Hash())
-
-	parentVec := molecule.NewParentsVecBuilder()
-	for i := 0; i < 2; i++ {
-		parentVec.Push(molecule.NewParentDataBuilder().IdxMap(*di.IndexMap).PctsHash(parentHashes[i]).Build())
-	}
-
 	return molecule.NewVirtualChannelStatusBuilder().
 		Vcstate(packedState).
-		Parents(parentVec.Build()).
+		Parents(*di.ParentsVec).
 		FirstForceClose(encoding.False).
 		Build()
 }
 
-func (di *VcDisputeInfo) updateDisputed() *VcDisputeInfo {
+func (di *VcDisputeInfo) update(vcts *types.Script) *VcDisputeInfo {
 	builder := di.LCStatus.AsBuilder()
-	newStatus := builder.Disputed(encoding.True).VcDisputed(encoding.True).Build()
+	newState, err := encoding.PackChannelState(di.ParentState)
+	if err != nil {
+		panic(err)
+	}
+	newStatus := builder.State(newState).Disputed(encoding.True).VcDisputed(encoding.True).VctsHash(*molecule2.PackByte32(vcts.Hash())).Build()
 	di.LCStatus = &newStatus
 	return di
 }

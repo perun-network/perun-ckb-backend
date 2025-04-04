@@ -20,6 +20,7 @@ import (
 	"perun.network/perun-ckb-backend/backend"
 	ckbchannel "perun.network/perun-ckb-backend/channel"
 	"perun.network/perun-ckb-backend/encoding"
+	molecule2 "perun.network/perun-ckb-backend/encoding/molecule"
 	"perun.network/perun-ckb-backend/transaction"
 )
 
@@ -49,7 +50,7 @@ type CKBClient interface {
 	// DisputeVC registers a dispute for the virtual channel with the given channel ID on chain.
 	// It should register the given state with the given signatures as witness.
 	// Note: The given signatures are padded (see encoding.NewDEREncodedSignatureFromPadded).
-	DisputeVC(ctx context.Context, id channel.ID, state *channel.State, sigs []wallet.Sig, params *channel.Params, parentSigs []wallet.Sig, parentID channel.ID, indexMap []channel.Index) error
+	DisputeVC(ctx context.Context, vcID, parentID channel.ID, vcState, parentState *channel.State, vcParams, parentParams *channel.Params, sigs, parentSigs []wallet.Sig, indexMap []channel.Index) error
 
 	// Close closes the channel with the given channel ID on chain.
 	// The implementation can assume that the given state is final.
@@ -293,8 +294,15 @@ func (c Client) Dispute(ctx context.Context, id channel.ID, state *channel.State
 	if len(sigs) != 2 {
 		return fmt.Errorf("expected 2 signatures, got %d", len(sigs))
 	}
-	sigA := encoding.PackSignature(sigs[0])
-	sigB := encoding.PackSignature(sigs[1])
+	sigA, err := encoding.NewDEREncodedSignatureFromPadded(sigs[0])
+	if err != nil {
+		return fmt.Errorf("encoding signature A: %w", err)
+	}
+
+	sigB, err := encoding.NewDEREncodedSignatureFromPadded(sigs[1])
+	if err != nil {
+		return fmt.Errorf("encoding signature B: %w", err)
+	}
 
 	di = transaction.NewDisputeInfo(*channelCell.OutPoint, *status, params, header.Hash, channelCell.Output.Type, *sigA, *sigB)
 
@@ -312,7 +320,7 @@ func (c Client) Dispute(ctx context.Context, id channel.ID, state *channel.State
 	return c.submitTx(ctx, tx)
 }
 
-func (c Client) DisputeVC(ctx context.Context, id channel.ID, state *channel.State, sigs []wallet.Sig, params *channel.Params, parentSigs []wallet.Sig, parentID channel.ID, indexMap []channel.Index) error {
+func (c Client) DisputeVC(ctx context.Context, vcID, parentID channel.ID, vcState, parentState *channel.State, vcParams, parentParams *channel.Params, vcSigs, parentSigs []wallet.Sig, indexMap []channel.Index) error {
 	var di *transaction.VcDisputeInfo
 
 	header, err := c.client.GetTipHeader(ctx)
@@ -320,17 +328,32 @@ func (c Client) DisputeVC(ctx context.Context, id channel.ID, state *channel.Sta
 		return fmt.Errorf("getting tip header: %w", err)
 	}
 
-	if len(sigs) != 2 {
-		return fmt.Errorf("expected 2 signatures, got %d", len(sigs))
+	if len(vcSigs) != 2 {
+		return fmt.Errorf("expected 2 signatures, got %d", len(vcSigs))
 	}
-	sigA := encoding.PackSignature(sigs[0])
-	sigB := encoding.PackSignature(sigs[1])
+	sigA, err := encoding.NewDEREncodedSignatureFromPadded(vcSigs[0])
+	if err != nil {
+		return fmt.Errorf("encoding signature A: %w", err)
+	}
+
+	sigB, err := encoding.NewDEREncodedSignatureFromPadded(vcSigs[1])
+	if err != nil {
+		return fmt.Errorf("encoding signature B: %w", err)
+	}
 
 	if len(parentSigs) != 2 {
 		return fmt.Errorf("expected 2 parent signatures, got %d", len(parentSigs))
 	}
-	parentSigA := encoding.PackSignature(parentSigs[0])
-	parentSigB := encoding.PackSignature(parentSigs[1])
+	parentSigA, err := encoding.NewDEREncodedSignatureFromPadded(parentSigs[0])
+	if err != nil {
+		return fmt.Errorf("encoding signature A: %w", err)
+	}
+
+	parentSigB, err := encoding.NewDEREncodedSignatureFromPadded(parentSigs[1])
+	if err != nil {
+		return fmt.Errorf("encoding signature B: %w", err)
+	}
+
 	vcDispute := encoding.PackVCDispute(sigA, sigB, parentSigA, parentSigB)
 
 	// Get parents' hashes.
@@ -339,12 +362,12 @@ func (c Client) DisputeVC(ctx context.Context, id channel.ID, state *channel.Sta
 		var hash [32]byte
 		startIndex := i * 32
 		endIndex := 32 * (i + 1)
-		copy(hash[:], params.Aux[startIndex:endIndex])
+		copy(hash[:], vcParams.Aux[startIndex:endIndex])
 		parentIDs[i] = hash
 	}
 
-	if (parentIDs[0] != parentID && parentIDs[1] != parentID) || (parentIDs[0] == parentIDs[1]) {
-		return fmt.Errorf("parent channel ID %s not found in params", parentID)
+	if parentIDs[0] == parentIDs[1] {
+		return fmt.Errorf("parent channel IDs are the same: %s", parentIDs[0])
 	}
 
 	_, parentHashA, _, _, err := c.GetChannelWithID(ctx, parentIDs[0])
@@ -356,30 +379,62 @@ func (c Client) DisputeVC(ctx context.Context, id channel.ID, state *channel.Sta
 		return fmt.Errorf("getting parent channel with ID: %w", err)
 	}
 
-	encodedIndexMap := encoding.PackIndexMap(indexMap)
+	var parentVec molecule.ParentsVec
+	if parentIDs[0] == parentID {
+		parentVecBuilder := molecule.NewParentsVecBuilder()
+		parentVecBuilder.Push(molecule.NewParentDataBuilder().
+			IdxMap(molecule.NewIndexMapBuilder().
+				Nth0(*types.PackByte(byte(indexMap[0]))).
+				Nth1(*types.PackByte(byte(indexMap[1]))).Build()).
+			PctsHash(*molecule2.PackByte32(parentHashA.Hash())).
+			Build())
+		parentVecBuilder.Push(molecule.NewParentDataBuilder().
+			IdxMap(molecule.NewIndexMapBuilder().
+				Nth0(*types.PackByte(byte(indexMap[1]))).
+				Nth1(*types.PackByte(byte(indexMap[0]))).Build()).
+			PctsHash(*molecule2.PackByte32(parentHashB.Hash())).
+			Build())
+		parentVec = parentVecBuilder.Build()
+	} else if parentIDs[1] == parentID {
+		parentVecBuilder := molecule.NewParentsVecBuilder()
+		parentVecBuilder.Push(molecule.NewParentDataBuilder().
+			IdxMap(molecule.NewIndexMapBuilder().
+				Nth0(*types.PackByte(byte(indexMap[1]))).
+				Nth1(*types.PackByte(byte(indexMap[0]))).Build()).
+			PctsHash(*molecule2.PackByte32(parentHashA.Hash())).
+			Build())
+		parentVecBuilder.Push(molecule.NewParentDataBuilder().
+			IdxMap(molecule.NewIndexMapBuilder().
+				Nth0(*types.PackByte(byte(indexMap[0]))).
+				Nth1(*types.PackByte(byte(indexMap[1]))).Build()).
+			PctsHash(*molecule2.PackByte32(parentHashB.Hash())).
+			Build())
+		parentVec = parentVecBuilder.Build()
+	} else {
+		return fmt.Errorf("parent channel ID %s not found in params", parentID)
+	}
 
-	virtualChannelCells, vcStatuses, err := c.getVirtualChannelLiveCellWithCache(ctx, id)
+	virtualChannelCells, vcStatuses, err := c.getVirtualChannelLiveCellWithCache(ctx, vcID)
 
 	if virtualChannelCells == nil {
 		parentCell, status, err := c.getChannelLiveCellWithCache(ctx, parentID)
 		if err != nil {
 			return fmt.Errorf("getting channel live cell: %w", err)
 		}
-
 		di = transaction.NewVCDisputeInfo(
 			parentCell.OutPoint,
 			nil,
 			status,
 			nil,
-			state,
-			params,
+			vcState,
+			parentState,
+			vcParams,
 			header.Hash,
 			parentCell.Output.Type,
 			nil,
-			*sigA, *sigB,
-			parentHashA, parentHashB,
+			*parentSigA, *parentSigB,
 			&vcDispute,
-			&encodedIndexMap,
+			&parentVec,
 			true,
 		)
 	} else if len(virtualChannelCells) > 1 {
@@ -416,21 +471,20 @@ func (c Client) DisputeVC(ctx context.Context, id channel.ID, state *channel.Sta
 
 		virtualChannelCell := virtualChannelCells[0]
 		vcStatus := vcStatuses[0]
-
 		di = transaction.NewVCDisputeInfo(
 			parentCell.OutPoint,
 			virtualChannelCell.OutPoint,
 			status,
 			vcStatus,
-			state,
-			params,
+			vcState,
+			parentState,
+			vcParams,
 			header.Hash,
 			parentCell.Output.Type,
 			virtualChannelCell.Output.Type,
-			*sigA, *sigB,
-			parentHashA, parentHashB,
+			*parentSigA, *parentSigB,
 			&vcDispute,
-			&encodedIndexMap,
+			&parentVec,
 			false,
 		)
 	}
@@ -450,6 +504,7 @@ func (c Client) DisputeVC(ctx context.Context, id channel.ID, state *channel.Sta
 }
 
 func (c Client) Close(ctx context.Context, id channel.ID, state *channel.State, sigs []wallet.Sig, params *channel.Params) error {
+	log.Println("Close called")
 	channelCell, _, err := c.getChannelLiveCellWithCache(ctx, id)
 	if err != nil {
 		return fmt.Errorf("getting channel live cell: %w", err)
@@ -521,6 +576,7 @@ func (c Client) getAssets(ctx context.Context, pcts *types.Script) (*indexer.Liv
 }
 
 func (c Client) ForceClose(ctx context.Context, id channel.ID, state *channel.State, params *channel.Params) error {
+	log.Println("ForceClose called")
 	channelCell, _, err := c.getChannelLiveCellWithCache(ctx, id)
 	if err != nil {
 		return fmt.Errorf("getting channel live cell: %w", err)
@@ -559,7 +615,6 @@ func (c Client) ForceClose(ctx context.Context, id channel.ID, state *channel.St
 }
 
 func (c Client) ForceCloseWithVC(ctx context.Context, id channel.ID, vcid channel.ID, state *channel.State, vcstate *channel.State, sigs []wallet.Sig, vcSigs []wallet.Sig, params *channel.Params) error {
-	// TODO: Implement this.
 	channelCell, _, err := c.getChannelLiveCellWithCache(ctx, id)
 	if err != nil {
 		return fmt.Errorf("getting channel live cell: %w", err)
@@ -586,11 +641,26 @@ func (c Client) ForceCloseWithVC(ctx context.Context, id channel.ID, vcid channe
 		return fmt.Errorf("retrieving assets locked in channel: %w", err)
 	}
 
-	sigA := encoding.PackSignature(sigs[0])
-	sigB := encoding.PackSignature(sigs[1])
+	sigA, err := encoding.NewDEREncodedSignatureFromPadded(sigs[0])
+	if err != nil {
+		return fmt.Errorf("encoding signature A: %w", err)
+	}
 
-	vcSigA := encoding.PackSignature(vcSigs[0])
-	vcSigB := encoding.PackSignature(vcSigs[1])
+	sigB, err := encoding.NewDEREncodedSignatureFromPadded(sigs[1])
+	if err != nil {
+		return fmt.Errorf("encoding signature B: %w", err)
+	}
+
+	vcSigA, err := encoding.NewDEREncodedSignatureFromPadded(vcSigs[0])
+	if err != nil {
+		return fmt.Errorf("encoding signature A: %w", err)
+	}
+
+	vcSigB, err := encoding.NewDEREncodedSignatureFromPadded(vcSigs[1])
+	if err != nil {
+		return fmt.Errorf("encoding signature B: %w", err)
+	}
+
 	vcDispute := encoding.PackVCDispute(vcSigA, vcSigB, sigA, sigB)
 
 	header, err := c.client.GetTipHeader(ctx)
@@ -746,7 +816,7 @@ func (c Client) getFirstChannelLiveCellWithID(channels *indexer.LiveCells, id ch
 
 func (c Client) getFirstVirtualChannelLiveCellWithID(channels *indexer.LiveCells, id channel.ID) (*indexer.LiveCell, *molecule.VirtualChannelStatus, error) {
 	for _, cell := range channels.Objects {
-		if !c.isValidChannelLiveCell(cell) {
+		if !c.isValidVirtualChannelLiveCell(cell) {
 			continue
 		}
 		virtualChannelStatus, err := molecule.VirtualChannelStatusFromSlice(cell.OutputData, false)

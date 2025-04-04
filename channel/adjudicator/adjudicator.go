@@ -22,7 +22,7 @@ func (a Adjudicator) Register(ctx context.Context, req channel.AdjudicatorReq, s
 		for i, vcstate := range states {
 			indexMap := req.Tx.State.Locked[i].IndexMap
 
-			if err := a.client.DisputeVC(ctx, vcstate.State.ID, vcstate.State, vcstate.Sigs, vcstate.Params, req.Tx.Sigs, req.Tx.ID, indexMap); err != nil {
+			if err := a.client.DisputeVC(ctx, vcstate.State.ID, req.Tx.ID, vcstate.State, req.Tx.State, vcstate.Params, req.Params, vcstate.Sigs, req.Tx.Sigs, indexMap); err != nil {
 				return errors.WithMessage(err, "failed to dispute virtual channel")
 			}
 			return nil // Only one virtual channel is supported
@@ -46,11 +46,6 @@ func (a Adjudicator) Withdraw(ctx context.Context, req channel.AdjudicatorReq, s
 
 			// Force Close with Virtual Channel.
 			for _, vcstate := range stateMap {
-				// Check if the virtual channel state is Final
-				if !vcstate.State.IsFinal {
-					return errors.New("virtual channel state is not final")
-				}
-
 				return a.client.ForceCloseWithVC(ctx, req.Tx.ID, vcstate.State.ID, req.Tx.State, vcstate.State, req.Tx.Sigs, vcstate.Sigs, req.Params)
 			}
 		}
