@@ -83,6 +83,9 @@ sed -i "s/args =.*$/args = \"$MINER_LOCK_ARG\"/" $PERUN_CONTRACTS_DIR/deployment
 # Adjust miner config to process blocks faster.
 sed -i 's/value = 5000/value = 1000/' ckb-miner.toml
 
+# Fast mining config
+sed -i '/\[mining\]/a always_submit_block = true' ckb.toml
+
 # Reduce epoch length to 10 blocks.
 sed -i 's/genesis_epoch_length = 1000/genesis_epoch_length = 10/' specs/dev.toml
 sed -i '/\[params\]/a\

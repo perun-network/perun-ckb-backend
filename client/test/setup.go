@@ -20,9 +20,9 @@ const (
 	// DefaultTimeout is the default timeout for client tests.
 	DefaultTimeout = 60 * time.Second
 	// BlockInterval is the default block interval for the simulated chain.
-	BlockInterval = 200 * time.Millisecond
+	BlockInterval = 500 * time.Millisecond
 	// challenge duration in blocks that is used by MakeRoleSetups.
-	challengeDurationBlocks = 90
+	ChallengeDurationBlocks = 90
 )
 
 func MakeRoleSetups(rng *rand.Rand, s *ckbchanneltest.Setup, names []string) []clienttest.RoleSetup {
@@ -60,7 +60,7 @@ func MakeRoleSetups(rng *rand.Rand, s *ckbchanneltest.Setup, names []string) []c
 			Wallet:      s.EphemeralWallets[i],
 			Timeout:     DefaultTimeout,
 			// Scaled due to simbackend automining progressing faster than real time.
-			ChallengeDuration: uint64(1),
+			ChallengeDuration: ChallengeDurationBlocks * uint64(time.Second/BlockInterval),
 			Errors:            errors,
 			BalanceReader:     ckbchanneltest.NewBalanceReader(balanceRPC, s.WalletAccs[i].Address()),
 		}

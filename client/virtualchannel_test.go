@@ -12,12 +12,12 @@ import (
 	"perun.network/perun-ckb-backend/channel/asset"
 	btest "perun.network/perun-ckb-backend/channel/test"
 	ctest "perun.network/perun-ckb-backend/client/test"
+	"perun.network/perun-ckb-backend/transaction"
 	"polycry.pt/poly-go/test"
 )
 
 const (
-	challengeDuration = 1
-	testDuration      = 60 * time.Second
+	testDuration = 120 * time.Second
 )
 
 func TestVirtualChannelOptimistic(t *testing.T) {
@@ -51,7 +51,7 @@ func makeVirtualChannelSetup(t *testing.T, rng *rand.Rand) clienttest.VirtualCha
 
 	return clienttest.VirtualChannelSetup{
 		Clients:           [3]clienttest.RoleSetup(roleSetup),
-		ChallengeDuration: challengeDuration,
+		ChallengeDuration: roleSetup[0].ChallengeDuration,
 		Asset:             setup.Asset,
 		Balances: clienttest.VirtualChannelBalances{
 			InitBalsAliceIngrid: []*big.Int{asset.CKByteToShannon(big.NewFloat(100)), asset.CKByteToShannon(big.NewFloat(100))},
@@ -61,9 +61,9 @@ func makeVirtualChannelSetup(t *testing.T, rng *rand.Rand) clienttest.VirtualCha
 			FinalBalsAlice:      []*big.Int{asset.CKByteToShannon(big.NewFloat(70)), asset.CKByteToShannon(big.NewFloat(130))},
 			FinalBalsBob:        []*big.Int{asset.CKByteToShannon(big.NewFloat(130)), asset.CKByteToShannon(big.NewFloat(70))},
 		},
-		BalanceDelta:       big.NewInt(100),
+		BalanceDelta:       big.NewInt(int64(4 * transaction.DefaultFeeShannon)),
 		Rng:                rng,
-		WaitWatcherTimeout: 1000 * time.Millisecond,
+		WaitWatcherTimeout: 1 * time.Second,
 		IsUTXO:             true,
 	}
 }

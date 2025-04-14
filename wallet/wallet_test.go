@@ -1,11 +1,12 @@
 package wallet_test
 
 import (
+	"testing"
+
 	"github.com/stretchr/testify/require"
 	gptest "perun.network/go-perun/wallet/test"
 	"perun.network/perun-ckb-backend/wallet"
 	"perun.network/perun-ckb-backend/wallet/address"
-	"testing"
 )
 
 func TestEphemeralWallet(t *testing.T) {
@@ -25,6 +26,28 @@ func TestEphemeralWallet(t *testing.T) {
 	valid, err := wallet.Backend.VerifySignature(msg, sig, acc.Address())
 	require.NoError(t, err)
 	require.True(t, valid)
+}
+
+func TestPackAdddress(t *testing.T) {
+	w := wallet.NewEphemeralWallet()
+
+	acc, err := w.AddNewAccount()
+	require.NoError(t, err)
+
+	unlockedAccount, err := w.Unlock(acc.Address())
+	require.NoError(t, err)
+	require.Equal(t, acc.Address(), unlockedAccount.Address())
+
+	participant := address.AsParticipant(acc.Address())
+	encodedParticipant, err := participant.PackOnChainParticipant()
+	require.NoError(t, err)
+
+	var restoredParticipant address.Participant
+	err = restoredParticipant.UnpackOnChainParticipant(&encodedParticipant)
+	require.NoError(t, err)
+	require.Equal(t, participant.PubKey, restoredParticipant.PubKey)
+	require.Equal(t, participant.PaymentScript, restoredParticipant.PaymentScript)
+	require.Equal(t, participant.UnlockScript, restoredParticipant.UnlockScript)
 }
 
 func setup() *gptest.Setup {

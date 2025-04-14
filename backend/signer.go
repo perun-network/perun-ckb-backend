@@ -13,6 +13,8 @@ type Signer interface {
 	SignTransaction(tx *transaction.TransactionWithScriptGroups) (*types.Transaction, error)
 	// Address returns the address of the signer.
 	Address() address.Address
+	// PublicKey returns the public key of the signer.
+	PublicKey() *secp256k1.PublicKey
 }
 
 // LocalSigner is the signer used by the backend implementation.
@@ -45,4 +47,8 @@ func (s LocalSigner) SignTransaction(tx *transaction.TransactionWithScriptGroups
 
 func (s LocalSigner) Address() address.Address {
 	return s.Addr
+}
+
+func (s LocalSigner) PublicKey() *secp256k1.PublicKey {
+	return s.key.PubKey()
 }

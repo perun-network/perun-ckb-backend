@@ -34,7 +34,6 @@ func PackChannelParameters(params *channel.Params) (molecule.ChannelParameters, 
 	if err != nil {
 		return molecule.ChannelParameters{}, fmt.Errorf("packing second party: %w", err)
 	}
-
 	nonce, err := PackNonce(params.Nonce)
 	if err != nil {
 		return molecule.ChannelParameters{}, fmt.Errorf("packing nonce: %w", err)

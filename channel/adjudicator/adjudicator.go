@@ -2,6 +2,7 @@ package adjudicator
 
 import (
 	"context"
+	"log"
 
 	"github.com/pkg/errors"
 	"perun.network/go-perun/channel"
@@ -33,6 +34,7 @@ func (a Adjudicator) Register(ctx context.Context, req channel.AdjudicatorReq, s
 
 func (a Adjudicator) Withdraw(ctx context.Context, req channel.AdjudicatorReq, stateMap channel.StateMap) error {
 	if req.Secondary { // Secondary withdraw already handled by first withdraw.
+		log.Println("Adjudicator: Secondary withdraw already handled by first withdraw.")
 		return nil
 	}
 	if req.Tx.State.IsFinal {
@@ -46,7 +48,10 @@ func (a Adjudicator) Withdraw(ctx context.Context, req channel.AdjudicatorReq, s
 
 			// Force Close with Virtual Channel.
 			for _, vcstate := range stateMap {
-				return a.client.ForceCloseWithVC(ctx, req.Tx.ID, vcstate.State.ID, req.Tx.State, vcstate.State, req.Tx.Sigs, vcstate.Sigs, req.Params)
+				log.Println("Adjudicator: Force close with virtual channel: ", vcstate.State)
+				indexMap := req.Tx.State.Locked[0].IndexMap
+				log.Println("Adjudicator: indexMap: ", indexMap)
+				return a.client.ForceCloseWithVC(ctx, req.Tx.ID, vcstate.State.ID, req.Tx.State, vcstate.State, req.Tx.Sigs, vcstate.Sigs, req.Params, indexMap)
 			}
 		}
 

@@ -9,6 +9,7 @@ import (
 	"perun.network/go-perun/channel"
 	"perun.network/perun-ckb-backend/encoding"
 	molecule2 "perun.network/perun-ckb-backend/encoding/molecule"
+	"perun.network/perun-ckb-backend/wallet/address"
 )
 
 type VcDisputeInfo struct {
@@ -27,6 +28,7 @@ type VcDisputeInfo struct {
 	VCDispute   *molecule.VCDispute
 	ParentsVec  *molecule.ParentsVec
 	first       bool
+	owner       *address.Participant
 }
 
 func NewVCDisputeInfo(
@@ -45,6 +47,7 @@ func NewVCDisputeInfo(
 	vcDispute *molecule.VCDispute,
 	parentVec *molecule.ParentsVec,
 	first bool,
+	owner *address.Participant,
 ) *VcDisputeInfo {
 	return &VcDisputeInfo{
 		ChannelCell: channelCell,
@@ -65,10 +68,10 @@ func NewVCDisputeInfo(
 	}
 }
 
-func (di *VcDisputeInfo) mkInitialVirtualChannelCell(vcLockScript, vcTypeScript types.Script) (types.CellOutput, []byte) {
+func (di *VcDisputeInfo) mkInitialVirtualChannelCell(owner address.Participant, vcLockScript, vcTypeScript types.Script) (types.CellOutput, []byte) {
 	di.VCTS = &vcTypeScript
 
-	vcStatus := di.mkInitialVirtualChannelStatus()
+	vcStatus := di.mkInitialVirtualChannelStatus(owner)
 	log.Println("mkInitialVirtualChannelStatus: ", "0x"+hex.EncodeToString(vcStatus.AsSlice()))
 	vcOutput := types.CellOutput{
 		Capacity: 0,
@@ -76,12 +79,18 @@ func (di *VcDisputeInfo) mkInitialVirtualChannelCell(vcLockScript, vcTypeScript 
 		Type:     &vcTypeScript,
 	}
 	capacity := vcOutput.OccupiedCapacity(vcStatus.AsSlice())
+	log.Println("Capacity: ", capacity)
 	vcOutput.Capacity = capacity
 	return vcOutput, vcStatus.AsSlice()
 }
 
-func (di *VcDisputeInfo) mkInitialVirtualChannelStatus() molecule.VirtualChannelStatus {
+func (di *VcDisputeInfo) mkInitialVirtualChannelStatus(owner address.Participant) molecule.VirtualChannelStatus {
 	packedState, err := encoding.PackChannelState(di.VcState)
+	if err != nil {
+		panic(err)
+	}
+
+	ownerPacked, err := owner.PackOnChainParticipant()
 	if err != nil {
 		panic(err)
 	}
@@ -90,6 +99,7 @@ func (di *VcDisputeInfo) mkInitialVirtualChannelStatus() molecule.VirtualChannel
 		Vcstate(packedState).
 		Parents(*di.ParentsVec).
 		FirstForceClose(encoding.False).
+		Owner(ownerPacked).
 		Build()
 }
 
@@ -101,5 +111,16 @@ func (di *VcDisputeInfo) update(vcts *types.Script) *VcDisputeInfo {
 	}
 	newStatus := builder.State(newState).Disputed(encoding.True).VcDisputed(encoding.True).VctsHash(*molecule2.PackByte32(vcts.Hash())).Build()
 	di.LCStatus = &newStatus
+	return di
+}
+
+func (di *VcDisputeInfo) updateVCStatus() *VcDisputeInfo {
+	builder := di.VCStatus.AsBuilder()
+	newVCState, err := encoding.PackChannelState(di.VcState)
+	if err != nil {
+		panic(err)
+	}
+	newVCStatus := builder.Vcstate(newVCState).Build()
+	di.VCStatus = &newVCStatus
 	return di
 }

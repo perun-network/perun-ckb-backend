@@ -11,9 +11,8 @@ type ForceCloseWithVCInfo struct {
 	ChannelCell types.OutPoint
 	VCCell      types.OutPoint
 	VCTS        *types.Script
-
-	VCStatus    *molecule.VirtualChannelStatus
 	State       *channel.State
+	VCStatus    *molecule.VirtualChannelStatus
 	VCState     *channel.State
 	Params      *channel.Params
 	Headers     []types.Hash
@@ -23,8 +22,13 @@ type ForceCloseWithVCInfo struct {
 	SigB      molecule.Bytes
 	VCDispute *molecule.VCDispute
 
-	ChannelCapacity uint64
-	firstForceClose bool
+	ChannelCapacity        uint64
+	VirtualChannelCapacity uint64
+	firstForceClose        bool
+
+	IndexMap []channel.Index
+
+	MinCKBInput *types.OutPoint
 }
 
 func NewForceCloseWithVCInfo(
@@ -42,23 +46,27 @@ func NewForceCloseWithVCInfo(
 	headers []types.Hash,
 	assetInputs []types.CellInput,
 	channelCapacity uint64,
+	virtualChannelCapacity uint64,
 	firstForceClose bool,
+	indexMap []channel.Index,
 ) *ForceCloseWithVCInfo {
 	return &ForceCloseWithVCInfo{
-		ChannelCell:     *channelCell,
-		VCCell:          *vcCell,
-		VCTS:            vcts,
-		State:           state,
-		VCState:         vcstate,
-		VCStatus:        vcStatus,
-		SigA:            sigA,
-		SigB:            sigB,
-		VCDispute:       vcDispute,
-		Params:          params,
-		Headers:         headers,
-		AssetInputs:     assetInputs,
-		ChannelCapacity: channelCapacity,
-		firstForceClose: firstForceClose,
+		ChannelCell:            *channelCell,
+		VCCell:                 *vcCell,
+		VCTS:                   vcts,
+		State:                  state,
+		VCState:                vcstate,
+		VCStatus:               vcStatus,
+		SigA:                   sigA,
+		SigB:                   sigB,
+		VCDispute:              vcDispute,
+		Params:                 params,
+		Headers:                headers,
+		AssetInputs:            assetInputs,
+		ChannelCapacity:        channelCapacity,
+		VirtualChannelCapacity: virtualChannelCapacity,
+		firstForceClose:        firstForceClose,
+		IndexMap:               indexMap,
 	}
 }
 

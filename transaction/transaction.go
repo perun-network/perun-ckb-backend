@@ -19,8 +19,9 @@ import (
 var zeroHash types.Hash = types.Hash{}
 
 const (
-	DefaultFeeShannon uint64 = CKBYTE
+	DefaultFeeShannon uint64 = 1 * CKBYTE
 	CKBYTE                   = 1 * 100_000_000
+	MinCKBFeeAmount   uint64 = 1_000
 )
 
 // PerunTransactionBuilder is a transaction builder specifically for Perun
@@ -181,6 +182,11 @@ func (ptb *PerunTransactionBuilder) ForceCloseWithVC(fcvi *ForceCloseWithVCInfo)
 	if !fcvi.firstForceClose {
 		_, err = ptb.psh.buildFirstForceCloseWithVCTransaction(ptb, nil, fcvi)
 	} else {
+		minInput, _, err := ptb.prepareMinCKBInput()
+		if err != nil {
+			return fmt.Errorf("preparing min CKB input: %w", err)
+		}
+		fcvi.MinCKBInput = minInput
 		_, err = ptb.psh.buildSecondForceCloseWithVCTransaction(ptb, nil, fcvi)
 	}
 	return err
@@ -902,4 +908,18 @@ func (ptb *PerunTransactionBuilder) defaultLockScript() *types.Script {
 // CKBytes using the default lock-script.
 func (ptb *PerunTransactionBuilder) ckbChangeCellCapacity() uint64 {
 	return ptb.requiredCapacity(zeroHash)
+}
+
+func (ptb *PerunTransactionBuilder) prepareMinCKBInput() (*types.OutPoint, uint64, error) {
+	iterator := ptb.iterators[zeroHash]
+	if iterator == nil {
+		return nil, 0, fmt.Errorf("no iterator for CKB registered")
+	}
+	if !iterator.HasNext() {
+		return nil, 0, fmt.Errorf("no CKB input available")
+	}
+	input := iterator.Next()
+	input.Output.Capacity = MinCKBFeeAmount
+
+	return input.OutPoint, input.Output.Capacity, nil
 }

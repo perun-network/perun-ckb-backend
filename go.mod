@@ -4,7 +4,7 @@ go 1.22
 
 toolchain go1.23.4
 
-require perun.network/go-perun v0.12.1-0.20250402122501-0edd2b7e01cc
+require perun.network/go-perun v0.12.1-0.20250414131012-61bf760655bd
 
 require (
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.2.0
@@ -47,4 +47,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace github.com/nervosnetwork/ckb-sdk-go/v2 v2.2.0 => github.com/perun-network/ckb-sdk-go/v2 v2.2.1-0.20250225125757-9acd41e70812
+replace github.com/nervosnetwork/ckb-sdk-go/v2 v2.2.0 => github.com/perun-network/ckb-sdk-go/v2 v2.2.1-0.20250414095541-e6244b21519c
