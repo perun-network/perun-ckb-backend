@@ -21,16 +21,13 @@ var (
 	CKBBackendID      = 3
 )
 
-var _ pchannel.Asset = (*Asset)(nil)
-var _ multi.Asset = (*CKBAsset)(nil)
-
 type (
 	Asset struct {
 		IsCKBytes bool
 		SUDT      *SUDT
 	}
 
-	CKBAsset struct {
+	NervosAsset struct {
 		Asset Asset
 		id    CCID
 	}
@@ -45,35 +42,40 @@ type (
 	ContractLID struct{ string }
 )
 
-// MarshalBinary marshals the CKBAsset into its binary representation.
-func (C CKBAsset) MarshalBinary() (data []byte, err error) {
+// MarshalBinary marshals the NervosAsset into its binary representation.
+func (C NervosAsset) MarshalBinary() ([]byte, error) {
 	var buf bytes.Buffer
-	err = perunio.Encode(&buf, C.id.ledgerID, C.id.backendID, C.Asset)
+	err := perunio.Encode(&buf, C.id.ledgerID, C.id.backendID, C.Asset)
 	if err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil
 }
 
-// UnmarshalBinary unmarshals the CKBAsset from its binary representation.
-func (C *CKBAsset) UnmarshalBinary(data []byte) error {
+// UnmarshalBinary unmarshals the NervosAsset from its binary representation.
+func (C *NervosAsset) UnmarshalBinary(data []byte) error {
 	buf := bytes.NewBuffer(data)
 	return perunio.Decode(buf, &C.id.ledgerID, &C.id.backendID, &C.Asset)
 }
 
 // Equal returns true if the CKBAssets are the same.
-func (C CKBAsset) Equal(asset pchannel.Asset) bool {
+func (C NervosAsset) Equal(asset pchannel.Asset) bool {
 	return C.Asset.Equal(asset)
 }
 
 // Address returns the address of the asset.
-func (C CKBAsset) Address() []byte {
+func (C NervosAsset) Address() []byte {
 	return C.Asset.Address()
 }
 
 // LedgerBackendID returns the ledger backend ID of the asset.
-func (C CKBAsset) LedgerBackendID() multi.LedgerBackendID {
+func (C NervosAsset) LedgerBackendID() multi.LedgerBackendID {
 	return C.id
+}
+
+// NewNervosAsset creates a new NervosAsset.
+func NewNervosAsset(asset Asset, id CCID) NervosAsset {
+	return NervosAsset{Asset: asset, id: id}
 }
 
 // MakeCCID makes a CCID for the given id.
@@ -112,6 +114,11 @@ func (c CCID) BackendID() uint32 {
 // LedgerID returns the ledger ID of the asset.
 func (c CCID) LedgerID() multi.LedgerID {
 	return c.ledgerID
+}
+
+// MakeContractID makes a ChainID for the given id.
+func MakeContractID(id string) ContractLID {
+	return ContractLID{id}
 }
 
 func (a Asset) Address() []byte {
