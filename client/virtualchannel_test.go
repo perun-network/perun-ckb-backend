@@ -61,7 +61,7 @@ func makeVirtualChannelSetup(t *testing.T, rng *rand.Rand) clienttest.VirtualCha
 			FinalBalsAlice:      []*big.Int{asset.CKByteToShannon(big.NewFloat(70)), asset.CKByteToShannon(big.NewFloat(130))},
 			FinalBalsBob:        []*big.Int{asset.CKByteToShannon(big.NewFloat(130)), asset.CKByteToShannon(big.NewFloat(70))},
 		},
-		BalanceDelta:       big.NewInt(int64(4 * transaction.DefaultFeeShannon)),
+		BalanceDelta:       big.NewInt(int64(6 * transaction.DefaultFeeShannon)), // Max Fee (Ingrid): (Open + Fund + 2 * Dispute + 2 * Close) * 1 CKB
 		Rng:                rng,
 		WaitWatcherTimeout: 1 * time.Second,
 		IsUTXO:             true,

@@ -4,7 +4,7 @@ go 1.22
 
 toolchain go1.23.4
 
-require perun.network/go-perun v0.12.1-0.20250414131012-61bf760655bd
+require perun.network/go-perun v0.12.1-0.20250415090022-4d68d2869b94
 
 require (
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.2.0

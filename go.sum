@@ -104,6 +104,10 @@ perun.network/go-perun v0.12.1-0.20250413153858-dc64260e901a h1:G6Hs8hqmfeLSTQRX
 perun.network/go-perun v0.12.1-0.20250413153858-dc64260e901a/go.mod h1:uH8iwi75alXDizxxDzH0A+6uqXPbagCpKfl8ECMv/cA=
 perun.network/go-perun v0.12.1-0.20250414131012-61bf760655bd h1:3eNgBAOVhKxBlQQd+fdcHo5akTxstN8UVsQF9xpK6bI=
 perun.network/go-perun v0.12.1-0.20250414131012-61bf760655bd/go.mod h1:uH8iwi75alXDizxxDzH0A+6uqXPbagCpKfl8ECMv/cA=
+perun.network/go-perun v0.12.1-0.20250415083739-15bf68234116 h1:tVzU3+iw6uuEp7ifI4wBN7schgn71HIjm+zek+SEuUg=
+perun.network/go-perun v0.12.1-0.20250415083739-15bf68234116/go.mod h1:uH8iwi75alXDizxxDzH0A+6uqXPbagCpKfl8ECMv/cA=
+perun.network/go-perun v0.12.1-0.20250415090022-4d68d2869b94 h1:m0dJjDt88KINuz/Ig8yJbIU9zb7Xf5mxwTU5gsex03A=
+perun.network/go-perun v0.12.1-0.20250415090022-4d68d2869b94/go.mod h1:uH8iwi75alXDizxxDzH0A+6uqXPbagCpKfl8ECMv/cA=
 polycry.pt/poly-go v0.0.0-20220301085937-fb9d71b45a37 h1:iA5GzEa/hHfVlQpimEjPV09NATwHXxSjWNB0VVodtew=
 polycry.pt/poly-go v0.0.0-20220301085937-fb9d71b45a37/go.mod h1:XUBrNtqgEhN3EEOP/5gh7IBd3xVHKidCjXDZfl9+kMU=
 rsc.io/tmplfunc v0.0.3 h1:53XFQh69AfOa8Tw0Jm7t+GV7KZhOi6jzsCzTtKbMvzU=

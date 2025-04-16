@@ -92,10 +92,10 @@ func makePaymentChannelSetup(t *testing.T, rng *rand.Rand) clienttest.PaymentCha
 		Asset:             setup.Asset,
 		Balances: clienttest.PaymentChannelBalances{
 			InitBalsAliceBob: []*big.Int{asset.CKByteToShannon(big.NewFloat(100)), asset.CKByteToShannon(big.NewFloat(100))},
-			BalsUpdated:      []*big.Int{asset.CKByteToShannon(big.NewFloat(20)), asset.CKByteToShannon(big.NewFloat(80))},
-			FinalBals:        []*big.Int{asset.CKByteToShannon(big.NewFloat(20)), asset.CKByteToShannon(big.NewFloat(80))},
+			BalsUpdated:      []*big.Int{asset.CKByteToShannon(big.NewFloat(70)), asset.CKByteToShannon(big.NewFloat(130))},
+			FinalBals:        []*big.Int{asset.CKByteToShannon(big.NewFloat(70)), asset.CKByteToShannon(big.NewFloat(130))},
 		},
-		BalanceDelta:       big.NewInt(int64(4 * transaction.DefaultFeeShannon)),
+		BalanceDelta:       big.NewInt(int64(3 * transaction.DefaultFeeShannon)), // Max Fee: (Open + Dispute + Close) * 1 CKB
 		Rng:                rng,
 		WaitWatcherTimeout: 1 * time.Second,
 		IsUTXO:             true,
