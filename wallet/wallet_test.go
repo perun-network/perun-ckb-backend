@@ -1,10 +1,17 @@
 package wallet_test
 
 import (
+	"encoding/hex"
+	"log"
+	"math/big"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	gpchannel "perun.network/go-perun/channel"
 	gptest "perun.network/go-perun/wallet/test"
+	"perun.network/perun-ckb-backend/channel/asset"
+	"perun.network/perun-ckb-backend/encoding"
 	"perun.network/perun-ckb-backend/wallet"
 	"perun.network/perun-ckb-backend/wallet/address"
 )
@@ -48,6 +55,46 @@ func TestPackAdddress(t *testing.T) {
 	require.Equal(t, participant.PubKey, restoredParticipant.PubKey)
 	require.Equal(t, participant.PaymentScript, restoredParticipant.PaymentScript)
 	require.Equal(t, participant.UnlockScript, restoredParticipant.UnlockScript)
+}
+
+func TestStateSignature(t *testing.T) {
+	w := wallet.NewEphemeralWallet()
+	acc, err := w.AddNewAccount()
+	require.NoError(t, err)
+
+	participant := address.AsParticipant(acc.Address())
+	publicKey := participant.PubKey
+	require.NotNil(t, publicKey)
+	log.Println("public key:", hex.EncodeToString(publicKey.SerializeCompressed()))
+
+	alloc := &gpchannel.Allocation{
+		Assets: []gpchannel.Asset{asset.NewCKBytesAsset()},
+		Balances: [][]gpchannel.Bal{
+			{big.NewInt(10), big.NewInt(11)},
+		},
+		Locked: []gpchannel.SubAlloc{},
+	}
+
+	state := &gpchannel.State{
+		ID:         gpchannel.Zero,
+		Version:    10,
+		App:        gpchannel.NoApp(),
+		Allocation: *alloc,
+		Data:       gpchannel.NoData(),
+		IsFinal:    true,
+	}
+
+	packedState, err := encoding.PackChannelState(state)
+	require.NoError(t, err)
+
+	signature, err := acc.SignData(packedState.AsSlice())
+	log.Println("signature:", hex.EncodeToString(signature))
+	log.Println("packed state:", "0x"+hex.EncodeToString(packedState.AsSlice()))
+	require.NoError(t, err)
+
+	b, err := wallet.Backend.VerifySignature(packedState.AsSlice(), signature, acc.Address())
+	require.NoError(t, err)
+	assert.Truef(t, b, "signature verification failed for address %s", acc.Address().String())
 }
 
 func setup() *gptest.Setup {

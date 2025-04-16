@@ -6,6 +6,7 @@ import (
 	"perun.network/go-perun/channel"
 )
 
+// VcMergeInfo contains the information needed to merge two virtual channels.
 type VcMergeInfo struct {
 	VCCell0           types.OutPoint
 	VCCell1           types.OutPoint
@@ -22,6 +23,7 @@ type VcMergeInfo struct {
 	VCDispute         *molecule.VCDispute
 }
 
+// NewVcMergeInfo creates a new VcMergeInfo instance with all the required fields.
 func NewVCMergeInfo(
 	vcCell0 *types.OutPoint,
 	vcCell1 *types.OutPoint,

@@ -12,6 +12,7 @@ import (
 	"perun.network/perun-ckb-backend/wallet/address"
 )
 
+// PackChannelParameters converts a perun channel parameters to a molecule ChannelParameters.
 func PackChannelParameters(params *channel.Params) (molecule.ChannelParameters, error) {
 	isLedgerChannel := True
 	isVirtualChannel := False
@@ -50,6 +51,7 @@ func PackChannelParameters(params *channel.Params) (molecule.ChannelParameters, 
 		Build(), nil
 }
 
+// PackAddressToOnChainParticipant converts a perun ckb address to a molecule Participant.
 func PackAddressToOnChainParticipant(addr gpwallet.Address) (molecule.Participant, error) {
 	a, ok := addr.(*address.Participant)
 	if !ok {
@@ -58,6 +60,7 @@ func PackAddressToOnChainParticipant(addr gpwallet.Address) (molecule.Participan
 	return a.PackOnChainParticipant()
 }
 
+// PackNonce converts a perun channel nonce to a molecule Byte32.
 func PackNonce(nonce channel.Nonce) (*molecule.Byte32, error) {
 	bytes := nonce.Bytes()
 	res := [types.HashLength]byte{}
@@ -72,6 +75,7 @@ func PackNonce(nonce channel.Nonce) (*molecule.Byte32, error) {
 	return molecule2.PackByte32(res), nil
 }
 
+// UnpackNonce converts a molecule Byte32 to a perun channel nonce.
 func UnpackNonce(nonce *molecule.Byte32) (channel.Nonce, error) {
 	bs, err := molecule2.UnpackByte32(nonce)
 	if err != nil {
@@ -81,4 +85,5 @@ func UnpackNonce(nonce *molecule.Byte32) (channel.Nonce, error) {
 	return unpackedNonce, nil
 }
 
+// NoApp is the default app for a channel.
 var NoApp = molecule.AppDefault()

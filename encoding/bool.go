@@ -2,6 +2,7 @@ package encoding
 
 import "github.com/nervosnetwork/ckb-sdk-go/v2/types/molecule"
 
+// ToBool converts a molecule.Bool to a Go bool.
 func ToBool(b molecule.Bool) bool {
 	switch b.ToUnion().ItemName() {
 	case "True":
@@ -13,6 +14,7 @@ func ToBool(b molecule.Bool) bool {
 	}
 }
 
+// FromBool converts a Go bool to a molecule.Bool.
 func FromBool(b bool) molecule.Bool {
 	if b {
 		return True
@@ -22,6 +24,8 @@ func FromBool(b bool) molecule.Bool {
 }
 
 var (
-	True  = molecule.NewBoolBuilder().Set(molecule.BoolUnionFromTrue(molecule.TrueDefault())).Build()
+	// True is a molecule.Bool representing true.
+	True = molecule.NewBoolBuilder().Set(molecule.BoolUnionFromTrue(molecule.TrueDefault())).Build()
+	// False is a molecule.Bool representing false.
 	False = molecule.NewBoolBuilder().Set(molecule.BoolUnionFromFalse(molecule.FalseDefault())).Build()
 )

@@ -14,3 +14,50 @@
 This repository contains the Nervos/CKB backend for the [go-perun](https://github.com/perun-network/go-perun) channel library.
 
 Learn how to use go-perun backends in the documentation of the go-perun core library.
+
+## Project structure
+* `backend/`: Backend interface implementations.
+* `channel/`: Channel interface implementations.
+* `client/`: Client bindings with tests.
+* `wallet/`: Wallet interface implementations.
+* `encoding/`: On/off-chain serialization.
+* `testnet/`: Local testnet deployment.
+* `transaction`: Contract bindings. 
+
+## Development
+
+1. Clone the repository.
+```sh
+git clone https://github.com/perun-network/perun-ckb-backend
+cd perun-ckb-backend
+```
+
+2. Initialize the submodule.
+```sh
+git submodule update --init --recursive
+```
+
+3. Start the testnet on a separate terminal.
+```sh
+cd testnet/devnet
+
+make dev
+```
+
+
+3. Run the tests. This step needs a working [Go distribution](https://golang.org), see [go.mod](go.mod) for the required version.
+
+```sh
+go test ./...
+```
+
+## Security Disclaimer
+
+The authors take no responsibility for any loss of digital assets or other damage caused by the use of this software.
+
+## Copyright
+
+Copyright 2022 PolyCrypt GmbH.  
+Use of the source code is governed by the Apache 2.0 license that can be found in the [LICENSE file](LICENSE).
+
+<!--- Links -->

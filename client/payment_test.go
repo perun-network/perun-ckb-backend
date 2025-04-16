@@ -21,6 +21,10 @@ import (
 	clienttest "perun.network/go-perun/client/test"
 )
 
+// TestPaymentHappy tests the happy path of the payment channel.
+// It creates a payment channel between Alice and Bob, and then performs a series of payments.
+// The test checks if the final balances are as expected and if the channel state is updated correctly.
+// The test also checks if the payment channel is closed correctly.
 func TestPaymentHappy(t *testing.T) {
 	log.Info("Starting happy test")
 	rng := pkgtest.Prng(t)
@@ -67,6 +71,10 @@ func TestPaymentHappy(t *testing.T) {
 	log.Info("Happy test done")
 }
 
+// TestPaymentDispute tests the payment dispute scenario.
+// It creates a payment channel between Alice and Bob, and then disputes the
+// channel state. The test checks if the dispute is resolved correctly and the final balances
+// are as expected.
 func TestPaymentDispute(t *testing.T) {
 	log.Info("Starting payment dispute test")
 	rng := pkgtest.Prng(t)

@@ -7,6 +7,7 @@ import (
 	"perun.network/perun-ckb-backend/encoding"
 )
 
+// ForceCloseWithVCInfo contains information needed for a force close with virtual channel.
 type ForceCloseWithVCInfo struct {
 	ChannelCell types.OutPoint
 	VCCell      types.OutPoint
@@ -31,6 +32,7 @@ type ForceCloseWithVCInfo struct {
 	MinCKBInput *types.OutPoint
 }
 
+// NewForceCloseWithVCInfo creates a new ForceCloseWithVCInfo instance.
 func NewForceCloseWithVCInfo(
 	channelCell *types.OutPoint,
 	vcCell *types.OutPoint,

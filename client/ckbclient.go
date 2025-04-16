@@ -50,7 +50,7 @@ type CKBClient interface {
 	// Note: The given signatures are padded (see encoding.NewDEREncodedSignatureFromPadded).
 	Dispute(ctx context.Context, id channel.ID, state *channel.State, sigs []wallet.Sig, params *channel.Params) error
 
-	// DisputeVC registers a dispute for the virtual channel with the given channel ID on chain.
+	// DisputeVC registers a dispute for a channel and its virtual channel with the given channel ID on chain.
 	// It should register the given state with the given signatures as witness.
 	// Note: The given signatures are padded (see encoding.NewDEREncodedSignatureFromPadded).
 	DisputeVC(ctx context.Context, vcID, parentID channel.ID, vcState, parentState *channel.State, vcParams, parentParams *channel.Params, sigs, parentSigs []wallet.Sig, indexMap []channel.Index) error
@@ -66,6 +66,10 @@ type CKBClient interface {
 	// later than the expiration of the challenge duration.
 	ForceClose(ctx context.Context, id channel.ID, state *channel.State, params *channel.Params) error
 
+	// ForceCloseWithVC closes the channel with the given channel ID on chain given that the channel has a virtual channel as a child.
+	// The implementation can assume that the channel has already been disputed and that the challenge duration
+	// is expired in real-time, though it may be necessary to wait until a block is produced with a timestamp strictly
+	// later than the expiration of the challenge duration.
 	ForceCloseWithVC(ctx context.Context, id channel.ID, vcid channel.ID, state *channel.State, vcstate *channel.State, sigs []wallet.Sig, vcSigs []wallet.Sig, params *channel.Params, indexMap []channel.Index) error
 
 	// GetChannelWithID returns an on-chain channel with the given channel ID.
@@ -1099,6 +1103,7 @@ func checkVersion(parentState *channel.State, parentStatus *molecule.ChannelStat
 	return true
 }
 
+// updateState updates the state with the newest balances to be used for final settlement.
 func updateState(state *channel.State, newState *molecule.ChannelState) (*channel.State, error) {
 	if state.Version < molecule2.UnpackUint64(newState.Version()) {
 		state.Version = molecule2.UnpackUint64(newState.Version())
