@@ -1,9 +1,6 @@
 package transaction
 
 import (
-	"encoding/hex"
-	"log"
-
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types/molecule"
 	"perun.network/go-perun/channel"
@@ -28,7 +25,7 @@ type VcDisputeInfo struct {
 	VCDispute   *molecule.VCDispute
 	ParentsVec  *molecule.ParentsVec
 	first       bool
-	owner       *address.Participant
+	Owner       *address.Participant
 }
 
 func NewVCDisputeInfo(
@@ -65,34 +62,33 @@ func NewVCDisputeInfo(
 		VCDispute:   vcDispute,
 		ParentsVec:  parentVec,
 		first:       first,
+		Owner:       owner,
 	}
 }
 
-func (di *VcDisputeInfo) mkInitialVirtualChannelCell(owner address.Participant, vcLockScript, vcTypeScript types.Script) (types.CellOutput, []byte) {
+func (di *VcDisputeInfo) mkInitialVirtualChannelCell(vcLockScript, vcTypeScript types.Script) (types.CellOutput, []byte) {
 	di.VCTS = &vcTypeScript
 
-	vcStatus := di.mkInitialVirtualChannelStatus(owner)
-	log.Println("mkInitialVirtualChannelStatus: ", "0x"+hex.EncodeToString(vcStatus.AsSlice()))
+	vcStatus := di.mkInitialVirtualChannelStatus()
 	vcOutput := types.CellOutput{
 		Capacity: 0,
 		Lock:     &vcLockScript,
 		Type:     &vcTypeScript,
 	}
 	capacity := vcOutput.OccupiedCapacity(vcStatus.AsSlice())
-	log.Println("Capacity: ", capacity)
 	vcOutput.Capacity = capacity
 	return vcOutput, vcStatus.AsSlice()
 }
 
-func (di *VcDisputeInfo) mkInitialVirtualChannelStatus(owner address.Participant) molecule.VirtualChannelStatus {
+func (di *VcDisputeInfo) mkInitialVirtualChannelStatus() molecule.VirtualChannelStatus {
 	packedState, err := encoding.PackChannelState(di.VcState)
 	if err != nil {
-		panic(err)
+		panic("Error packing channel state: " + err.Error())
 	}
 
-	ownerPacked, err := owner.PackOnChainParticipant()
+	ownerPacked, err := di.Owner.PackOnChainParticipant()
 	if err != nil {
-		panic(err)
+		panic("Error packing owner: " + err.Error())
 	}
 
 	return molecule.NewVirtualChannelStatusBuilder().

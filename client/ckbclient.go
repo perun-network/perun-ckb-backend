@@ -283,6 +283,7 @@ func (c Client) Fund(ctx context.Context, pcts *types.Script, state *channel.Sta
 }
 
 func (c Client) Dispute(ctx context.Context, id channel.ID, state *channel.State, sigs []wallet.Sig, params *channel.Params) error {
+	log.Println("Dispute called")
 	var di *transaction.DisputeInfo
 
 	channelCell, status, err := c.getChannelLiveCellWithCache(ctx, id)
@@ -297,6 +298,7 @@ func (c Client) Dispute(ctx context.Context, id channel.ID, state *channel.State
 	if len(sigs) != 2 {
 		return fmt.Errorf("expected 2 signatures, got %d", len(sigs))
 	}
+
 	sigA, err := encoding.NewDEREncodedSignatureFromPadded(sigs[0])
 	if err != nil {
 		return fmt.Errorf("encoding signature A: %w", err)
@@ -307,7 +309,12 @@ func (c Client) Dispute(ctx context.Context, id channel.ID, state *channel.State
 		return fmt.Errorf("encoding signature B: %w", err)
 	}
 
-	di = transaction.NewDisputeInfo(*channelCell.OutPoint, *status, params, header.Hash, channelCell.Output.Type, *sigA, *sigB)
+	if !checkVersion(state, status, nil, nil) {
+		log.Println("Dispute not needed")
+		return nil
+	}
+
+	di = transaction.NewDisputeInfo(*channelCell.OutPoint, *status, state, params, header.Hash, channelCell.Output.Type, *sigA, *sigB)
 
 	builder, err := c.newPerunTransactionBuilder(nil)
 	if err != nil {
@@ -715,7 +722,7 @@ func (c Client) ForceCloseWithVC(ctx context.Context, id channel.ID, vcid channe
 
 	// Check version.
 	if !checkVersion(state, status, vcstate, vcStatus) {
-		log.Println("ForceCloseWithVC: old version detected")
+		log.Println("ForceCloseWithVC: old versions detected")
 		state, err = updateState(state, status.State())
 		if err != nil {
 			return fmt.Errorf("updating state: %w", err)
@@ -1066,17 +1073,23 @@ func (c Client) getVirtualChannelLiveCellWithCache(ctx context.Context, id chann
 
 func checkVersion(parentState *channel.State, parentStatus *molecule.ChannelStatus, vcState *channel.State, vcStatus *molecule.VirtualChannelStatus) bool {
 	oldParentVersion := molecule2.UnpackUint64(parentStatus.State().Version())
-	oldVcVersion := molecule2.UnpackUint64(vcStatus.Vcstate().Version())
 	newParentVersion := parentState.Version
-	newVcVersion := vcState.Version
-	log.Println("checkDispute: old parent version:", oldParentVersion)
-	log.Println("checkDispute: new parent version:", newParentVersion)
-	log.Println("checkDispute: old VC version:", oldVcVersion)
-	log.Println("checkDispute: new VC version:", newVcVersion)
 
 	if newParentVersion < oldParentVersion {
 		return false
 	}
+
+	if vcState == nil && vcStatus == nil {
+		if newParentVersion == oldParentVersion {
+			return false // No VC state, no VC status, and parent state is not updated.
+		}
+		// No VC state, no VC status, but parent state is updated.
+		return true
+	}
+
+	oldVcVersion := molecule2.UnpackUint64(vcStatus.Vcstate().Version())
+	newVcVersion := vcState.Version
+
 	if newVcVersion < oldVcVersion {
 		return false
 	}

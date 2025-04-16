@@ -70,6 +70,14 @@ func PackBalances(state *pchannel.State) (molecule.Balances, error) {
 		lockedBalancesBuilder.Push(sa)
 	}
 
+	if len(state.Locked) == 0 {
+		sa, err := PackDefaultSubAlloc()
+		if err != nil {
+			return molecule.Balances{}, err
+		}
+		lockedBalancesBuilder.Push(sa)
+	}
+
 	balancesBuilder.Locked(lockedBalancesBuilder.Build())
 
 	return balancesBuilder.Build(), nil
@@ -110,6 +118,17 @@ func PackSubAlloc(subAlloc *pchannel.SubAlloc, state *pchannel.State) (molecule.
 			sudtAllocBuilder.Push(b)
 		}
 	}
+	subBalancesBuilder.Sudts(sudtAllocBuilder.Build())
+
+	subAllocBuilder.Balances(subBalancesBuilder.Build())
+	return subAllocBuilder.Build(), nil
+}
+
+func PackDefaultSubAlloc() (molecule.SubAlloc, error) {
+	subAllocBuilder := molecule.NewSubAllocBuilder()
+	subAllocBuilder.Id(molecule.Byte32Default())
+	sudtAllocBuilder := molecule.NewSUDTAllocationBuilder()
+	subBalancesBuilder := molecule.NewSubBalancesBuilder()
 	subBalancesBuilder.Sudts(sudtAllocBuilder.Build())
 
 	subAllocBuilder.Balances(subBalancesBuilder.Build())

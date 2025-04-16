@@ -38,7 +38,6 @@ func NewForceCloseWithVCInfo(
 	state *channel.State,
 	vcstate *channel.State,
 	vcStatus *molecule.VirtualChannelStatus,
-
 	sigA molecule.Bytes,
 	sigB molecule.Bytes,
 	vcDispute *molecule.VCDispute,
