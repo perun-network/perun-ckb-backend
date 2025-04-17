@@ -16,7 +16,7 @@ jobs:
     steps:
       - uses: actions/setup-go@v4
         with:
-          go-version: 1.19
+          go-version: 1.23
       - uses: actions/checkout@v3
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v3
@@ -31,7 +31,42 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v4
       with:
-        go-version: 1.19
+        go-version: 1.23
+    
+    - name: Start devnet in background
+      run: |
+          run: |
+          sudo apt-get update
+          sudo apt-get install -y jq sed gawk tmux tmuxp expect make
+          curl -LO https://github.com/nervosnetwork/ckb/releases/download/v0.109.0/ckb_v0.109.0_x86_64-unknown-linux-gnu.tar.gz
+          tar -xzf ckb_v0.109.0_x86_64-unknown-linux-gnu.tar.gz
+          sudo cp ckb_v0.109.0_x86_64-unknown-linux-gnu/ckb /usr/local/bin/
+          curl -LO https://github.com/nervosnetwork/ckb-cli/releases/download/v1.4.0/ckb-cli_v1.4.0_x86_64-unknown-linux-gnu.tar.gz
+          tar -xzf ckb-cli_v1.4.0_x86_64-unknown-linux-gnu.tar.gz
+          sudo cp ckb-cli_v1.4.0_x86_64-unknown-linux-gnu/ckb-cli /usr/local/bin/
+          curl -LO https://github.com/nervosnetwork/capsule/releases/download/v0.9.2/capsule_v0.9.2_x86_64-linux.tar.gz
+          tar -xzf capsule_v0.9.2_x86_64-linux.tar.gz
+          sudo cp capsule_v0.9.2_x86_64-linux/capsule /usr/local/bin/
+          cd ./testnet/devnet
+          chmod +x setup-devnet.sh print_accounts.sh deploy_contracts.sh sudt_helper.sh 
+          ./setup-devnet.sh
+          ckb run > /dev/null 2>&1 &
+          sleep 3
+          ckb miner > /dev/null 2>&1 &
+          sleep 3
+          ./print_accounts.sh
+          sleep 6
+          expect fund_accounts.expect
+          sleep 10
+          ./deploy_contracts.sh
+          sleep 15
+          ./sudt_helper.sh fund
+          sleep 10
+          ./sudt_helper.sh balances
+    
+    - name: Wait for devnet to initialize
+      run: sleep 30
+
     - name: Build
       run: go build -v ./...
     - name: Test
