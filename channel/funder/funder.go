@@ -5,17 +5,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/nervosnetwork/ckb-sdk-go/v2/types"
-	"github.com/nervosnetwork/ckb-sdk-go/v2/types/molecule"
 	"log"
 	"math"
+	"time"
+
+	"github.com/nervosnetwork/ckb-sdk-go/v2/types"
+	"github.com/nervosnetwork/ckb-sdk-go/v2/types/molecule"
 	"perun.network/go-perun/channel"
 	"perun.network/perun-ckb-backend/backend"
 	"perun.network/perun-ckb-backend/client"
 	"perun.network/perun-ckb-backend/encoding"
 	molecule2 "perun.network/perun-ckb-backend/encoding/molecule"
 	"perun.network/perun-ckb-backend/wallet/address"
-	"time"
 )
 
 const DefaultPollingInterval = time.Duration(5) * time.Second
@@ -79,6 +80,7 @@ polling:
 				return err
 			}
 			if encoding.ToBool(*channelStatus.Funded()) {
+				log.Println("Party B: Channel already funded.")
 				return nil
 			}
 			return f.client.Fund(ctx, script, req.State, req.Params)

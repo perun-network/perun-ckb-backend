@@ -3,6 +3,7 @@ package address
 import (
 	"encoding/hex"
 	"errors"
+
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/address"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/systemscript"
@@ -199,6 +200,22 @@ func (p *Participant) UnpackOffChainParticipant(op *molecule.OffChainParticipant
 	p.PubKey = key
 	p.PaymentScript = types.UnpackScript(op.PaymentScript())
 	p.UnlockScript = types.UnpackScript(op.UnlockScript())
+	return nil
+}
+
+func (p *Participant) UnpackOnChainParticipant(op *molecule.Participant) error {
+	key, err := UnpackSEC1EncodedPubKey(op.PubKey())
+	if err != nil {
+		return err
+	}
+
+	script, err := systemscript.Secp256K1Blake160SignhashAllByPublicKey(key.SerializeCompressed())
+	if err != nil {
+		return err
+	}
+	p.PubKey = key
+	p.PaymentScript = script
+	p.UnlockScript = script
 	return nil
 }
 

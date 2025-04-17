@@ -13,3 +13,11 @@
 
 # Dependency directories (remove the comment below to include it)
 # vendor/
+testnet/devnet/accounts
+testnet/devnet/data
+testnet/devnet/specs
+testnet/devnet/ckb-miner.toml
+testnet/devnet/ckb.toml
+testnet/devnet/fundingtx.json
+testnet/devnet/default.db-options
+testnet/devnet/system_scripts

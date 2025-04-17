@@ -69,6 +69,7 @@ func TestScriptHandler(t *testing.T) {
 			test.WithoutApp(),
 			test.WithNumParts(2),
 			test.WithNumAssets(1),
+			test.WithAssets(asset.NewCKBytesAsset()),
 			test.WithNumLocked(0),
 			test.WithBalancesInRange(big.NewInt(0).Mul(big.NewInt(100), big.NewInt(100_000_000)), big.NewInt(0).Mul(big.NewInt(10_000), big.NewInt(100_000_000))),
 		)

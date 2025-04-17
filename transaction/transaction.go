@@ -19,8 +19,9 @@ import (
 var zeroHash types.Hash = types.Hash{}
 
 const (
-	DefaultFeeShannon uint64 = CKBYTE
+	DefaultFeeShannon uint64 = 1 * CKBYTE
 	CKBYTE                   = 1 * 100_000_000
+	MinCKBFeeAmount   uint64 = 1_000
 )
 
 // PerunTransactionBuilder is a transaction builder specifically for Perun
@@ -146,6 +147,23 @@ func (ptb *PerunTransactionBuilder) Fund(fi *FundInfo) error {
 
 func (ptb *PerunTransactionBuilder) Dispute(di *DisputeInfo) error {
 	_, err := ptb.psh.buildDisputeTransaction(ptb, nil, di)
+
+	return err
+}
+
+func (ptb *PerunTransactionBuilder) DisputeVC(di *VcDisputeInfo) error {
+	var err error
+	if di.first {
+		_, err = ptb.psh.buildFirstVCDisputeTransaction(ptb, nil, di)
+	} else {
+		_, err = ptb.psh.buildVCDisputeProgressTransaction(ptb, nil, di)
+	}
+	return err
+}
+
+func (ptb *PerunTransactionBuilder) MergeVC(vmi *VcMergeInfo) error {
+	var err error
+	_, err = ptb.psh.buildVCMergeTransaction(ptb, nil, vmi)
 	return err
 }
 
@@ -156,6 +174,21 @@ func (ptb *PerunTransactionBuilder) Close(ci *CloseInfo) error {
 
 func (ptb *PerunTransactionBuilder) ForceClose(fci *ForceCloseInfo) error {
 	_, err := ptb.psh.buildForceCloseTransaction(ptb, nil, fci)
+	return err
+}
+
+func (ptb *PerunTransactionBuilder) ForceCloseWithVC(fcvi *ForceCloseWithVCInfo) error {
+	var err error
+	if !fcvi.firstForceClose {
+		_, err = ptb.psh.buildFirstForceCloseWithVCTransaction(ptb, nil, fcvi)
+	} else {
+		minInput, _, err := ptb.prepareMinCKBInput()
+		if err != nil {
+			return fmt.Errorf("preparing min CKB input: %w", err)
+		}
+		fcvi.MinCKBInput = minInput
+		_, err = ptb.psh.buildSecondForceCloseWithVCTransaction(ptb, nil, fcvi)
+	}
 	return err
 }
 
@@ -875,4 +908,18 @@ func (ptb *PerunTransactionBuilder) defaultLockScript() *types.Script {
 // CKBytes using the default lock-script.
 func (ptb *PerunTransactionBuilder) ckbChangeCellCapacity() uint64 {
 	return ptb.requiredCapacity(zeroHash)
+}
+
+func (ptb *PerunTransactionBuilder) prepareMinCKBInput() (*types.OutPoint, uint64, error) {
+	iterator := ptb.iterators[zeroHash]
+	if iterator == nil {
+		return nil, 0, fmt.Errorf("no iterator for CKB registered")
+	}
+	if !iterator.HasNext() {
+		return nil, 0, fmt.Errorf("no CKB input available")
+	}
+	input := iterator.Next()
+	input.Output.Capacity = MinCKBFeeAmount
+
+	return input.OutPoint, input.Output.Capacity, nil
 }
