@@ -43,7 +43,6 @@ jobs:
         
     - name: Start devnet in background
       run: |
-          run: |
           sudo apt-get update
           sudo apt-get install -y jq sed gawk tmux tmuxp expect make
           curl -LO https://github.com/nervosnetwork/ckb/releases/download/v0.109.0/ckb_v0.109.0_x86_64-unknown-linux-gnu.tar.gz
@@ -55,8 +54,8 @@ jobs:
           curl -LO https://github.com/nervosnetwork/capsule/releases/download/v0.9.2/capsule_v0.9.2_x86_64-linux.tar.gz
           tar -xzf capsule_v0.9.2_x86_64-linux.tar.gz
           sudo cp capsule_v0.9.2_x86_64-linux/capsule /usr/local/bin/
-          curl -LO http://archive.ubuntu.com/ubuntu/pool/main/o/openssl1.1/libssl1.1_1.1.1f-1ubuntu2.22_amd64.deb
-          sudo dpkg -i libssl1.1_1.1.1f-1ubuntu2.22_amd64.deb
+          wget http://archive.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.0g-2ubuntu4_amd64.deb
+          sudo dpkg -i libssl1.1_1.1.0g-2ubuntu4_amd64.deb
 
           git submodule update --init --recursive
           cd ./testnet/devnet
