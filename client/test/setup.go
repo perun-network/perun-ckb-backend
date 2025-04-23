@@ -8,7 +8,6 @@ import (
 	"github.com/nervosnetwork/ckb-sdk-go/v2/rpc"
 
 	"perun.network/perun-ckb-backend/channel/test"
-	ckbchanneltest "perun.network/perun-ckb-backend/channel/test"
 
 	gpwiretest "perun.network/go-perun/backend/sim/wire"
 	clienttest "perun.network/go-perun/client/test"
@@ -25,7 +24,7 @@ const (
 	ChallengeDurationBlocks = 90
 )
 
-func MakeRoleSetups(rng *rand.Rand, s *ckbchanneltest.Setup, names []string) []clienttest.RoleSetup {
+func MakeRoleSetups(rng *rand.Rand, s *test.Setup, names []string) []clienttest.RoleSetup {
 	setups := make([]clienttest.RoleSetup, len(names))
 	bus := wire.NewLocalBus()
 
@@ -62,7 +61,7 @@ func MakeRoleSetups(rng *rand.Rand, s *ckbchanneltest.Setup, names []string) []c
 			// Scaled due to simbackend automining progressing faster than real time.
 			ChallengeDuration: ChallengeDurationBlocks * uint64(time.Second/BlockInterval),
 			Errors:            errors,
-			BalanceReader:     ckbchanneltest.NewBalanceReader(balanceRPC, s.WalletAccs[i].Address()),
+			BalanceReader:     test.NewBalanceReader(balanceRPC, s.WalletAccs[i].Address()),
 		}
 
 	}

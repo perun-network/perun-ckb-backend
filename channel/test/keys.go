@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"strings"
 
@@ -15,7 +16,11 @@ func GetKey(path string) (*secp256k1.PrivateKey, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer keyFile.Close()
+	defer func() {
+		if err := keyFile.Close(); err != nil {
+			log.Fatal("Error closing key file:", err)
+		}
+	}()
 
 	rawBytes, err := io.ReadAll(keyFile)
 	if err != nil {

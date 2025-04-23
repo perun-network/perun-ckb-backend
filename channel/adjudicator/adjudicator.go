@@ -19,15 +19,15 @@ func NewAdjudicator(client client.CKBClient) *Adjudicator {
 
 func (a Adjudicator) Register(ctx context.Context, req channel.AdjudicatorReq, states []channel.SignedState) error {
 	// If sub-states are present, register them first
-	if states != nil && len(states) > 0 {
-		for i, vcstate := range states {
-			indexMap := req.Tx.State.Locked[i].IndexMap
+	if len(states) > 0 {
+		vcstate := states[0]
+		indexMap := req.Tx.Locked[0].IndexMap
 
-			if err := a.client.DisputeVC(ctx, vcstate.State.ID, req.Tx.ID, vcstate.State, req.Tx.State, vcstate.Params, req.Params, vcstate.Sigs, req.Tx.Sigs, indexMap); err != nil {
-				return errors.WithMessage(err, "failed to dispute virtual channel")
-			}
-			return nil // Only one virtual channel is supported
+		if err := a.client.DisputeVC(ctx, vcstate.State.ID, req.Tx.ID, vcstate.State, req.Tx.State, vcstate.Params, req.Params, vcstate.Sigs, req.Tx.Sigs, indexMap); err != nil {
+			return errors.WithMessage(err, "failed to dispute virtual channel")
 		}
+		return nil // Only one virtual channel is supported
+
 	}
 	return a.client.Dispute(ctx, req.Tx.ID, req.Tx.State, req.Tx.Sigs, req.Params)
 }
@@ -37,7 +37,7 @@ func (a Adjudicator) Withdraw(ctx context.Context, req channel.AdjudicatorReq, s
 		log.Println("Adjudicator: Secondary withdraw already handled by first withdraw.")
 		return nil
 	}
-	if req.Tx.State.IsFinal {
+	if req.Tx.IsFinal {
 		return a.client.Close(ctx, req.Tx.ID, req.Tx.State, req.Tx.Sigs, req.Params)
 	} else {
 		// Check length of state map: currentyl only one virtual channel is supported
@@ -48,7 +48,7 @@ func (a Adjudicator) Withdraw(ctx context.Context, req channel.AdjudicatorReq, s
 
 			// Force Close with Virtual Channel.
 			for _, vcstate := range stateMap {
-				indexMap := req.Tx.State.Locked[0].IndexMap
+				indexMap := req.Tx.Locked[0].IndexMap
 				return a.client.ForceCloseWithVC(ctx, req.Tx.ID, vcstate.State.ID, req.Tx.State, vcstate.State, req.Tx.Sigs, vcstate.Sigs, req.Params, indexMap)
 			}
 		}

@@ -11,7 +11,6 @@ import (
 	"perun.network/go-perun/log"
 	"perun.network/go-perun/wire"
 	"perun.network/perun-ckb-backend/channel/asset"
-	"perun.network/perun-ckb-backend/channel/test"
 	btest "perun.network/perun-ckb-backend/channel/test"
 	ctest "perun.network/perun-ckb-backend/client/test"
 	"perun.network/perun-ckb-backend/transaction"
@@ -35,7 +34,7 @@ func TestPaymentHappy(t *testing.T) {
 		role [2]clienttest.Executer
 	)
 
-	s := test.NewSetup(t, rng)
+	s := btest.NewSetup(t, rng)
 	setup := ctest.MakeRoleSetups(rng, s, name[:])
 
 	role[A] = clienttest.NewAlice(t, setup[A])

@@ -208,6 +208,8 @@ func (c Client) submitTx(ctx context.Context, tx *ckbtransaction.TransactionWith
 
 // submitTxWithArgument submits a transaction whose type is determined by the
 // txTypeArgument.
+//
+//nolint:unused
 func (c Client) submitTxWithArgument(ctx context.Context, txTypeArgument ...interface{}) error {
 	b, err := c.newPerunTransactionBuilder(nil)
 	if err != nil {
@@ -428,7 +430,7 @@ func (c Client) DisputeVC(ctx context.Context, vcID, parentID channel.ID, vcStat
 		return fmt.Errorf("parent channel ID %s not found in params", parentID)
 	}
 
-	virtualChannelCells, vcStatuses, err := c.getVirtualChannelLiveCellWithCache(ctx, vcID)
+	virtualChannelCells, vcStatuses, _ := c.getVirtualChannelLiveCellWithCache(ctx, vcID) // We dont care about the error here.
 
 	if virtualChannelCells == nil {
 		// First VC dispute.
@@ -1113,7 +1115,7 @@ func updateState(state *channel.State, newState *molecule.ChannelState) (*channe
 	if !ok {
 		return state, errors.New("asset not found")
 	}
-	state.Allocation.Balances[assetIdx] = []channel.Bal{
+	state.Balances[assetIdx] = []channel.Bal{
 		0: big.NewInt(int64(molecule2.UnpackUint64(newState.Balances().Ckbytes().Nth0()))),
 		1: big.NewInt(int64(molecule2.UnpackUint64(newState.Balances().Ckbytes().Nth1()))),
 	}
@@ -1137,7 +1139,7 @@ func updateState(state *channel.State, newState *molecule.ChannelState) (*channe
 			newSudtDistribution := newState.Balances().Sudts().Get(0).Distribution()
 			balA := newSudtDistribution.Nth0()
 			balB := newSudtDistribution.Nth1()
-			state.Allocation.Balances[sudtIndex] = []channel.Bal{
+			state.Balances[sudtIndex] = []channel.Bal{
 				0: molecule2.UnpackUint128(balA).Big(),
 				1: molecule2.UnpackUint128(balB).Big(),
 			}

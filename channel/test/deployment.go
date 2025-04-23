@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path"
 	"strings"
@@ -134,7 +135,7 @@ func (m Migration) MakeDeployment(systemScripts SystemScripts, sudtOwnerLockArg 
 func (m Migration) GetSUDT() (*SUDTInfo, error) {
 	sudt := m.CellRecipes[0]
 	if sudt.Name != "sudt" {
-		return nil, fmt.Errorf("fourth cell recipe must be sudt")
+		return nil, fmt.Errorf("first cell recipe must be sudt")
 	}
 
 	sudtScript := types.Script{
@@ -165,7 +166,12 @@ func GetDeployment(migrationDir, systemScriptsDir, sudtOwnerLockArg string) (bac
 	}
 	migrationName := dir[0].Name()
 	migrationFile, err := os.Open(path.Join(migrationDir, migrationName))
-	defer migrationFile.Close()
+	defer func() {
+		if err := migrationFile.Close(); err != nil {
+			log.Fatalf("failed to close migration file: %v\n", err)
+		}
+	}()
+
 	if err != nil {
 		return backend.Deployment{}, SUDTInfo{}, err
 	}

@@ -34,7 +34,7 @@ func NewBalanceReader(rpcClient rpc.Client, acc wallet.Address) *BalanceReader {
 
 // Balance returns the asset balance of the associated account.
 func (br *BalanceReader) Balance(asset perunchannel.Asset) perunchannel.Bal {
-	pollingInterval := time.Second
+	pollingInterval := time.Duration(1) * time.Second
 	searchKey := &indexer.SearchKey{
 		Script:           address.AsParticipant(br.acc).PaymentScript,
 		ScriptType:       types.ScriptTypeLock,
@@ -43,7 +43,8 @@ func (br *BalanceReader) Balance(asset perunchannel.Asset) perunchannel.Bal {
 		WithData:         true,
 	}
 
-	ctx, _ := context.WithTimeout(context.Background(), pollingInterval)
+	ctx, cancel := context.WithTimeout(context.Background(), pollingInterval)
+	defer cancel()
 
 	cells, err := br.rpcClient.GetCells(ctx, searchKey, indexer.SearchOrderDesc, math.MaxUint32, "")
 	if err != nil {
