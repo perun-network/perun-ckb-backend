@@ -70,6 +70,7 @@ func TestScriptHandler(t *testing.T) {
 			test.WithoutApp(),
 			test.WithNumParts(2),
 			test.WithNumAssets(1),
+			test.WithAssets(asset.NewCKBytesAsset()),
 			test.WithNumLocked(0),
 			test.WithBackend(txtest.CKBBackendID),
 			test.WithBackendIDs([]wallet.BackendID{txtest.CKBBackendID}),

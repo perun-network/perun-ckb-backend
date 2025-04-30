@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"math/big"
 	"time"
 
 	"github.com/nervosnetwork/ckb-sdk-go/v2/address"
@@ -19,8 +20,11 @@ import (
 	"perun.network/go-perun/wallet"
 	"perun.network/perun-ckb-backend/backend"
 	ckbchannel "perun.network/perun-ckb-backend/channel"
+	"perun.network/perun-ckb-backend/channel/asset"
 	"perun.network/perun-ckb-backend/encoding"
+	molecule2 "perun.network/perun-ckb-backend/encoding/molecule"
 	"perun.network/perun-ckb-backend/transaction"
+	ckbaddress "perun.network/perun-ckb-backend/wallet/address"
 )
 
 var ErrNoChannelLiveCell = errors.New("no channel live cell found")
@@ -46,6 +50,11 @@ type CKBClient interface {
 	// Note: The given signatures are padded (see encoding.NewDEREncodedSignatureFromPadded).
 	Dispute(ctx context.Context, id channel.ID, state *channel.State, sigs []wallet.Sig, params *channel.Params) error
 
+	// DisputeVC registers a dispute for a channel and its virtual channel with the given channel ID on chain.
+	// It should register the given state with the given signatures as witness.
+	// Note: The given signatures are padded (see encoding.NewDEREncodedSignatureFromPadded).
+	DisputeVC(ctx context.Context, vcID, parentID channel.ID, vcState, parentState *channel.State, vcParams, parentParams *channel.Params, sigs, parentSigs []wallet.Sig, indexMap []channel.Index) error
+
 	// Close closes the channel with the given channel ID on chain.
 	// The implementation can assume that the given state is final.
 	// Note: The given signatures are padded (see encoding.NewDEREncodedSignatureFromPadded).
@@ -56,6 +65,12 @@ type CKBClient interface {
 	// is expired in real-time, though it may be necessary to wait until a block is produced with a timestamp strictly
 	// later than the expiration of the challenge duration.
 	ForceClose(ctx context.Context, id channel.ID, state *channel.State, params *channel.Params) error
+
+	// ForceCloseWithVC closes the channel with the given channel ID on chain given that the channel has a virtual channel as a child.
+	// The implementation can assume that the channel has already been disputed and that the challenge duration
+	// is expired in real-time, though it may be necessary to wait until a block is produced with a timestamp strictly
+	// later than the expiration of the challenge duration.
+	ForceCloseWithVC(ctx context.Context, id channel.ID, vcid channel.ID, state *channel.State, vcstate *channel.State, sigs []wallet.Sig, vcSigs []wallet.Sig, params *channel.Params, indexMap []channel.Index) error
 
 	// GetChannelWithID returns an on-chain channel with the given channel ID.
 	// Note: Only the channel ID field in the state must be checked, as the pcts verifies the integrity of said
@@ -83,8 +98,9 @@ type Client struct {
 	signer     backend.Signer
 	deployment backend.Deployment
 
-	psh   *transaction.PerunScriptHandler
-	cache StableScriptCache
+	psh     *transaction.PerunScriptHandler
+	cache   StableScriptCache
+	vccache StableScriptCache
 }
 
 func NewClient(rpcClient rpc.Client, signer backend.Signer, deployment backend.Deployment) (*Client, error) {
@@ -95,6 +111,7 @@ func NewClient(rpcClient rpc.Client, signer backend.Signer, deployment backend.D
 		deployment: deployment,
 		psh:        psh,
 		cache:      NewStableScriptCache(),
+		vccache:    NewStableScriptCache(),
 	}, nil
 }
 
@@ -191,6 +208,8 @@ func (c Client) submitTx(ctx context.Context, tx *ckbtransaction.TransactionWith
 
 // submitTxWithArgument submits a transaction whose type is determined by the
 // txTypeArgument.
+//
+//nolint:unused
 func (c Client) submitTxWithArgument(ctx context.Context, txTypeArgument ...interface{}) error {
 	b, err := c.newPerunTransactionBuilder(nil)
 	if err != nil {
@@ -270,6 +289,9 @@ func (c Client) Fund(ctx context.Context, pcts *types.Script, state *channel.Sta
 }
 
 func (c Client) Dispute(ctx context.Context, id channel.ID, state *channel.State, sigs []wallet.Sig, params *channel.Params) error {
+	log.Println("Dispute called")
+	var di *transaction.DisputeInfo
+
 	channelCell, status, err := c.getChannelLiveCellWithCache(ctx, id)
 	if err != nil {
 		return fmt.Errorf("getting channel live cell: %w", err)
@@ -282,9 +304,23 @@ func (c Client) Dispute(ctx context.Context, id channel.ID, state *channel.State
 	if len(sigs) != 2 {
 		return fmt.Errorf("expected 2 signatures, got %d", len(sigs))
 	}
-	sigA := encoding.PackSignature(sigs[0])
-	sigB := encoding.PackSignature(sigs[1])
-	di := transaction.NewDisputeInfo(*channelCell.OutPoint, *status, params, header.Hash, channelCell.Output.Type, *sigA, *sigB)
+
+	sigA, err := encoding.NewDEREncodedSignatureFromPadded(sigs[0])
+	if err != nil {
+		return fmt.Errorf("encoding signature A: %w", err)
+	}
+
+	sigB, err := encoding.NewDEREncodedSignatureFromPadded(sigs[1])
+	if err != nil {
+		return fmt.Errorf("encoding signature B: %w", err)
+	}
+
+	if !checkVersion(state, status, nil, nil) {
+		log.Println("Dispute not needed")
+		return nil
+	}
+
+	di = transaction.NewDisputeInfo(*channelCell.OutPoint, *status, state, params, header.Hash, channelCell.Output.Type, *sigA, *sigB)
 
 	builder, err := c.newPerunTransactionBuilder(nil)
 	if err != nil {
@@ -300,7 +336,218 @@ func (c Client) Dispute(ctx context.Context, id channel.ID, state *channel.State
 	return c.submitTx(ctx, tx)
 }
 
+func (c Client) DisputeVC(ctx context.Context, vcID, parentID channel.ID, vcState, parentState *channel.State, vcParams, parentParams *channel.Params, vcSigs, parentSigs []wallet.Sig, indexMap []channel.Index) error {
+	var di *transaction.VcDisputeInfo
+
+	header, err := c.client.GetTipHeader(ctx)
+	if err != nil {
+		return fmt.Errorf("getting tip header: %w", err)
+	}
+
+	if len(vcSigs) != 2 {
+		return fmt.Errorf("expected 2 signatures, got %d", len(vcSigs))
+	}
+	sigA, err := encoding.NewDEREncodedSignatureFromPadded(vcSigs[0])
+	if err != nil {
+		return fmt.Errorf("encoding signature A: %w", err)
+	}
+
+	sigB, err := encoding.NewDEREncodedSignatureFromPadded(vcSigs[1])
+	if err != nil {
+		return fmt.Errorf("encoding signature B: %w", err)
+	}
+
+	if len(parentSigs) != 2 {
+		return fmt.Errorf("expected 2 parent signatures, got %d", len(parentSigs))
+	}
+	parentSigA, err := encoding.NewDEREncodedSignatureFromPadded(parentSigs[0])
+	if err != nil {
+		return fmt.Errorf("encoding signature A: %w", err)
+	}
+
+	parentSigB, err := encoding.NewDEREncodedSignatureFromPadded(parentSigs[1])
+	if err != nil {
+		return fmt.Errorf("encoding signature B: %w", err)
+	}
+
+	vcDispute := encoding.PackVCDispute(sigA, sigB, parentSigA, parentSigB)
+
+	// Get parents' hashes.
+	var parentIDs [2]channel.ID
+	for i := 0; i < 2; i++ {
+		var hash [32]byte
+		startIndex := i * 32
+		endIndex := 32 * (i + 1)
+		copy(hash[:], vcParams.Aux[startIndex:endIndex])
+		parentIDs[i] = hash
+	}
+
+	if parentIDs[0] == parentIDs[1] {
+		return fmt.Errorf("parent channel IDs are the same: %s", parentIDs[0])
+	}
+
+	_, parentHashA, _, _, err := c.GetChannelWithID(ctx, parentIDs[0])
+	if err != nil {
+		return fmt.Errorf("getting parent channel with ID: %w", err)
+	}
+	_, parentHashB, _, _, err := c.GetChannelWithID(ctx, parentIDs[1])
+	if err != nil {
+		return fmt.Errorf("getting parent channel with ID: %w", err)
+	}
+
+	var parentVec molecule.ParentsVec
+	if parentIDs[0] == parentID {
+		parentVecBuilder := molecule.NewParentsVecBuilder()
+		parentVecBuilder.Push(molecule.NewParentDataBuilder().
+			IdxMap(molecule.NewIndexMapBuilder().
+				Nth0(*types.PackByte(byte(indexMap[0]))).
+				Nth1(*types.PackByte(byte(indexMap[1]))).Build()).
+			PctsHash(*molecule2.PackByte32(parentHashA.Hash())).
+			Build())
+		parentVecBuilder.Push(molecule.NewParentDataBuilder().
+			IdxMap(molecule.NewIndexMapBuilder().
+				Nth0(*types.PackByte(byte(indexMap[1]))).
+				Nth1(*types.PackByte(byte(indexMap[0]))).Build()).
+			PctsHash(*molecule2.PackByte32(parentHashB.Hash())).
+			Build())
+		parentVec = parentVecBuilder.Build()
+	} else if parentIDs[1] == parentID {
+		parentVecBuilder := molecule.NewParentsVecBuilder()
+		parentVecBuilder.Push(molecule.NewParentDataBuilder().
+			IdxMap(molecule.NewIndexMapBuilder().
+				Nth0(*types.PackByte(byte(indexMap[1]))).
+				Nth1(*types.PackByte(byte(indexMap[0]))).Build()).
+			PctsHash(*molecule2.PackByte32(parentHashA.Hash())).
+			Build())
+		parentVecBuilder.Push(molecule.NewParentDataBuilder().
+			IdxMap(molecule.NewIndexMapBuilder().
+				Nth0(*types.PackByte(byte(indexMap[0]))).
+				Nth1(*types.PackByte(byte(indexMap[1]))).Build()).
+			PctsHash(*molecule2.PackByte32(parentHashB.Hash())).
+			Build())
+		parentVec = parentVecBuilder.Build()
+	} else {
+		return fmt.Errorf("parent channel ID %s not found in params", parentID)
+	}
+
+	virtualChannelCells, vcStatuses, _ := c.getVirtualChannelLiveCellWithCache(ctx, vcID) // We dont care about the error here.
+
+	if virtualChannelCells == nil {
+		// First VC dispute.
+		parentCell, status, err := c.getChannelLiveCellWithCache(ctx, parentID)
+		if err != nil {
+			return fmt.Errorf("getting channel live cell: %w", err)
+		}
+
+		// Check parent
+		if parentState.Version < molecule2.UnpackUint64(status.State().Version()) {
+			return fmt.Errorf("parent state version is not up to date")
+		}
+
+		signerPub := c.signer.PublicKey()
+		signerParticipant, err := ckbaddress.NewDefaultParticipant(signerPub)
+		if err != nil {
+			return fmt.Errorf("creating default participant: %w", err)
+		}
+
+		di = transaction.NewVCDisputeInfo(
+			parentCell.OutPoint,
+			nil,
+			status,
+			nil,
+			vcState,
+			parentState,
+			vcParams,
+			header.Hash,
+			parentCell.Output.Type,
+			nil,
+			*parentSigA, *parentSigB,
+			&vcDispute,
+			&parentVec,
+			true,
+			signerParticipant,
+		)
+	} else if len(virtualChannelCells) > 1 {
+		occupiedCapacity0 := virtualChannelCells[0].Output.OccupiedCapacity(virtualChannelCells[0].OutputData)
+		occupiedCapacity1 := virtualChannelCells[1].Output.OccupiedCapacity(virtualChannelCells[1].OutputData)
+
+		// Merge two virtual channels into one.
+		mergeVCInfo := transaction.NewVCMergeInfo(
+			virtualChannelCells[0].OutPoint,
+			virtualChannelCells[1].OutPoint,
+			vcStatuses[0],
+			vcStatuses[1],
+			occupiedCapacity0,
+			occupiedCapacity1,
+			virtualChannelCells[0].BlockNumber,
+			virtualChannelCells[1].BlockNumber,
+			header.Hash,
+			virtualChannelCells[0].Output.Type,
+			&vcDispute,
+		)
+		builder, err := c.newPerunTransactionBuilder(nil)
+		if err != nil {
+			return fmt.Errorf("creating Perun transaction builder: %w", err)
+		}
+		if err := builder.MergeVC(mergeVCInfo); err != nil {
+			return fmt.Errorf("creating dispute transaction: %w", err)
+		}
+		tx, err := builder.Build()
+		if err != nil {
+			return fmt.Errorf("building dispute transaction: %w", err)
+		}
+		return c.submitTx(ctx, tx)
+
+	} else { // Dispute Progress or update
+		parentCell, status, err := c.getChannelLiveCellWithCache(ctx, parentID)
+		if err != nil {
+			return fmt.Errorf("getting channel live cell: %w", err)
+		}
+
+		virtualChannelCell := virtualChannelCells[0]
+		vcStatus := vcStatuses[0]
+
+		// Check the states' version to determine if the dispute is needed.
+		if !checkVersion(parentState, status, vcState, vcStatus) {
+			log.Println("Dispute not needed")
+			return nil
+		}
+
+		di = transaction.NewVCDisputeInfo(
+			parentCell.OutPoint,
+			virtualChannelCell.OutPoint,
+			status,
+			vcStatus,
+			vcState,
+			parentState,
+			vcParams,
+			header.Hash,
+			parentCell.Output.Type,
+			virtualChannelCell.Output.Type,
+			*parentSigA, *parentSigB,
+			&vcDispute,
+			&parentVec,
+			false,
+			nil,
+		)
+	}
+
+	builder, err := c.newPerunTransactionBuilder(nil)
+	if err != nil {
+		return fmt.Errorf("creating Perun transaction builder: %w", err)
+	}
+	if err := builder.DisputeVC(di); err != nil {
+		return fmt.Errorf("creating dispute transaction: %w", err)
+	}
+	tx, err := builder.Build()
+	if err != nil {
+		return fmt.Errorf("building dispute transaction: %w", err)
+	}
+	return c.submitTx(ctx, tx)
+}
+
 func (c Client) Close(ctx context.Context, id channel.ID, state *channel.State, sigs []wallet.Sig, params *channel.Params) error {
+	log.Println("Close called")
 	channelCell, _, err := c.getChannelLiveCellWithCache(ctx, id)
 	if err != nil {
 		return fmt.Errorf("getting channel live cell: %w", err)
@@ -372,6 +619,7 @@ func (c Client) getAssets(ctx context.Context, pcts *types.Script) (*indexer.Liv
 }
 
 func (c Client) ForceClose(ctx context.Context, id channel.ID, state *channel.State, params *channel.Params) error {
+	log.Println("ForceClose called")
 	channelCell, _, err := c.getChannelLiveCellWithCache(ctx, id)
 	if err != nil {
 		return fmt.Errorf("getting channel live cell: %w", err)
@@ -385,11 +633,18 @@ func (c Client) ForceClose(ctx context.Context, id channel.ID, state *channel.St
 	if err != nil {
 		return fmt.Errorf("getting tip header: %w", err)
 	}
+
+	oldTx, err := c.client.GetTransaction(ctx, channelCell.OutPoint.TxHash)
+	if err != nil {
+		return fmt.Errorf("getting old transaction: %w", err)
+	}
+	blockHash := oldTx.TxStatus.BlockHash
+
 	occupiedChannelCapacity := channelCell.Output.OccupiedCapacity(channelCell.OutputData)
 	fci := transaction.NewForceCloseInfo(
 		types.CellInput{PreviousOutput: channelCell.OutPoint},
 		mkCellInputs(assets),
-		[]types.Hash{header.Hash},
+		[]types.Hash{*blockHash, header.Hash},
 		state,
 		params,
 		occupiedChannelCapacity,
@@ -405,6 +660,113 @@ func (c Client) ForceClose(ctx context.Context, id channel.ID, state *channel.St
 	tx, err := builder.Build()
 	if err != nil {
 		return fmt.Errorf("building force close transaction: %w", err)
+	}
+	return c.submitTx(ctx, tx)
+}
+
+func (c Client) ForceCloseWithVC(ctx context.Context, id channel.ID, vcid channel.ID, state *channel.State, vcstate *channel.State, sigs []wallet.Sig, vcSigs []wallet.Sig, params *channel.Params, indexMap []channel.Index) error {
+	virtualChannelCells, vcStatuses, err := c.getVirtualChannelLiveCellWithCache(ctx, vcid)
+	if err != nil {
+		return fmt.Errorf("getting virtual channel live cell: %w", err)
+	}
+
+	if len(virtualChannelCells) > 1 {
+		return fmt.Errorf("expected only one virtual channel, got %d", len(virtualChannelCells))
+	}
+
+	virtualChannelCell := virtualChannelCells[0]
+	vcStatus := vcStatuses[0]
+	occupiedVirtualChannelCapacity := virtualChannelCell.Output.OccupiedCapacity(virtualChannelCell.OutputData)
+
+	firstForceClose := encoding.ToBool(*vcStatus.FirstForceClose())
+
+	channelCell, status, err := c.getChannelLiveCellWithCache(ctx, id)
+	if err != nil {
+		return fmt.Errorf("getting channel live cell: %w", err)
+	}
+
+	occupiedChannelCapacity := channelCell.Output.OccupiedCapacity(channelCell.OutputData)
+
+	pcts := channelCell.Output.Type
+	vcts := virtualChannelCell.Output.Type
+	assets, err := c.getAssets(ctx, pcts)
+	if err != nil {
+		return fmt.Errorf("retrieving assets locked in channel: %w", err)
+	}
+
+	sigA, err := encoding.NewDEREncodedSignatureFromPadded(sigs[0])
+	if err != nil {
+		return fmt.Errorf("encoding signature A: %w", err)
+	}
+
+	sigB, err := encoding.NewDEREncodedSignatureFromPadded(sigs[1])
+	if err != nil {
+		return fmt.Errorf("encoding signature B: %w", err)
+	}
+
+	vcSigA, err := encoding.NewDEREncodedSignatureFromPadded(vcSigs[0])
+	if err != nil {
+		return fmt.Errorf("encoding signature A: %w", err)
+	}
+
+	vcSigB, err := encoding.NewDEREncodedSignatureFromPadded(vcSigs[1])
+	if err != nil {
+		return fmt.Errorf("encoding signature B: %w", err)
+	}
+
+	vcDispute := encoding.PackVCDispute(vcSigA, vcSigB, sigA, sigB)
+
+	header, err := c.client.GetTipHeader(ctx)
+	if err != nil {
+		return fmt.Errorf("getting tip header: %w", err)
+	}
+	oldTx, err := c.client.GetTransaction(ctx, channelCell.OutPoint.TxHash)
+	if err != nil {
+		return fmt.Errorf("getting old transaction: %w", err)
+	}
+	blockHash := oldTx.TxStatus.BlockHash
+
+	// Check version.
+	if !checkVersion(state, status, vcstate, vcStatus) {
+		log.Println("ForceCloseWithVC: old versions detected")
+		state, err = updateState(state, status.State())
+		if err != nil {
+			return fmt.Errorf("updating state: %w", err)
+		}
+		vcstate, err = updateState(vcstate, vcStatus.Vcstate())
+		if err != nil {
+			return fmt.Errorf("updating vcstate: %w", err)
+		}
+	}
+	fcvi := transaction.NewForceCloseWithVCInfo(
+		channelCell.OutPoint,
+		virtualChannelCell.OutPoint,
+		vcts,
+		state,
+		vcstate,
+		vcStatus,
+		*sigA, *sigB,
+		&vcDispute,
+		params,
+		[]types.Hash{header.Hash, *blockHash},
+		mkCellInputs(assets),
+		occupiedChannelCapacity,
+		occupiedVirtualChannelCapacity,
+		firstForceClose,
+		indexMap,
+	)
+
+	builder, err := c.newPerunTransactionBuilder(nil)
+	if err != nil {
+		return fmt.Errorf("creating Perun transaction builder: %w", err)
+	}
+
+	if err := builder.ForceCloseWithVC(fcvi); err != nil {
+		return fmt.Errorf("creating close transaction: %w", err)
+	}
+	tx, err := builder.Build()
+	if err != nil {
+		return fmt.Errorf("building close transaction: %w", err)
 	}
 	return c.submitTx(ctx, tx)
 }
@@ -524,6 +886,23 @@ func (c Client) getFirstChannelLiveCellWithID(channels *indexer.LiveCells, id ch
 	return nil, nil, ErrNoChannelLiveCell
 }
 
+func (c Client) getFirstVirtualChannelLiveCellWithID(channels *indexer.LiveCells, id channel.ID) (*indexer.LiveCell, *molecule.VirtualChannelStatus, error) {
+	for _, cell := range channels.Objects {
+		if !c.isValidVirtualChannelLiveCell(cell) {
+			continue
+		}
+		virtualChannelStatus, err := molecule.VirtualChannelStatusFromSlice(cell.OutputData, false)
+		if err != nil {
+			continue
+		}
+		if types.UnpackHash(virtualChannelStatus.Vcstate().ChannelId()) != id {
+			continue
+		}
+		return cell, virtualChannelStatus, nil
+	}
+	return nil, nil, ErrNoChannelLiveCell
+}
+
 func (c Client) getAllChannelLiveCells(ctx context.Context) (*indexer.LiveCells, error) {
 	pctsPrefix := &types.Script{
 		CodeHash: c.deployment.PCTSCodeHash,
@@ -532,6 +911,22 @@ func (c Client) getAllChannelLiveCells(ctx context.Context) (*indexer.LiveCells,
 	}
 	searchKey := &indexer.SearchKey{
 		Script:           pctsPrefix,
+		ScriptType:       types.ScriptTypeType,
+		ScriptSearchMode: types.ScriptSearchModePrefix,
+		Filter:           nil,
+		WithData:         true,
+	}
+	return c.client.GetCells(ctx, searchKey, indexer.SearchOrderDesc, math.MaxUint32, "")
+}
+
+func (c Client) getAllVirtualChannelLiveCells(ctx context.Context) (*indexer.LiveCells, error) {
+	vctsPrefix := &types.Script{
+		CodeHash: c.deployment.VCTSCodeHash,
+		HashType: c.deployment.VCTSHashType,
+		Args:     []byte{},
+	}
+	searchKey := &indexer.SearchKey{
+		Script:           vctsPrefix,
 		ScriptType:       types.ScriptTypeType,
 		ScriptSearchMode: types.ScriptSearchModePrefix,
 		Filter:           nil,
@@ -563,11 +958,44 @@ func (c Client) getExactChannelLiveCell(ctx context.Context, pcts *types.Script)
 	return cells.Objects[0], nil
 }
 
+func (c Client) getExactVirtualChannelLiveCell(ctx context.Context, vcts *types.Script) ([]*indexer.LiveCell, error) {
+	searchKey := &indexer.SearchKey{
+		Script:           vcts,
+		ScriptType:       types.ScriptTypeType,
+		ScriptSearchMode: types.ScriptSearchModeExact,
+		Filter:           nil,
+		WithData:         true,
+	}
+	cells, err := c.client.GetCells(ctx, searchKey, indexer.SearchOrderDesc, math.MaxUint32, "")
+	log.Println("getExactVirtualChannelLiveCell: GetCells")
+	if err != nil {
+		log.Println("getExactVirtualChannelLiveCell: GetCells error: ", err)
+		return nil, err
+	}
+	if len(cells.Objects) > 2 {
+		return nil, errors.New("more than two live cell found for the virtual channel")
+	}
+	if len(cells.Objects) == 0 {
+		return nil, ErrNoChannelLiveCell
+	}
+	return cells.Objects, nil
+}
+
 func (c Client) isValidChannelLiveCell(cell *indexer.LiveCell) bool {
 	if cell.Output == nil ||
 		cell.Output.Type == nil ||
 		cell.Output.Type.CodeHash != c.deployment.PCTSCodeHash ||
 		cell.Output.Type.HashType != c.deployment.PCTSHashType {
+		return false
+	}
+	return true
+}
+
+func (c Client) isValidVirtualChannelLiveCell(cell *indexer.LiveCell) bool {
+	if cell.Output == nil ||
+		cell.Output.Type == nil ||
+		cell.Output.Type.CodeHash != c.deployment.VCTSCodeHash ||
+		cell.Output.Type.HashType != c.deployment.VCTSHashType {
 		return false
 	}
 	return true
@@ -612,4 +1040,111 @@ func (c Client) getChannelLiveCellWithCache(ctx context.Context, id channel.ID) 
 		return c.getChannelLiveCellWithCache(ctx, id)
 	}
 	return cell, status, err
+}
+
+func (c Client) getVirtualChannelLiveCellWithCache(ctx context.Context, id channel.ID) ([]*indexer.LiveCell, []*molecule.VirtualChannelStatus, error) {
+	script, cached := c.vccache.Get(id)
+	log.Println("getVirtualChannelLiveCellWithCache: cached?", cached)
+	if cached {
+		cells, err := c.getExactVirtualChannelLiveCell(ctx, script)
+		if err != nil {
+			return nil, nil, err
+		}
+		statuses := make([]*molecule.VirtualChannelStatus, len(cells))
+		for i, cell := range cells {
+			status, err := molecule.VirtualChannelStatusFromSlice(cell.OutputData, false)
+			if err != nil {
+				return nil, nil, fmt.Errorf("converting cell outputdata to VirtualChannelStatus: %w", err)
+			}
+			statuses[i] = status
+		}
+
+		return cells, statuses, nil
+	}
+	liveChannelCells, err := c.getAllVirtualChannelLiveCells(ctx)
+	log.Println("getVirtualChannelLiveCellWithCache: getAllVirtualChannelLiveCells returned error: ", err)
+	if err != nil {
+		return nil, nil, err
+	}
+	cell, status, err := c.getFirstVirtualChannelLiveCellWithID(liveChannelCells, id)
+	if err != nil {
+		return nil, nil, err
+	}
+	errCache := c.vccache.Set(id, cell.Output.Type)
+	if errCache != nil {
+		return c.getVirtualChannelLiveCellWithCache(ctx, id)
+	}
+	return []*indexer.LiveCell{cell}, []*molecule.VirtualChannelStatus{status}, err
+}
+
+func checkVersion(parentState *channel.State, parentStatus *molecule.ChannelStatus, vcState *channel.State, vcStatus *molecule.VirtualChannelStatus) bool {
+	oldParentVersion := molecule2.UnpackUint64(parentStatus.State().Version())
+	newParentVersion := parentState.Version
+
+	if newParentVersion < oldParentVersion {
+		return false
+	}
+
+	if vcState == nil && vcStatus == nil {
+		if newParentVersion == oldParentVersion {
+			return false // No VC state, no VC status, and parent state is not updated.
+		}
+		// No VC state, no VC status, but parent state is updated.
+		return true
+	}
+
+	oldVcVersion := molecule2.UnpackUint64(vcStatus.Vcstate().Version())
+	newVcVersion := vcState.Version
+
+	if newVcVersion < oldVcVersion {
+		return false
+	}
+	if newParentVersion == oldParentVersion && newVcVersion == oldVcVersion {
+		return false
+	}
+	return true
+}
+
+// updateState updates the state with the newest balances to be used for final settlement.
+func updateState(state *channel.State, newState *molecule.ChannelState) (*channel.State, error) {
+	if state.Version < molecule2.UnpackUint64(newState.Version()) {
+		state.Version = molecule2.UnpackUint64(newState.Version())
+	}
+	state.IsFinal = encoding.ToBool(*newState.IsFinal())
+	assetIdx, ok := state.AssetIndex(asset.NewCKBytesAsset())
+	if !ok {
+		return state, errors.New("asset not found")
+	}
+	state.Balances[assetIdx] = []channel.Bal{
+		0: big.NewInt(int64(molecule2.UnpackUint64(newState.Balances().Ckbytes().Nth0()))),
+		1: big.NewInt(int64(molecule2.UnpackUint64(newState.Balances().Ckbytes().Nth1()))),
+	}
+
+	for sudtIndex, pAsset := range state.Assets {
+		a, err := asset.IsCompatibleAsset(pAsset)
+		if err != nil {
+			return nil, err
+		}
+		if a.IsInvalid() {
+			return nil, errors.New("invalid asset")
+		}
+		if a.IsCKBytes {
+			continue
+		} else {
+			_, err := asset.IsSUDTAsset(a)
+			if err != nil {
+				return nil, err
+			}
+
+			newSudtDistribution := newState.Balances().Sudts().Get(0).Distribution()
+			balA := newSudtDistribution.Nth0()
+			balB := newSudtDistribution.Nth1()
+			state.Balances[sudtIndex] = []channel.Bal{
+				0: molecule2.UnpackUint128(balA).Big(),
+				1: molecule2.UnpackUint128(balB).Big(),
+			}
+		}
+	}
+
+	return state, nil
 }

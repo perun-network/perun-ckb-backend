@@ -19,8 +19,9 @@ import (
 var zeroHash types.Hash = types.Hash{}
 
 const (
-	DefaultFeeShannon uint64 = CKBYTE
+	DefaultFeeShannon uint64 = 1 * CKBYTE
 	CKBYTE                   = 1 * 100_000_000
+	MinCKBFeeAmount   uint64 = 1_000
 )
 
 // PerunTransactionBuilder is a transaction builder specifically for Perun
@@ -146,6 +147,23 @@ func (ptb *PerunTransactionBuilder) Fund(fi *FundInfo) error {
 
 func (ptb *PerunTransactionBuilder) Dispute(di *DisputeInfo) error {
 	_, err := ptb.psh.buildDisputeTransaction(ptb, nil, di)
+
+	return err
+}
+
+func (ptb *PerunTransactionBuilder) DisputeVC(di *VcDisputeInfo) error {
+	var err error
+	if di.first {
+		_, err = ptb.psh.buildFirstVCDisputeTransaction(ptb, nil, di)
+	} else {
+		_, err = ptb.psh.buildVCDisputeProgressTransaction(ptb, nil, di)
+	}
+	return err
+}
+
+func (ptb *PerunTransactionBuilder) MergeVC(vmi *VcMergeInfo) error {
+	var err error
+	_, err = ptb.psh.buildVCMergeTransaction(ptb, nil, vmi)
 	return err
 }
 
@@ -156,6 +174,24 @@ func (ptb *PerunTransactionBuilder) Close(ci *CloseInfo) error {
 
 func (ptb *PerunTransactionBuilder) ForceClose(fci *ForceCloseInfo) error {
 	_, err := ptb.psh.buildForceCloseTransaction(ptb, nil, fci)
+	return err
+}
+
+func (ptb *PerunTransactionBuilder) ForceCloseWithVC(fcvi *ForceCloseWithVCInfo) error {
+	var err error
+	if !fcvi.firstForceClose {
+		_, err = ptb.psh.buildFirstForceCloseWithVCTransaction(ptb, nil, fcvi)
+	} else {
+		minInput, _, err := ptb.prepareMinCKBInput()
+		if err != nil {
+			return fmt.Errorf("preparing min CKB input: %w", err)
+		}
+		fcvi.MinCKBInput = minInput
+		_, err = ptb.psh.buildSecondForceCloseWithVCTransaction(ptb, nil, fcvi)
+		if err != nil {
+			return fmt.Errorf("building second force close with VC transaction: %w", err)
+		}
+	}
 	return err
 }
 
@@ -251,14 +287,14 @@ func (ptb *PerunTransactionBuilder) copyValidScriptGroups() []*ckbtransaction.Sc
 func (ptb *PerunTransactionBuilder) initializeScriptGroups() error {
 	// Create all script groups that are required by the outputs specified by the
 	// user of this transaction.
-	for idx, output := range ptb.SimpleTransactionBuilder.Outputs {
+	for idx, output := range ptb.Outputs {
 		ptb.initializeScript(output.Lock, types.ScriptTypeLock, idx, outputDir)
 		ptb.initializeScript(output.Type, types.ScriptTypeType, idx, outputDir)
 	}
 
 	// Create all script groups that are required by the inputs specified by the
 	// user of this transaction.
-	for idx, input := range ptb.SimpleTransactionBuilder.Inputs {
+	for idx, input := range ptb.Inputs {
 		inputCell, err := ptb.cl.GetLiveCell(context.Background(), input.PreviousOutput, false)
 		if err != nil {
 			return fmt.Errorf("getting live cell when resolving script groups: %w", err)
@@ -317,7 +353,7 @@ func (ptb *PerunTransactionBuilder) AddScriptGroup(group *ckbtransaction.ScriptG
 func (ptb *PerunTransactionBuilder) processOutputs(contexts ...interface{}) error {
 	groups := ptb.getScriptGroups()
 
-	for _, output := range ptb.SimpleTransactionBuilder.Outputs {
+	for _, output := range ptb.Outputs {
 		// Only process type scripts, because lock scripts are not evaluated in
 		// their outputs.
 		if err := ptb.processOutputTypeScript(output, groups, contexts...); err != nil {
@@ -414,7 +450,7 @@ func (ptb *PerunTransactionBuilder) processInputs(contexts ...interface{}) error
 	groups := ptb.getScriptGroups()
 	// Go over all inputs of the Perun transaction and call the contexts with
 	// the appropriate script groups.
-	for _, input := range ptb.SimpleTransactionBuilder.Inputs {
+	for _, input := range ptb.Inputs {
 		if err := ptb.processInputLockScript(input, groups, contexts...); err != nil {
 			return fmt.Errorf("processing input lock script: %w", err)
 		}
@@ -441,7 +477,9 @@ func (ptb *PerunTransactionBuilder) balanceTransaction() error {
 
 	// We know the required funding, now we need to check and see what is already
 	// provided.
-	ptb.accumulateInputs(alreadyProvidedFunding)
+	if err := ptb.accumulateInputs(alreadyProvidedFunding); err != nil {
+		return fmt.Errorf("accumulating inputs: %w", err)
+	}
 
 	if alreadyProvidedFunding.EqualAssets(*requiredFunding) {
 		// Everything is in order, the user built a transaction that is already
@@ -494,8 +532,8 @@ func (ptb *PerunTransactionBuilder) balanceTransaction() error {
 }
 
 func (ptb *PerunTransactionBuilder) accumulateOutputs(requiredFunding *AssetInformation) {
-	outputs := ptb.SimpleTransactionBuilder.Outputs
-	outputData := ptb.SimpleTransactionBuilder.OutputsData
+	outputs := ptb.Outputs
+	outputData := ptb.OutputsData
 	for idx, outputCell := range outputs {
 		outputData := outputData[idx]
 		requiredFunding.AddValuesFromOutput(outputCell, outputData)
@@ -503,7 +541,7 @@ func (ptb *PerunTransactionBuilder) accumulateOutputs(requiredFunding *AssetInfo
 }
 
 func (ptb *PerunTransactionBuilder) accumulateInputs(providedFunding *AssetInformation) error {
-	for _, input := range ptb.SimpleTransactionBuilder.Inputs {
+	for _, input := range ptb.Inputs {
 		inputCell, inputCellData, err := ptb.resolveInputCell(input)
 		if err != nil {
 			return fmt.Errorf("resolving input cell: %w", err)
@@ -529,7 +567,7 @@ func (ptb *PerunTransactionBuilder) addOrUpdateCKBChangeCell(amount uint64) erro
 	if idx != -1 {
 		// We already added the change cell to the script group, just update the
 		// cell capacity.
-		ptb.SimpleTransactionBuilder.Outputs[idx].Capacity = amount
+		ptb.Outputs[idx].Capacity = amount
 		return nil
 	}
 
@@ -538,13 +576,13 @@ func (ptb *PerunTransactionBuilder) addOrUpdateCKBChangeCell(amount uint64) erro
 		Lock:     ptb.defaultLockScript(),
 		Type:     nil,
 	}
-	ptb.SimpleTransactionBuilder.Outputs = append(ptb.SimpleTransactionBuilder.Outputs, outputCell)
-	ptb.SimpleTransactionBuilder.OutputsData = append(ptb.SimpleTransactionBuilder.OutputsData, []byte{})
+	ptb.Outputs = append(ptb.Outputs, outputCell)
+	ptb.OutputsData = append(ptb.OutputsData, []byte{})
 
-	ptb.ckbChangeCellIndex = len(ptb.SimpleTransactionBuilder.Outputs) - 1
+	ptb.ckbChangeCellIndex = len(ptb.Outputs) - 1
 
 	lockScriptGroup, _ := ptb.scriptGroupsForHash(zeroHash)
-	appendOutputToGroups(lockScriptGroup, nil, uint32(len(ptb.SimpleTransactionBuilder.Outputs)-1))
+	appendOutputToGroups(lockScriptGroup, nil, uint32(len(ptb.Outputs)-1))
 
 	return nil
 }
@@ -560,7 +598,7 @@ func (ptb *PerunTransactionBuilder) addOrUpdateUDTChangeCell(assetHash types.Has
 	if idx != -1 {
 		// We already constructed and added the udt change cell to its script
 		// group, only the change amount has to be adjusted.
-		ptb.SimpleTransactionBuilder.OutputsData[idx] = data
+		ptb.OutputsData[idx] = data
 		return nil
 	}
 
@@ -579,10 +617,10 @@ func (ptb *PerunTransactionBuilder) addOrUpdateUDTChangeCell(assetHash types.Has
 	requiredCapacity := ptb.requiredCapacity(assetHash)
 	outputCell.Capacity = requiredCapacity
 
-	ptb.SimpleTransactionBuilder.Outputs = append(ptb.SimpleTransactionBuilder.Outputs, outputCell)
-	ptb.SimpleTransactionBuilder.OutputsData = append(ptb.SimpleTransactionBuilder.OutputsData, data)
+	ptb.Outputs = append(ptb.Outputs, outputCell)
+	ptb.OutputsData = append(ptb.OutputsData, data)
 
-	changeIndex := len(ptb.SimpleTransactionBuilder.Outputs) - 1
+	changeIndex := len(ptb.Outputs) - 1
 	lockScriptGroup, typeScriptGroup := ptb.scriptGroupsForHash(assetHash)
 	appendOutputToGroups(lockScriptGroup, typeScriptGroup, uint32(changeIndex))
 
@@ -722,16 +760,16 @@ func (ptb *PerunTransactionBuilder) addInputsForFunding(iter collector.CellItera
 			return AssetInformation{}, fmt.Errorf("no script group for asset %x", assetHash)
 		}
 
-		ptb.SimpleTransactionBuilder.Inputs = append(ptb.SimpleTransactionBuilder.Inputs, &types.CellInput{
+		ptb.Inputs = append(ptb.Inputs, &types.CellInput{
 			Since:          0,
 			PreviousOutput: input.OutPoint,
 		})
 		fundedAmount.AddValuesFromOutput(input.Output, input.OutputData)
 		// Make sure to add a dummy witness for each input.
-		ptb.SimpleTransactionBuilder.Witnesses = append(ptb.SimpleTransactionBuilder.Witnesses, []byte{})
+		ptb.Witnesses = append(ptb.Witnesses, []byte{})
 
 		// Make sure to update the according script group.
-		appendInputToGroups(lockScriptGroup, typeScriptGroup, uint32(len(ptb.SimpleTransactionBuilder.Inputs)-1))
+		appendInputToGroups(lockScriptGroup, typeScriptGroup, uint32(len(ptb.Inputs)-1))
 		if fundedAmount.AssetAmount(assetHash) >= requiredAmount {
 			break
 		}
@@ -875,4 +913,18 @@ func (ptb *PerunTransactionBuilder) defaultLockScript() *types.Script {
 // CKBytes using the default lock-script.
 func (ptb *PerunTransactionBuilder) ckbChangeCellCapacity() uint64 {
 	return ptb.requiredCapacity(zeroHash)
+}
+
+func (ptb *PerunTransactionBuilder) prepareMinCKBInput() (*types.OutPoint, uint64, error) {
+	iterator := ptb.iterators[zeroHash]
+	if iterator == nil {
+		return nil, 0, fmt.Errorf("no iterator for CKB registered")
+	}
+	if !iterator.HasNext() {
+		return nil, 0, fmt.Errorf("no CKB input available")
+	}
+	input := iterator.Next()
+	input.Output.Capacity = MinCKBFeeAmount
+
+	return input.OutPoint, input.Output.Capacity, nil
 }

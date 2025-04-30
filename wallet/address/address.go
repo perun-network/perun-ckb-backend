@@ -210,6 +210,22 @@ func (p *Participant) UnpackOffChainParticipant(op *molecule.OffChainParticipant
 	return nil
 }
 
+func (p *Participant) UnpackOnChainParticipant(op *molecule.Participant) error {
+	key, err := UnpackSEC1EncodedPubKey(op.PubKey())
+	if err != nil {
+		return err
+	}
+
+	script, err := systemscript.Secp256K1Blake160SignhashAllByPublicKey(key.SerializeCompressed())
+	if err != nil {
+		return err
+	}
+	p.PubKey = key
+	p.PaymentScript = script
+	p.UnlockScript = script
+	return nil
+}
+
 // ToCKBAddress allows to convert the given participant to a CKB address which can be used
 // with the CKB SDK. The script is set to the PaymentScript of the participant.
 func (p Participant) ToCKBAddress(network types.Network) address.Address {

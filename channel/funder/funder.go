@@ -82,6 +82,7 @@ polling:
 				return err
 			}
 			if encoding.ToBool(*channelStatus.Funded()) {
+				log.Println("Party B: Channel already funded.")
 				return nil
 			}
 			return f.client.Fund(ctx, script, req.State, req.Params)

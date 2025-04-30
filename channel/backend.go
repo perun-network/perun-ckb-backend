@@ -34,6 +34,10 @@ func (b backend) CalcID(params *channel.Params) (channel.ID, error) {
 	return blake2b.Sum256(cp.AsSlice()), nil
 }
 
+func (b backend) CalcVCID(params *channel.Params) channel.ID {
+	panic("no virtual channels")
+}
+
 func (b backend) Sign(account wallet.Account, state *channel.State) (wallet.Sig, error) {
 	s, err := encoding.PackChannelState(state)
 	if err != nil {

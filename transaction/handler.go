@@ -3,6 +3,7 @@ package transaction
 import (
 	"errors"
 	"fmt"
+	"log"
 
 	"github.com/Pilatuz/bigz/uint128"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/collector"
@@ -14,6 +15,7 @@ import (
 	"perun.network/perun-ckb-backend/backend"
 	"perun.network/perun-ckb-backend/channel/asset"
 	"perun.network/perun-ckb-backend/encoding"
+	molecule2 "perun.network/perun-ckb-backend/encoding/molecule"
 	"perun.network/perun-ckb-backend/wallet/address"
 )
 
@@ -24,6 +26,8 @@ type PerunScriptHandler struct {
 	pctsDep types.CellDep
 	pclsDep types.CellDep
 	pflsDep types.CellDep
+	vclsDep types.CellDep
+	vctsDep types.CellDep
 
 	sudtDeps map[types.Hash]types.CellDep
 
@@ -31,6 +35,10 @@ type PerunScriptHandler struct {
 	pctsHashType    types.ScriptHashType
 	pclsCodeHash    types.Hash
 	pclsHashType    types.ScriptHashType
+	vctsCodeHash    types.Hash
+	vctsHashType    types.ScriptHashType
+	vclsCodeHash    types.Hash
+	vclsHashType    types.ScriptHashType
 	pflsCodeHash    types.Hash
 	pflsHashType    types.ScriptHashType
 	pflsMinCapacity uint64
@@ -46,11 +54,17 @@ func NewPerunScriptHandlerWithDeployment(deployment backend.Deployment) *PerunSc
 		pctsDep:              deployment.PCTSDep,
 		pclsDep:              deployment.PCLSDep,
 		pflsDep:              deployment.PFLSDep,
+		vclsDep:              deployment.VCLSDep,
+		vctsDep:              deployment.VCTSDep,
 		sudtDeps:             deployment.SUDTDeps,
 		pctsCodeHash:         deployment.PCTSCodeHash,
 		pctsHashType:         deployment.PCTSHashType,
 		pclsCodeHash:         deployment.PCLSCodeHash,
 		pclsHashType:         deployment.PCLSHashType,
+		vctsCodeHash:         deployment.VCTSCodeHash,
+		vctsHashType:         deployment.VCTSHashType,
+		vclsCodeHash:         deployment.VCLSCodeHash,
+		vclsHashType:         deployment.VCLSHashType,
 		pflsCodeHash:         deployment.PFLSCodeHash,
 		pflsHashType:         deployment.PFLSHashType,
 		pflsMinCapacity:      deployment.PFLSMinCapacity,
@@ -111,6 +125,7 @@ func (psh *PerunScriptHandler) BuildTransaction(builder collector.TransactionBui
 }
 
 func (psh *PerunScriptHandler) buildOpenTransaction(builder collector.TransactionBuilder, group *transaction.ScriptGroup, openInfo *OpenInfo) (bool, error) {
+	log.Println("buildOpenTransaction")
 	const partyIndex = 0
 	// Add required cell dependencies for Perun scripts.
 	builder.AddCellDep(&psh.defaultLockScriptDep)
@@ -156,6 +171,7 @@ func (psh *PerunScriptHandler) AddSudtCellDeps(builder collector.TransactionBuil
 }
 
 func (psh *PerunScriptHandler) buildCloseTransaction(builder collector.TransactionBuilder, group *transaction.ScriptGroup, closeInfo *CloseInfo) (bool, error) {
+	log.Println("buildCloseTransaction")
 	// TODO: How do we make sure that we unlock the channel?
 
 	builder.AddCellDep(&psh.pctsDep)
@@ -205,6 +221,7 @@ func (psh *PerunScriptHandler) buildCloseTransaction(builder collector.Transacti
 }
 
 func (psh *PerunScriptHandler) buildAbortTransaction(builder collector.TransactionBuilder, group *transaction.ScriptGroup, abortInfo *AbortInfo) (bool, error) {
+	log.Println("buildAbortTransaction")
 	const partyIdx = 0
 	// TODO: How do we make sure that we unlock the channel?
 
@@ -251,6 +268,7 @@ func (psh *PerunScriptHandler) buildAbortTransaction(builder collector.Transacti
 }
 
 func (psh *PerunScriptHandler) buildForceCloseTransaction(builder collector.TransactionBuilder, group *transaction.ScriptGroup, forceCloseInfo *ForceCloseInfo) (bool, error) {
+	log.Println("buildForceCloseTransaction")
 	// TODO: How do we make sure that we unlock the channel?
 
 	builder.AddCellDep(&psh.pctsDep)
@@ -301,6 +319,7 @@ func (psh *PerunScriptHandler) buildForceCloseTransaction(builder collector.Tran
 }
 
 func (psh *PerunScriptHandler) buildFundTransaction(builder collector.TransactionBuilder, group *transaction.ScriptGroup, fundInfo *FundInfo) (bool, error) {
+	log.Println("buildFundTransaction")
 	const partyIndex = 1
 	// Dependencies.
 	builder.AddCellDep(&psh.defaultLockScriptDep)
@@ -328,6 +347,7 @@ func (psh *PerunScriptHandler) buildFundTransaction(builder collector.Transactio
 		Type:     fundInfo.PCTS,
 	}
 	channelCell.Capacity = channelCell.OccupiedCapacity(channelStatus.AsSlice())
+	log.Println("channelCell.Capacity", channelCell.Capacity)
 	builder.AddOutput(&channelCell, channelStatus.AsSlice())
 
 	// Channel funds cell output.
@@ -377,15 +397,361 @@ func (psh *PerunScriptHandler) buildDisputeTransaction(builder collector.Transac
 		Lock:     channelLockScript,
 		Type:     disputeInfo.PCTS,
 	}
+	disputeInfo.update()
 	channelCell.Capacity = channelCell.OccupiedCapacity(disputeInfo.Status.AsSlice())
 	builder.AddOutput(&channelCell, disputeInfo.Status.AsSlice())
 	return true, nil
 }
 
+func (psh *PerunScriptHandler) buildFirstVCDisputeTransaction(builder collector.TransactionBuilder, group *transaction.ScriptGroup, disputeInfo *VcDisputeInfo) (bool, error) {
+	log.Println("buildFirstVCDisputeTransaction")
+	builder.AddCellDep(&psh.pclsDep)
+	builder.AddCellDep(&psh.pctsDep)
+	builder.AddCellDep(&psh.vclsDep)
+	builder.AddCellDep(&psh.vctsDep)
+	builder.AddHeaderDep(disputeInfo.Header)
+
+	// Channel cell input.
+	channelInputIndex := builder.AddInput(&types.CellInput{
+		Since:          0,
+		PreviousOutput: disputeInfo.ChannelCell,
+	})
+	err := builder.SetWitness(uint(channelInputIndex), types.WitnessTypeInputType, psh.mkWitnessVCDispute(disputeInfo.VCDispute))
+	if err != nil {
+		return false, err
+	}
+
+	// Channel cell output.
+	channelLockScript := psh.mkChannelLockScript()
+	channelCell := types.CellOutput{
+		Capacity: 0,
+		Lock:     channelLockScript,
+		Type:     disputeInfo.PCTS,
+	}
+
+	// VC Channel cell output.
+
+	vcLockScript := psh.mkVirtualChannelLockScript()
+	vcTypeScript := psh.mkVirtualChannelTypeScript(disputeInfo.Params, vcLockScript)
+	vcChannelCell, vcChannelData := disputeInfo.mkInitialVirtualChannelCell(*vcLockScript, *vcTypeScript)
+	disputeInfo.update(vcTypeScript)
+	channelCell.Capacity = channelCell.OccupiedCapacity(disputeInfo.LCStatus.AsSlice())
+	log.Println("channelCell.Capacity", channelCell.Capacity)
+	builder.AddOutput(&vcChannelCell, vcChannelData)
+	builder.AddOutput(&channelCell, disputeInfo.LCStatus.AsSlice())
+
+	return true, nil
+}
+
+func (psh *PerunScriptHandler) buildVCDisputeProgressTransaction(builder collector.TransactionBuilder, group *transaction.ScriptGroup, disputeInfo *VcDisputeInfo) (bool, error) {
+	log.Println("buildVCDisputeProgressTransaction")
+	builder.AddCellDep(&psh.pclsDep)
+	builder.AddCellDep(&psh.pctsDep)
+	builder.AddCellDep(&psh.vclsDep)
+	builder.AddCellDep(&psh.vctsDep)
+	builder.AddHeaderDep(disputeInfo.Header)
+
+	// Channel cell input.
+	channelInputIndex := builder.AddInput(&types.CellInput{
+		Since:          0,
+		PreviousOutput: disputeInfo.ChannelCell,
+	})
+	err := builder.SetWitness(uint(channelInputIndex), types.WitnessTypeInputType, psh.mkWitnessDispute(
+		disputeInfo.ParentSigA,
+		disputeInfo.ParentSigB,
+	))
+	if err != nil {
+		return false, err
+	}
+
+	// Virtual Channel cell input.
+	vcInputIndex := builder.AddInput(&types.CellInput{
+		Since:          0,
+		PreviousOutput: disputeInfo.VCCell,
+	})
+	err = builder.SetWitness(uint(vcInputIndex), types.WitnessTypeInputType, psh.mkWitnessDispute(
+		*disputeInfo.VCDispute.SigA(),
+		*disputeInfo.VCDispute.SigB(),
+	))
+	if err != nil {
+		return false, err
+	}
+
+	// Define the channel cell output.
+	channelLockScript := psh.mkChannelLockScript()
+	channelCell := types.CellOutput{
+		Capacity: 0,
+		Lock:     channelLockScript,
+		Type:     disputeInfo.PCTS,
+	}
+	// Set disputed flag to true.
+	disputeInfo.update(disputeInfo.VCTS)
+	channelCell.Capacity = channelCell.OccupiedCapacity(disputeInfo.LCStatus.AsSlice())
+	builder.AddOutput(&channelCell, disputeInfo.LCStatus.AsSlice())
+
+	// Define the virtual channel cell output.
+	vcChannelLockscript := psh.mkVirtualChannelLockScript()
+	vcCell := types.CellOutput{
+		Capacity: 0,
+		Lock:     vcChannelLockscript,
+		Type:     disputeInfo.VCTS,
+	}
+	disputeInfo.updateVCStatus()
+	vcCell.Capacity = vcCell.OccupiedCapacity(disputeInfo.VCStatus.AsSlice())
+	builder.AddOutput(&vcCell, disputeInfo.VCStatus.AsSlice())
+	return true, nil
+}
+
+func (psh *PerunScriptHandler) buildVCMergeTransaction(builder collector.TransactionBuilder, group *transaction.ScriptGroup, disputeInfo *VcMergeInfo) (bool, error) {
+	builder.AddCellDep(&psh.vctsDep)
+	builder.AddCellDep(&psh.vclsDep)
+	builder.AddCellDep(&psh.vctsDep)
+	builder.AddCellDep(&psh.vclsDep)
+	builder.AddHeaderDep(disputeInfo.Header)
+
+	// Inputs
+	vc0InputIndex := builder.AddInput(&types.CellInput{
+		PreviousOutput: &disputeInfo.VCCell0,
+	})
+	err := builder.SetWitness(uint(vc0InputIndex), types.WitnessTypeInputType, psh.mkWitnessVCDispute(disputeInfo.VCDispute))
+	if err != nil {
+		return false, err
+	}
+
+	vc1InputIndex := builder.AddInput(&types.CellInput{
+		PreviousOutput: &disputeInfo.VCCell1,
+	})
+	err = builder.SetWitness(uint(vc1InputIndex), types.WitnessTypeInputType, psh.mkWitnessVCDispute(disputeInfo.VCDispute))
+	if err != nil {
+		return false, err
+	}
+
+	// Choose the virtual channel cell with the lower block number.
+	vcChannelLockscript := psh.mkVirtualChannelLockScript()
+	vcCell := types.CellOutput{
+		Capacity: 0,
+		Lock:     vcChannelLockscript,
+		Type:     disputeInfo.VCTS,
+	}
+	var status molecule.VirtualChannelStatus
+	var occupiedCapacity uint64
+	if disputeInfo.BlockNum0 < disputeInfo.BlockNum1 {
+		vcCell.Capacity = vcCell.OccupiedCapacity(disputeInfo.VCStatus0.AsSlice())
+		builder.AddOutput(&vcCell, disputeInfo.VCStatus0.AsSlice())
+		status = disputeInfo.VCStatus1
+		occupiedCapacity = disputeInfo.OccupiedCapacity1
+	} else {
+		vcCell.Capacity = vcCell.OccupiedCapacity(disputeInfo.VCStatus1.AsSlice())
+		builder.AddOutput(&vcCell, disputeInfo.VCStatus1.AsSlice())
+		status = disputeInfo.VCStatus0
+		occupiedCapacity = disputeInfo.OccupiedCapacity0
+	}
+
+	// Add the occupied capacity of the virtual channel cell the participant, who created the virtual channel.
+	var restoredParticipant address.Participant
+	err = restoredParticipant.UnpackOnChainParticipant(status.Owner())
+	if err != nil {
+		return false, fmt.Errorf("failed to unpack on-chain participant: %w", err)
+	}
+	payoutScript := restoredParticipant.PaymentScript
+	paymentOutput := psh.mkPaymentOutput(payoutScript, occupiedCapacity)
+	builder.AddOutput(paymentOutput, nil)
+	return true, nil
+}
+
+func (psh *PerunScriptHandler) buildFirstForceCloseWithVCTransaction(builder collector.TransactionBuilder, group *transaction.ScriptGroup, forceCloseWithVCInfo *ForceCloseWithVCInfo) (bool, error) {
+	log.Println("buildFirstForceCloseWithVCTransaction")
+	builder.AddCellDep(&psh.pctsDep)
+	builder.AddCellDep(&psh.pclsDep)
+	builder.AddCellDep(&psh.pflsDep)
+	builder.AddCellDep(&psh.vctsDep)
+	builder.AddCellDep(&psh.vclsDep)
+	psh.AddSudtCellDeps(builder)
+	for _, h := range forceCloseWithVCInfo.Headers {
+		builder.AddHeaderDep(h)
+	}
+
+	// Channel cell input.
+	channelInputIndex := builder.AddInput(&types.CellInput{
+		PreviousOutput: &forceCloseWithVCInfo.ChannelCell,
+	})
+	err := builder.SetWitness(uint(channelInputIndex), types.WitnessTypeInputType, psh.mkWitnessForceClose())
+	if err != nil {
+		return false, err
+	}
+
+	// Virtual channel cell input.
+	vcInputIndex := builder.AddInput(&types.CellInput{
+		PreviousOutput: &forceCloseWithVCInfo.VCCell,
+	})
+	err = builder.SetWitness(uint(vcInputIndex), types.WitnessTypeInputType, psh.mkWitnessVCDispute(forceCloseWithVCInfo.VCDispute))
+	if err != nil {
+		return false, err
+	}
+
+	for _, assetInput := range forceCloseWithVCInfo.AssetInputs {
+		builder.AddInput(&assetInput)
+	}
+
+	// Outputs
+	// Add the payment output for each participant.
+	for i, addr := range forceCloseWithVCInfo.Params.Parts {
+		payoutScript := address.AsParticipant(addr).PaymentScript
+		paymentMinCapacity := payoutScript.OccupiedCapacity()
+		// payout ckbytes
+		balance, err := GetCKByteBalance(i, forceCloseWithVCInfo.State)
+		if err != nil {
+			return false, err
+		}
+
+		// Extract payout from virtual channel.
+		vcBalance, err := GetCKByteBalanceFromVirtualChannel(i, forceCloseWithVCInfo.VCState, forceCloseWithVCInfo.IndexMap)
+		if err != nil {
+			return false, err
+		}
+		// Add the payout back to the original balance
+		balance += vcBalance
+
+		// The capacity of the channel's live cell is added to the balance of the first party.
+		if i == 0 {
+			balance += forceCloseWithVCInfo.ChannelCapacity
+		}
+
+		additionalBalance := uint64(0)
+		if balance >= paymentMinCapacity {
+			paymentOutput := psh.mkPaymentOutput(payoutScript, balance)
+			builder.AddOutput(paymentOutput, nil)
+		} else {
+			additionalBalance = balance
+		}
+
+		err = psh.AddAssetsToOutputsWithVirtualChannel(builder, forceCloseWithVCInfo.State, forceCloseWithVCInfo.VCState, i, payoutScript, additionalBalance, forceCloseWithVCInfo.IndexMap)
+		if err != nil {
+			return false, err
+		}
+	}
+
+	// VC Output
+	forceCloseWithVCInfo.updateFirstForceClose()
+	vcChannelLockscript := psh.mkVirtualChannelLockScript()
+	vcCell := types.CellOutput{
+		Capacity: 0,
+		Lock:     vcChannelLockscript,
+		Type:     forceCloseWithVCInfo.VCTS,
+	}
+	vcCell.Capacity = vcCell.OccupiedCapacity(forceCloseWithVCInfo.VCStatus.AsSlice())
+	builder.AddOutput(&vcCell, forceCloseWithVCInfo.VCStatus.AsSlice())
+	return true, nil
+}
+
+func (psh *PerunScriptHandler) buildSecondForceCloseWithVCTransaction(builder collector.TransactionBuilder, group *transaction.ScriptGroup, forceCloseWithVCInfo *ForceCloseWithVCInfo) (bool, error) {
+	log.Println("buildSecondForceCloseWithVCTransaction")
+	builder.AddCellDep(&psh.pctsDep)
+	builder.AddCellDep(&psh.pclsDep)
+	builder.AddCellDep(&psh.pflsDep)
+	builder.AddCellDep(&psh.vctsDep)
+	builder.AddCellDep(&psh.vclsDep)
+	psh.AddSudtCellDeps(builder)
+	for _, h := range forceCloseWithVCInfo.Headers {
+		builder.AddHeaderDep(h)
+	}
+
+	// Channel cell input.
+	channelInputIndex := builder.AddInput(&types.CellInput{
+		PreviousOutput: &forceCloseWithVCInfo.ChannelCell,
+	})
+	err := builder.SetWitness(uint(channelInputIndex), types.WitnessTypeInputType, psh.mkWitnessForceClose())
+	if err != nil {
+		return false, err
+	}
+
+	// Virtual channel cell input.
+	vcInputIndex := builder.AddInput(&types.CellInput{
+		PreviousOutput: &forceCloseWithVCInfo.VCCell,
+	})
+	err = builder.SetWitness(uint(vcInputIndex), types.WitnessTypeInputType, psh.mkWitnessVCDispute(forceCloseWithVCInfo.VCDispute))
+	if err != nil {
+		return false, err
+	}
+
+	for _, assetInput := range forceCloseWithVCInfo.AssetInputs {
+		builder.AddInput(&assetInput)
+	}
+
+	// Forcefully add an input cell to unlock the lock script.
+	builder.AddInput(&types.CellInput{
+		Since:          0,
+		PreviousOutput: forceCloseWithVCInfo.MinCKBInput,
+	})
+
+	// Return the virtual channel cacpacity to its owner.
+	var restoredParticipant address.Participant
+	err = restoredParticipant.UnpackOnChainParticipant(forceCloseWithVCInfo.VCStatus.Owner())
+	if err != nil {
+		return false, fmt.Errorf("failed to unpack on-chain participant: %w", err)
+	}
+	restoredPayoutScript := restoredParticipant.PaymentScript
+	returnedVCBalance := false
+
+	// Outputs
+	// Add the payment output for each participant.
+	for i, addr := range forceCloseWithVCInfo.Params.Parts {
+		payoutScript := address.AsParticipant(addr).PaymentScript
+		paymentMinCapacity := payoutScript.OccupiedCapacity()
+		// payout ckbytes
+		balance, err := GetCKByteBalance(i, forceCloseWithVCInfo.State)
+		if err != nil {
+			return false, err
+		}
+		// Extract payout from virtual channel.
+		vcBalance, err := GetCKByteBalanceFromVirtualChannel(i, forceCloseWithVCInfo.VCState, forceCloseWithVCInfo.IndexMap)
+		if err != nil {
+			return false, err
+		}
+		// Add the payout back to the original balance
+		balance += vcBalance
+
+		// The capacity of the channel's live cell is added to the balance of the first party.
+		if i == 0 {
+			balance += forceCloseWithVCInfo.ChannelCapacity
+		}
+
+		if restoredPayoutScript.Equals(payoutScript) {
+			// The restored participant receives the virtual channel capacity.
+			balance += forceCloseWithVCInfo.VirtualChannelCapacity
+			returnedVCBalance = true
+		}
+
+		additionalBalance := uint64(0)
+		if balance >= paymentMinCapacity {
+			paymentOutput := psh.mkPaymentOutput(payoutScript, balance)
+			builder.AddOutput(paymentOutput, nil)
+		} else {
+			additionalBalance = balance
+		}
+
+		err = psh.AddAssetsToOutputsWithVirtualChannel(builder, forceCloseWithVCInfo.State, forceCloseWithVCInfo.VCState, i, payoutScript, additionalBalance, forceCloseWithVCInfo.IndexMap)
+		if err != nil {
+			return false, err
+		}
+	}
+	if !returnedVCBalance {
+		log.Println("restoredPayoutScript not equals payoutScript")
+		paymentOutput := psh.mkPaymentOutput(restoredPayoutScript, forceCloseWithVCInfo.VirtualChannelCapacity)
+		builder.AddOutput(paymentOutput, nil)
+	}
+	return true, nil
+}
+
 func (psh PerunScriptHandler) mkWitnessDispute(sigA, sigB molecule.Bytes) []byte {
 	disputeRedeemer := molecule.NewDisputeBuilder().SigA(sigA).SigB(sigB).Build()
-	witness := molecule.ChannelWitnessUnionFromDispute(disputeRedeemer)
+	witness := molecule.NewChannelWitnessBuilder().Set(molecule.ChannelWitnessUnionFromDispute(disputeRedeemer)).Build()
 	return witness.AsSlice()
+}
+
+func (psh PerunScriptHandler) mkWitnessVCDispute(vcDispute *molecule.VCDispute) []byte {
+	w := molecule.NewChannelWitnessBuilder().Set(molecule.ChannelWitnessUnionFromVCDispute(*vcDispute)).Build()
+	return w.AsSlice()
 }
 
 func (psh PerunScriptHandler) mkChannelLockScript() *types.Script {
@@ -395,12 +761,28 @@ func (psh PerunScriptHandler) mkChannelLockScript() *types.Script {
 	}
 }
 
+func (psh PerunScriptHandler) mkVirtualChannelLockScript() *types.Script {
+	return &types.Script{
+		CodeHash: psh.vclsCodeHash,
+		HashType: psh.vclsHashType,
+	}
+}
+
 func (psh PerunScriptHandler) mkChannelTypeScript(params *channel.Params, token molecule.ChannelToken) *types.Script {
 	channelConstants := psh.mkChannelConstants(params, token)
 	return &types.Script{
 		CodeHash: psh.pctsCodeHash,
 		HashType: psh.pctsHashType,
 		Args:     channelConstants.AsSlice(),
+	}
+}
+
+func (psh PerunScriptHandler) mkVirtualChannelTypeScript(params *channel.Params, vcLockScript *types.Script) *types.Script {
+	vcChannelConstants := psh.mkVirtualChannelConstants(params, vcLockScript)
+	return &types.Script{
+		CodeHash: psh.vctsCodeHash,
+		HashType: psh.vctsHashType,
+		Args:     vcChannelConstants.AsSlice(),
 	}
 }
 
@@ -431,6 +813,21 @@ func (psh PerunScriptHandler) mkChannelConstants(params *channel.Params, token m
 		PflsHashType(*pflsHashType).
 		PflsMinCapacity(*types.PackUint64(psh.pflsMinCapacity)).
 		ThreadToken(token).
+		Build()
+}
+
+func (psh PerunScriptHandler) mkVirtualChannelConstants(params *channel.Params, vcLockScript *types.Script) molecule.VCChannelConstants {
+	chanParams, err := encoding.PackChannelParameters(params)
+	if err != nil {
+		panic(err)
+	}
+
+	vclsHashType := psh.vclsHashType.Pack()
+
+	return molecule.NewVCChannelConstantsBuilder().
+		Params(chanParams).
+		VclsCodeHash(*molecule2.PackByte32(vcLockScript.Hash())).
+		VclsHashType(*vclsHashType).
 		Build()
 }
 
@@ -492,6 +889,18 @@ func GetCKByteBalance(index int, state *channel.State) (uint64, error) {
 	return bal.Uint64(), nil
 }
 
+func GetCKByteBalanceFromVirtualChannel(index int, vcstate *channel.State, indexMap []channel.Index) (uint64, error) {
+	assetIdx, ok := vcstate.AssetIndex(asset.NewCKBytesAsset())
+	if !ok {
+		return 0, nil
+	}
+	bal := vcstate.Balances[assetIdx][indexMap[index]]
+	if !bal.IsUint64() {
+		return 0, errors.New("balance is not uint64")
+	}
+	return bal.Uint64(), nil
+}
+
 func (psh PerunScriptHandler) AddAssetsToOutputs(builder collector.TransactionBuilder, state *channel.State, index int, lock *types.Script, additionalBalance uint64) error {
 	sudtBalancesSlice, err := encoding.GetSUDTBalancesSlice(state)
 	if err != nil {
@@ -511,6 +920,75 @@ func (psh PerunScriptHandler) AddAssetsToOutputs(builder collector.TransactionBu
 			builder.AddOutput(paymentOutput, data)
 		}
 
+	}
+	return nil
+}
+
+func (psh PerunScriptHandler) AddAssetsToOutputsWithVirtualChannel(
+	builder collector.TransactionBuilder,
+	state *channel.State,
+	vcstate *channel.State,
+	index int,
+	lock *types.Script,
+	additionalBalance uint64,
+	indexMap []channel.Index,
+) error {
+	// Merge SUDT balances from both parent and virtual channel
+	parentBalances, err := encoding.GetSUDTBalancesSlice(state)
+	if err != nil {
+		return err
+	}
+	virtualBalances, err := encoding.GetSUDTBalancesSlice(vcstate)
+	if err != nil {
+		return err
+	}
+
+	// Validate index mapping
+	if index < 0 || index >= len(indexMap) {
+		return errors.New("index out of range in indexMap")
+	}
+	mappedIndex := int(indexMap[index])
+
+	// Assuming parentBalances and virtualBalances are aligned in order of assets
+	for i := 0; i < len(parentBalances); i++ {
+		pb := parentBalances[i]
+
+		var vb asset.SUDTBalances
+		if i < len(virtualBalances) {
+			vb = virtualBalances[i]
+		} else {
+			// No virtual balance entry for this asset
+			vb = asset.SUDTBalances{
+				Asset:        pb.Asset,
+				Distribution: [2]uint128.Uint128{},
+			}
+		}
+
+		// Validate mapped index
+		if mappedIndex < 0 || mappedIndex >= len(pb.Distribution) || mappedIndex >= len(vb.Distribution) {
+			return errors.New("mapped index out of range in asset distribution")
+		}
+
+		// Merge balances from parent and virtual channel
+		total := pb.Distribution[mappedIndex]
+		total = total.Add(vb.Distribution[index])
+
+		if total.IsZero() {
+			paymentOutput := psh.mkPaymentOutput(lock, pb.Asset.MaxCapacity+additionalBalance)
+			additionalBalance = 0
+			builder.AddOutput(paymentOutput, []byte{})
+		} else {
+			// Temporarily inject merged distribution into a synthetic balance
+			merged := asset.SUDTBalances{
+				Asset:        pb.Asset,
+				Distribution: [2]uint128.Uint128{},
+			}
+			merged.Distribution[mappedIndex] = total
+
+			paymentOutput, data := psh.mkAssetOutput(lock, merged, mappedIndex, additionalBalance)
+			additionalBalance = 0
+			builder.AddOutput(paymentOutput, data)
+		}
 	}
 	return nil
 }
