@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log"
 	"math/big"
 	"perun.network/go-perun/wire/perunio"
 
@@ -61,6 +62,11 @@ func (C *NervosAsset) UnmarshalBinary(data []byte) error {
 
 // Equal returns true if the CKBAssets are the same.
 func (C NervosAsset) Equal(asset pchannel.Asset) bool {
+	if nervAsset, ok := asset.(*NervosAsset); ok {
+		log.Println("Nervos Equal", C.Asset, nervAsset.Asset)
+		return C.Asset.Equal(&nervAsset.Asset)
+	}
+	log.Println("Equal", C.Asset, asset)
 	return C.Asset.Equal(asset)
 }
 
@@ -168,22 +174,29 @@ func (a *Asset) UnmarshalBinary(data []byte) error {
 }
 
 func (a Asset) Equal(other pchannel.Asset) bool {
+	var otherAsset Asset
 	o, ok := other.(*Asset)
 	if !ok {
-		return false
+		o, ok := other.(*NervosAsset)
+		if !ok {
+			return false
+		}
+		otherAsset = o.Asset
+	} else {
+		otherAsset = *o
 	}
-	if a.IsCKBytes && o.IsCKBytes {
+	if a.IsCKBytes && otherAsset.IsCKBytes {
 		return true
 	}
-	if a.IsCKBytes || o.IsCKBytes {
+	if a.IsCKBytes || otherAsset.IsCKBytes {
 		return false
 	}
 	// This should not trigger for valid assets, but we add it for nil-safety.
 	// This implies, if an invalid asset is compared to anything, it will return false.
-	if a.SUDT == nil || o.SUDT == nil {
+	if a.SUDT == nil || otherAsset.SUDT == nil {
 		return false
 	}
-	return a.SUDT.Equal(*o.SUDT)
+	return a.SUDT.Equal(*otherAsset.SUDT)
 }
 
 // IsInvalid returns true if the asset is invalid.
@@ -205,11 +218,16 @@ func NewSUDTAsset(sudt *SUDT) *Asset {
 
 // IsCompatibleAsset returns the Asset if the asset is compatible with the CKB backend.
 func IsCompatibleAsset(asset pchannel.Asset) (*Asset, error) {
-	a, ok := asset.(*Asset)
+	a, ok := asset.(*NervosAsset)
 	if !ok {
-		return nil, errors.New("asset is not of type Asset")
+		b, ok := asset.(*Asset)
+		if !ok {
+			return nil, errors.New("asset is not of type Asset")
+		} else {
+			return b, nil
+		}
 	}
-	return a, nil
+	return &a.Asset, nil
 }
 
 // SUDT is the asset type for SUDT tokens.
@@ -258,9 +276,15 @@ func (s SUDT) Equal(other SUDT) bool {
 
 // IsSUDTAsset returns true if the asset is a SUDT asset.
 func IsSUDTAsset(asset pchannel.Asset) (*SUDT, error) {
-	a, ok := asset.(*Asset)
+	var a *Asset
+	na, ok := asset.(*NervosAsset)
 	if !ok {
-		return nil, errors.New("asset is not of type SUDT")
+		a, ok = asset.(*Asset)
+		if !ok {
+			return nil, errors.New("asset is not of type SUDT")
+		}
+	} else {
+		a = &na.Asset
 	}
 	if a.IsCKBytes {
 		return nil, errors.New("asset is not of type SUDT")

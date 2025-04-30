@@ -3,7 +3,6 @@ package wallet
 import (
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
-	"golang.org/x/crypto/blake2b"
 	"perun.network/go-perun/wallet"
 	"perun.network/perun-ckb-backend/wallet/address"
 )
@@ -23,7 +22,7 @@ func (a Account) Address() wallet.Address {
 }
 
 func (a Account) SignData(data []byte) ([]byte, error) {
-	hash := blake2b.Sum256(data)
+	hash := PrefixedHash(data)
 	return PadDEREncodedSignature(ecdsa.Sign(a.key, hash[:]).Serialize())
 }
 
