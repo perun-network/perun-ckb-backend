@@ -13,7 +13,7 @@ MIGRATION="migrations/dev"
 MIGRATION_VC="migrations_vc/dev"
 genesis=$( cat ./accounts/genesis-2.txt | awk '/testnet/ {print$2}' | head -n 1)
 
-if [ -f "$DEPLOYMENT_INFO.json"]; then
+if [ -f "$DEPLOYMENT_INFO.json" ]; then
   rm "$DEPLOYMENT_INFO.json"
 fi
 
