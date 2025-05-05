@@ -33,7 +33,7 @@ type Migration struct {
 	DepGroupRecipes []interface{} `json:"dep_group_recipes"`
 }
 
-func (m Migration) MakeDeployment(systemScripts SystemScripts, sudtOwnerLockArg string) (backend.Deployment, SUDTInfo, error) {
+func (m Migration) MakeDeployment(systemScripts SystemScripts, sudtOwnerLockArg string, vcm Migration) (backend.Deployment, SUDTInfo, error) {
 	sudtInfo, err := m.GetSUDT()
 	if err != nil {
 		return backend.Deployment{}, SUDTInfo{}, err
@@ -52,11 +52,11 @@ func (m Migration) MakeDeployment(systemScripts SystemScripts, sudtOwnerLockArg 
 	}
 
 	// Virtual channel scripts.
-	vcts := m.CellRecipes[4]
+	vcts := vcm.CellRecipes[0]
 	if vcts.Name != "vcts" {
 		return backend.Deployment{}, SUDTInfo{}, fmt.Errorf("fifth cell recipe must be vcts")
 	}
-	vcls := m.CellRecipes[5]
+	vcls := vcm.CellRecipes[1]
 	if vcls.Name != "vcls" {
 		return backend.Deployment{}, SUDTInfo{}, fmt.Errorf("sixth cell recipe must be vcls")
 	}
@@ -74,35 +74,35 @@ func (m Migration) MakeDeployment(systemScripts SystemScripts, sudtOwnerLockArg 
 		PCTSDep: types.CellDep{
 			OutPoint: &types.OutPoint{
 				TxHash: types.HexToHash(pcts.TxHash),
-				Index:  m.CellRecipes[0].Index,
+				Index:  pcts.Index,
 			},
 			DepType: types.DepTypeCode,
 		},
 		PCLSDep: types.CellDep{
 			OutPoint: &types.OutPoint{
 				TxHash: types.HexToHash(pcls.TxHash),
-				Index:  m.CellRecipes[0].Index,
+				Index:  pcls.Index,
 			},
 			DepType: types.DepTypeCode,
 		},
 		VCTSDep: types.CellDep{
 			OutPoint: &types.OutPoint{
 				TxHash: types.HexToHash(vcts.TxHash),
-				Index:  m.CellRecipes[0].Index,
+				Index:  vcts.Index,
 			},
 			DepType: types.DepTypeCode,
 		},
 		VCLSDep: types.CellDep{
 			OutPoint: &types.OutPoint{
 				TxHash: types.HexToHash(vcls.TxHash),
-				Index:  m.CellRecipes[0].Index,
+				Index:  vcls.Index,
 			},
 			DepType: types.DepTypeCode,
 		},
 		PFLSDep: types.CellDep{
 			OutPoint: &types.OutPoint{
 				TxHash: types.HexToHash(pfls.TxHash),
-				Index:  m.CellRecipes[0].Index,
+				Index:  pfls.Index,
 			},
 			DepType: types.DepTypeCode,
 		},
@@ -156,7 +156,7 @@ func (m Migration) GetSUDT() (*SUDTInfo, error) {
 	}, nil
 }
 
-func GetDeployment(migrationDir, systemScriptsDir, sudtOwnerLockArg string) (backend.Deployment, SUDTInfo, error) {
+func GetDeployment(migrationDir, migrationDirVC, systemScriptsDir, sudtOwnerLockArg string) (backend.Deployment, SUDTInfo, error) {
 	dir, err := os.ReadDir(migrationDir)
 	if err != nil {
 		return backend.Deployment{}, SUDTInfo{}, err
@@ -164,6 +164,15 @@ func GetDeployment(migrationDir, systemScriptsDir, sudtOwnerLockArg string) (bac
 	if len(dir) != 1 {
 		return backend.Deployment{}, SUDTInfo{}, fmt.Errorf("migration dir must contain exactly one file")
 	}
+
+	vc_dir, err := os.ReadDir(migrationDirVC)
+	if err != nil {
+		return backend.Deployment{}, SUDTInfo{}, err
+	}
+	if len(vc_dir) != 1 {
+		return backend.Deployment{}, SUDTInfo{}, fmt.Errorf("migration dir must contain exactly one file")
+	}
+
 	migrationName := dir[0].Name()
 	migrationFile, err := os.Open(path.Join(migrationDir, migrationName))
 	defer func() {
@@ -171,10 +180,22 @@ func GetDeployment(migrationDir, systemScriptsDir, sudtOwnerLockArg string) (bac
 			log.Fatalf("failed to close migration file: %v\n", err)
 		}
 	}()
-
 	if err != nil {
 		return backend.Deployment{}, SUDTInfo{}, err
 	}
+
+	vcMigrationName := vc_dir[0].Name()
+	vcMigrationFile, err := os.Open(path.Join(migrationDirVC, vcMigrationName))
+	defer func() {
+		if err := vcMigrationFile.Close(); err != nil {
+			log.Fatalf("failed to close vc migration file: %v\n", err)
+		}
+	}()
+	if err != nil {
+		return backend.Deployment{}, SUDTInfo{}, err
+	}
+
+	// Read and unmarshall migration file
 	migrationData, err := io.ReadAll(migrationFile)
 	if err != nil {
 		return backend.Deployment{}, SUDTInfo{}, err
@@ -185,9 +206,23 @@ func GetDeployment(migrationDir, systemScriptsDir, sudtOwnerLockArg string) (bac
 		return backend.Deployment{}, SUDTInfo{}, err
 	}
 
+	// Read and unmarshall vc migration file
+	vcMigrationData, err := io.ReadAll(vcMigrationFile)
+	if err != nil {
+		return backend.Deployment{}, SUDTInfo{}, err
+	}
+	var vcMigration Migration
+	err = json.Unmarshal(vcMigrationData, &vcMigration)
+	if err != nil {
+		return backend.Deployment{}, SUDTInfo{}, err
+	}
+
+	// Read system scripts
 	ss, err := GetSystemScripts(systemScriptsDir)
 	if err != nil {
 		return backend.Deployment{}, SUDTInfo{}, err
 	}
-	return migration.MakeDeployment(ss, sudtOwnerLockArg)
+	fmt.Printf("Migration: %v\n", migration)
+	fmt.Printf("VC Migration: %v\n", vcMigration)
+	return migration.MakeDeployment(ss, sudtOwnerLockArg, vcMigration)
 }

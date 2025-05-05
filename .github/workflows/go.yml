@@ -40,20 +40,37 @@ jobs:
       with:
           submodules: recursive
           token: ${{ secrets.CI_SECRET }}
-        
+
+    - name: Install contract dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y gcc-riscv64-unknown-elf binutils-riscv64-unknown-elf libc6-dev-riscv64-cross libc6-riscv64-cross linux-libc-dev-riscv64-cross
+        wget https://apt.llvm.org/llvm.sh && chmod +x llvm.sh && sudo ./llvm.sh 18 && rm llvm.sh
+        cargo install cargo-generate
+        rustup target add riscv64imac-unknown-none-elf
+
+    - name: Create Symlink
+      run: sudo ln -s /usr/riscv64-linux-gnu/include/gnu/stubs-lp64d.h /usr/riscv64-linux-gnu/include/gnu/stubs-lp64.h
+
     - name: Start devnet in background
+      env:
+        RUSTFLAGS: "-C linker=rust-lld"
+        CARGO_TARGET_RISCV64IMAC_UNKNOWN_NONE_ELF_LINKER: rust-lld
+        CC_riscv64imac_unknown_none_elf: riscv64-unknown-elf-gcc
+        AR_riscv64imac_unknown_none_elf: riscv64-unknown-elf-ar
+        C_INCLUDE_PATH: /usr/riscv64-linux-gnu/include
+        CFLAGS: "-I/usr/riscv64-linux-gnu/include"
+        TARGET_CFLAGS: "-I/usr/riscv64-linux-gnu/include"
       run: |
           sudo apt-get update
           sudo apt-get install -y jq sed gawk tmux tmuxp expect make
-          curl -LO https://github.com/nervosnetwork/ckb/releases/download/v0.109.0/ckb_v0.109.0_x86_64-unknown-linux-gnu.tar.gz
-          tar -xzf ckb_v0.109.0_x86_64-unknown-linux-gnu.tar.gz
-          sudo cp ckb_v0.109.0_x86_64-unknown-linux-gnu/ckb /usr/local/bin/
+          curl -LO https://github.com/nervosnetwork/ckb/releases/download/v0.201.0/ckb_v0.201.0_x86_64-unknown-linux-gnu.tar.gz
+          tar -xzf ckb_v0.201.0_x86_64-unknown-linux-gnu.tar.gz
+          sudo cp ckb_v0.201.0_x86_64-unknown-linux-gnu/ckb /usr/local/bin/
           curl -LO https://github.com/nervosnetwork/ckb-cli/releases/download/v1.4.0/ckb-cli_v1.4.0_x86_64-unknown-linux-gnu.tar.gz
-          tar -xzf ckb-cli_v1.4.0_x86_64-unknown-linux-gnu.tar.gz
-          sudo cp ckb-cli_v1.4.0_x86_64-unknown-linux-gnu/ckb-cli /usr/local/bin/
-          curl -LO https://github.com/nervosnetwork/capsule/releases/download/v0.9.2/capsule_v0.9.2_x86_64-linux.tar.gz
-          tar -xzf capsule_v0.9.2_x86_64-linux.tar.gz
-          sudo cp capsule_v0.9.2_x86_64-linux/capsule /usr/local/bin/
+          curl -LO https://github.com/nervosnetwork/ckb-cli/releases/download/v1.13.0/ckb-cli_v1.13.0_x86_64-unknown-linux-gnu.tar.gz
+          tar -xzf ckb-cli_v1.13.0_x86_64-unknown-linux-gnu.tar.gz
+          sudo cp ckb-cli_v1.13.0_x86_64-unknown-linux-gnu/ckb-cli /usr/local/bin/
           wget http://archive.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.0g-2ubuntu4_amd64.deb
           sudo dpkg -i libssl1.1_1.1.0g-2ubuntu4_amd64.deb
 
