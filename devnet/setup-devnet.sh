@@ -8,7 +8,7 @@ set -eu
 # registration of two accounts governing the genesis cells.
 
 ACCOUNTS_DIR="accounts"
-PERUN_CONTRACTS_DIR="contracts"
+PERUN_CONTRACTS_DIR="contract"
 
 if [ -d $ACCOUNTS_DIR ]; then
   rm -rf $ACCOUNTS_DIR/*

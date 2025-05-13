@@ -21,13 +21,13 @@ Learn how to use go-perun backends in the documentation of the go-perun core lib
 * `client/`: Client bindings with tests.
 * `wallet/`: Wallet interface implementations.
 * `encoding/`: On/off-chain serialization.
-* `testnet/`: Local testnet deployment.
+* `devnet/`: Local devnet deployment.
 * `transaction`: Contract bindings. 
 
 ## Development
  
 ### Dependencies
-We use various tools to enable a convenient setup for the local development testnet. If you want to use our `setup-devnet.sh` script, make sure the following commandline tools are installed:
+We use various tools to enable a convenient setup for the local development devnet. If you want to use our `setup-devnet.sh` script, make sure the following commandline tools are installed:
 * `jq`:
   - Used to parse and edit some configuration files.
 * `sed` and `awk`:
@@ -54,9 +54,9 @@ cd perun-ckb-backend
 git submodule update --init --recursive
 ```
 
-1. Start the testnet on a separate terminal and wait for 30 seconds for the devnet to start.
+1. Start the devnet on a separate terminal and wait for 30 seconds for the devnet to start.
 ```sh
-cd testnet/devnet
+cd devnet
 
 make dev
 ```

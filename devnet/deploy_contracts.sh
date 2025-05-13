@@ -4,7 +4,7 @@ set -eu
 [ -n "${DEBUG:-}" ] && set -x || true
 
 ACCOUNTS_DIR="accounts"
-PERUN_CONTRACTS_DIR="contracts"
+PERUN_CONTRACTS_DIR="contract"
 SYSTEM_SCRIPTS_DIR="system_scripts"
 DEVNET_DIR="$PWD"
 DEPLOYMENT_INFO="info"
@@ -97,9 +97,9 @@ timestamp=$(date '+%Y-%m-%d-%H%M%S')
 rm ./$DEPLOYMENT_INFO.json
 rm ./$DEPLOYMENT_INFO_VC.json
 
-SUDT_TX_HASH=$(cat ./contracts/migrations/dev/*.json | jq .cell_recipes[0].tx_hash)
-SUDT_TX_INDEX=$(cat ./contracts/migrations/dev/*.json | jq .cell_recipes[0].index)
-SUDT_DATA_HASH=$(cat ./contracts/migrations/dev/*.json | jq .cell_recipes[0].data_hash)
+SUDT_TX_HASH=$(cat ./contract/migrations/dev/*.json | jq .cell_recipes[0].tx_hash)
+SUDT_TX_INDEX=$(cat ./contract/migrations/dev/*.json | jq .cell_recipes[0].index)
+SUDT_DATA_HASH=$(cat ./contract/migrations/dev/*.json | jq .cell_recipes[0].data_hash)
 echo "Fetching genesis cell done."
 # TODO: This only works as long as the tx index is 0-9.
 jq ".items.sudt.script_id.code_hash = $SUDT_DATA_HASH | .items.sudt.cell_dep.out_point.tx_hash = $SUDT_TX_HASH | .items.sudt.cell_dep.out_point.index = \"0x$SUDT_TX_INDEX\"" ./sudt-celldep-template.json > $SYSTEM_SCRIPTS_DIR/sudt-celldep.json

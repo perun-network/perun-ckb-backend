@@ -75,7 +75,7 @@ jobs:
           sudo dpkg -i libssl1.1_1.1.0g-2ubuntu4_amd64.deb
 
           git submodule update --init --recursive
-          cd ./testnet/devnet
+          cd ./devnet
           chmod +x setup-devnet.sh print_accounts.sh deploy_contracts.sh sudt_helper.sh 
           ./setup-devnet.sh
           ckb run > /dev/null 2>&1 &

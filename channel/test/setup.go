@@ -41,7 +41,7 @@ import (
 const (
 	RpcNodeURL = "http://localhost:8114"
 	network    = types.NetworkTest
-	devNetDir  = "../testnet/devnet"
+	devNetDir  = "../devnet"
 )
 
 type Setup struct {
@@ -67,7 +67,7 @@ func NewSetup(t *testing.T, rng *rand.Rand) *Setup {
 	sudtOwnerLockArg, err := parseSUDTOwnerLockArg(devNetDir + "/accounts/sudt-owner-lock-hash.txt")
 	require.NoError(t, err, "error getting SUDT owner lock arg")
 
-	d, sudtInfo, err := GetDeployment(devNetDir+"/contracts/migrations/dev/", devNetDir+"/contracts/migrations_vc/dev/", devNetDir+"/system_scripts", sudtOwnerLockArg)
+	d, sudtInfo, err := GetDeployment(devNetDir+"/contract/migrations/dev/", devNetDir+"/contract/migrations_vc/dev/", devNetDir+"/system_scripts", sudtOwnerLockArg)
 	require.NoError(t, err, "error getting deployment")
 	setup.Deployment = d
 	setup.SUDTInfo = sudtInfo
@@ -112,7 +112,7 @@ func NewVirtualChannelSetup(t *testing.T, rng *rand.Rand) *Setup {
 	sudtOwnerLockArg, err := parseSUDTOwnerLockArg(devNetDir + "/accounts/sudt-owner-lock-hash.txt")
 	require.NoError(t, err, "error getting SUDT owner lock arg")
 
-	d, sudtInfo, err := GetDeployment(devNetDir+"/contracts/migrations/dev/", devNetDir+"/contracts/migrations_vc/dev", devNetDir+"/system_scripts", sudtOwnerLockArg)
+	d, sudtInfo, err := GetDeployment(devNetDir+"/contract/migrations/dev/", devNetDir+"/contract/migrations_vc/dev", devNetDir+"/system_scripts", sudtOwnerLockArg)
 	require.NoError(t, err, "error getting deployment")
 	setup.Deployment = d
 	setup.SUDTInfo = sudtInfo
