@@ -1,3 +1,0 @@
-[submodule "testnet/devnet/contracts"]
-	path = testnet/devnet/contracts
-	url = git@github.com:perun-network/perun-ckb-contract
