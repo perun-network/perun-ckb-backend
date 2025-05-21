@@ -3,6 +3,8 @@ package test
 import (
 	"log"
 	"math/rand"
+	gpwallet "perun.network/go-perun/wallet"
+	wallettest "perun.network/go-perun/wallet/test"
 	"time"
 
 	"github.com/nervosnetwork/ckb-sdk-go/v2/rpc"
@@ -51,12 +53,12 @@ func MakeRoleSetups(rng *rand.Rand, s *test.Setup, names []string) []clienttest.
 
 		setups[i] = clienttest.RoleSetup{
 			Name:        names[i],
-			Identity:    gpwiretest.NewRandomAccount(rng),
+			Identity:    map[gpwallet.BackendID]wire.Account{3: gpwiretest.NewRandomAccount(rng)},
 			Bus:         bus,
 			Funder:      s.Funders[i],
 			Adjudicator: s.Adjs[i],
 			Watcher:     watcher,
-			Wallet:      s.EphemeralWallets[i],
+			Wallet:      map[gpwallet.BackendID]wallettest.Wallet{3: s.EphemeralWallets[i]},
 			Timeout:     DefaultTimeout,
 			// Scaled due to simbackend automining progressing faster than real time.
 			ChallengeDuration: ChallengeDurationBlocks * uint64(time.Second/BlockInterval),

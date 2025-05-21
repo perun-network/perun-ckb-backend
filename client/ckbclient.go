@@ -127,8 +127,10 @@ func (c Client) Start(ctx context.Context, params *channel.Params, state *channe
 	if err != nil {
 		return nil, fmt.Errorf("creating channel token: %w", err)
 	}
+	log.Println("Channel token", channelToken)
 	cid, _ := ckbchannel.Backend.CalcID(params)
 	oi := transaction.NewOpenInfo(cid, channelToken, params, state)
+	log.Println("OpenInfo", oi)
 
 	zeroHash := types.Hash{}
 	builder, err := c.newPerunTransactionBuilder(map[types.Hash]collector.CellIterator{zeroHash: iter})
@@ -142,6 +144,7 @@ func (c Client) Start(ctx context.Context, params *channel.Params, state *channe
 	if err != nil {
 		return nil, fmt.Errorf("building open transaction: %w", err)
 	}
+	log.Println("Open transaction", tx)
 	if err := c.submitTx(ctx, tx); err != nil {
 		return nil, fmt.Errorf("submitting transaction: %w", err)
 	}
@@ -264,6 +267,7 @@ func (c Client) Fund(ctx context.Context, pcts *types.Script, state *channel.Sta
 	if err != nil {
 		return fmt.Errorf("getting channel live cell: %w", err)
 	}
+	log.Println("Channel cell", channelCell)
 	header, err := c.client.GetTipHeader(ctx)
 	if err != nil {
 		return fmt.Errorf("getting tip header: %w", err)
@@ -272,12 +276,16 @@ func (c Client) Fund(ctx context.Context, pcts *types.Script, state *channel.Sta
 	if err != nil {
 		return err
 	}
-
+	log.Println("Channel status", channelStatus)
+	channelCell.OutPoint.Index = 1
 	fi := transaction.NewFundInfo(*channelCell.OutPoint, params, state, pcts, *channelStatus, header.Hash)
+	log.Println("Funding channel", fi, "\n params: ", params, "\n state: ", state)
+	log.Println("Funding Information", fi)
 	builder, err := c.newPerunTransactionBuilder(nil)
 	if err != nil {
 		return fmt.Errorf("creating Perun transaction builder: %w", err)
 	}
+	log.Println("Funding channel builder", builder)
 	if err := builder.Fund(fi); err != nil {
 		return fmt.Errorf("creating fund transaction: %w", err)
 	}
@@ -285,6 +293,7 @@ func (c Client) Fund(ctx context.Context, pcts *types.Script, state *channel.Sta
 	if err != nil {
 		return fmt.Errorf("building fund transaction: %w", err)
 	}
+	log.Println("Fund transaction", tx)
 	return c.submitTx(ctx, tx)
 }
 

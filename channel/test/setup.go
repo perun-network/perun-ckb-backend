@@ -39,9 +39,10 @@ import (
 )
 
 const (
-	RpcNodeURL = "http://localhost:8114"
-	network    = types.NetworkTest
-	devNetDir  = "../testnet/devnet"
+	RpcNodeURL      = "http://localhost:8114"
+	network         = types.NetworkTest
+	devNetDir       = "../devnet"
+	sudtMaxCapacity = 200_00_000_000
 )
 
 type Setup struct {
@@ -50,6 +51,7 @@ type Setup struct {
 	Deployment backend.Deployment
 	SUDTInfo   SUDTInfo
 	Asset      *asset.Asset
+	SudtAsset  *asset.Asset
 
 	WalletAccs       []*wallet.Account
 	AccKeys          []secp256k1.PrivateKey
@@ -73,7 +75,10 @@ func NewSetup(t *testing.T, rng *rand.Rand) *Setup {
 	setup.SUDTInfo = sudtInfo
 
 	setup.Asset = asset.NewCKBytesAsset()
-
+	setup.SudtAsset = &asset.Asset{
+		IsCKBytes: false,
+		SUDT:      asset.NewSUDT(*sudtInfo.Script, uint64(sudtMaxCapacity)),
+	}
 	wallets := make([]*ckbwallettest.TestEphemeralWallet, 2)
 	setup.EphemeralWallets = wallets
 

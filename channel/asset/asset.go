@@ -212,6 +212,11 @@ func NewCKBytesAsset() *Asset {
 	return &Asset{IsCKBytes: true}
 }
 
+func NewCKBytesNervosAsset() *NervosAsset {
+	a := Asset{IsCKBytes: true}
+	return &NervosAsset{Asset: a, id: CCID{uint32(CKBBackendID), ContractLID{"3"}}}
+}
+
 func NewSUDTAsset(sudt *SUDT) *Asset {
 	return &Asset{IsCKBytes: false, SUDT: sudt}
 }

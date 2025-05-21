@@ -26,7 +26,7 @@ import (
 // It creates a payment channel between Alice and Bob, and then performs a series of payments.
 // The test checks if the final balances are as expected and if the channel state is updated correctly.
 // The test also checks if the payment channel is closed correctly.
-func TestPaymentHappy(t *testing.T) {
+func TestMultiPaymentHappy(t *testing.T) {
 	log.Info("Starting happy test")
 	rng := pkgtest.Prng(t)
 
@@ -49,13 +49,16 @@ func TestPaymentHappy(t *testing.T) {
 	execConfig := &clienttest.AliceBobExecConfig{
 		BaseExecConfig: clienttest.MakeBaseExecConfig(
 			[2]map[wallet.BackendID]wire.Address{{3: setup[A].Identity[3].Address()}, {3: setup[B].Identity[3].Address()}},
-			[]channel.Asset{s.Asset},
-			[]wallet.BackendID{3},
-			[][2]*big.Int{{asset.CKByteToShannon(big.NewFloat(100)), asset.CKByteToShannon(big.NewFloat(100))}},
+			[]channel.Asset{s.Asset, s.SudtAsset},
+			[]wallet.BackendID{3, 3},
+			[][2]*big.Int{
+				{asset.CKByteToShannon(big.NewFloat(100)), asset.CKByteToShannon(big.NewFloat(100))},
+				{asset.CKByteToShannon(big.NewFloat(0)), asset.CKByteToShannon(big.NewFloat(0))},
+			},
 			client.WithoutApp(),
 		),
-		NumPayments: [2]int{2, 2},
-		TxAmounts:   [2]*big.Int{asset.CKByteToShannon(big.NewFloat(5)), asset.CKByteToShannon(big.NewFloat(5))},
+		NumPayments: [2]int{1, 1},
+		TxAmounts:   [2]*big.Int{asset.CKByteToShannon(big.NewFloat(3)), asset.CKByteToShannon(big.NewFloat(3))},
 	}
 
 	var wg sync.WaitGroup
@@ -77,19 +80,19 @@ func TestPaymentHappy(t *testing.T) {
 // It creates a payment channel between Alice and Bob, and then disputes the
 // channel state. The test checks if the dispute is resolved correctly and the final balances
 // are as expected.
-func TestPaymentDispute(t *testing.T) {
+func TestMultiPaymentDispute(t *testing.T) {
 	log.Info("Starting payment dispute test")
 	rng := pkgtest.Prng(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), testDuration)
 	defer cancel()
 
-	setup := makePaymentChannelSetup(t, rng)
+	setup := makeMultiPaymentChannelSetup(t, rng)
 	clienttest.TestPaymentChannelDispute(ctx, t, setup)
 	log.Info("Payment dispute test done")
 }
 
-func makePaymentChannelSetup(t *testing.T, rng *rand.Rand) clienttest.PaymentChannelSetup {
+func makeMultiPaymentChannelSetup(t *testing.T, rng *rand.Rand) clienttest.PaymentChannelSetup {
 	t.Helper()
 	name := [2]string{"Alice", "Bob"}
 	setup := btest.NewVirtualChannelSetup(t, rng)

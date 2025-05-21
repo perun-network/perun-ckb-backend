@@ -596,7 +596,7 @@ func (psh *PerunScriptHandler) buildFirstForceCloseWithVCTransaction(builder col
 	// Outputs
 	// Add the payment output for each participant.
 	for i, addr := range forceCloseWithVCInfo.Params.Parts {
-		payoutScript := address.AsParticipant(addr).PaymentScript
+		payoutScript := address.AsParticipant(addr[3]).PaymentScript
 		paymentMinCapacity := payoutScript.OccupiedCapacity()
 		// payout ckbytes
 		balance, err := GetCKByteBalance(i, forceCloseWithVCInfo.State)
@@ -696,7 +696,7 @@ func (psh *PerunScriptHandler) buildSecondForceCloseWithVCTransaction(builder co
 	// Outputs
 	// Add the payment output for each participant.
 	for i, addr := range forceCloseWithVCInfo.Params.Parts {
-		payoutScript := address.AsParticipant(addr).PaymentScript
+		payoutScript := address.AsParticipant(addr[3]).PaymentScript
 		paymentMinCapacity := payoutScript.OccupiedCapacity()
 		// payout ckbytes
 		balance, err := GetCKByteBalance(i, forceCloseWithVCInfo.State)
@@ -878,8 +878,9 @@ func (psh PerunScriptHandler) mkWitnessForceClose() []byte {
 }
 
 func GetCKByteBalance(index int, state *channel.State) (uint64, error) {
-	assetIdx, ok := state.AssetIndex(asset.NewCKBytesAsset())
+	assetIdx, ok := state.AssetIndex(asset.NewCKBytesNervosAsset())
 	if !ok {
+		log.Println("CKBytes asset not found in state", asset.NewCKBytesNervosAsset(), state.Assets)
 		return 0, nil
 	}
 	bal := state.Balances[assetIdx][index]
@@ -890,7 +891,7 @@ func GetCKByteBalance(index int, state *channel.State) (uint64, error) {
 }
 
 func GetCKByteBalanceFromVirtualChannel(index int, vcstate *channel.State, indexMap []channel.Index) (uint64, error) {
-	assetIdx, ok := vcstate.AssetIndex(asset.NewCKBytesAsset())
+	assetIdx, ok := vcstate.AssetIndex(asset.NewCKBytesNervosAsset())
 	if !ok {
 		return 0, nil
 	}
