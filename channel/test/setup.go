@@ -17,6 +17,7 @@ package test
 import (
 	"errors"
 	"fmt"
+	"log"
 	"math/rand"
 	"os"
 	"testing"
@@ -46,12 +47,13 @@ const (
 )
 
 type Setup struct {
-	t          *testing.T
-	Rng        *rand.Rand
-	Deployment backend.Deployment
-	SUDTInfo   SUDTInfo
-	Asset      *asset.Asset
-	SudtAsset  *asset.Asset
+	t            *testing.T
+	Rng          *rand.Rand
+	Deployment   backend.Deployment
+	SUDTInfo     SUDTInfo
+	Asset        *asset.Asset
+	SudtAsset    *asset.Asset
+	Participants []*address.Participant
 
 	WalletAccs       []*wallet.Account
 	AccKeys          []secp256k1.PrivateKey
@@ -82,12 +84,16 @@ func NewSetup(t *testing.T, rng *rand.Rand) *Setup {
 	wallets := make([]*ckbwallettest.TestEphemeralWallet, 2)
 	setup.EphemeralWallets = wallets
 
+	parts := make([]*address.Participant, 2)
 	keyAlice, err := GetKey(devNetDir + "/accounts/alice.pk")
 	require.NoError(t, err, "error getting alice's private key")
 
 	keyBob, err := GetKey(devNetDir + "/accounts/bob.pk")
 	require.NoError(t, err, "error getting bob's private key")
 
+	parts[0], _ = address.NewDefaultParticipant(keyAlice.PubKey())
+	parts[1], _ = address.NewDefaultParticipant(keyBob.PubKey())
+	setup.Participants = parts
 	aliceAccount := wallet.NewAccountFromPrivateKey(keyAlice)
 	bobAccount := wallet.NewAccountFromPrivateKey(keyBob)
 
@@ -182,7 +188,7 @@ func createFundersAndAdjudicators(t *testing.T, accs []*wallet.Account, keys []s
 	for i, acc := range accs {
 		rpcClient, err := rpc.Dial(rpcURL)
 		require.NoError(t, err, "error connecting to ckb node")
-
+		log.Println("Participant: ", address.AsParticipant(acc.Address()).ToCKBAddress(network).Script.Hash())
 		signer := backend.NewSignerInstance(address.AsParticipant(acc.Address()).ToCKBAddress(network), keys[i], network)
 
 		ckbClient, err := client.NewClient(rpcClient, *signer, deployment)

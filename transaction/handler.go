@@ -144,7 +144,7 @@ func (psh *PerunScriptHandler) buildOpenTransaction(builder collector.Transactio
 	if err != nil {
 		return false, err
 	}
-	if balance >= psh.pflsMinCapacity {
+	if balance >= psh.pflsMinCapacity || balance == 0 {
 		paymentOutput := psh.mkPaymentOutput(fundsLockScript, balance)
 		builder.AddOutput(paymentOutput, nil)
 	} else {
@@ -356,7 +356,7 @@ func (psh *PerunScriptHandler) buildFundTransaction(builder collector.Transactio
 	if err != nil {
 		return false, err
 	}
-	if balance >= psh.pflsMinCapacity {
+	if balance >= psh.pflsMinCapacity || balance == 0 {
 		paymentOutput := psh.mkPaymentOutput(fundsLockScript, balance)
 		builder.AddOutput(paymentOutput, nil)
 	} else {
@@ -911,16 +911,9 @@ func (psh PerunScriptHandler) AddAssetsToOutputs(builder collector.TransactionBu
 		if index >= len(sudtBalances.Distribution) || index < 0 {
 			return errors.New("index out of range")
 		}
-		if sudtBalances.Distribution[index].IsZero() {
-			paymentOutput := psh.mkPaymentOutput(lock, sudtBalances.Asset.MaxCapacity+additionalBalance)
-			additionalBalance = 0
-			builder.AddOutput(paymentOutput, []byte{})
-		} else {
-			paymentOutput, data := psh.mkAssetOutput(lock, sudtBalances, index, additionalBalance)
-			additionalBalance = 0
-			builder.AddOutput(paymentOutput, data)
-		}
-
+		paymentOutput, data := psh.mkAssetOutput(lock, sudtBalances, index, additionalBalance)
+		additionalBalance = 0
+		builder.AddOutput(paymentOutput, data)
 	}
 	return nil
 }

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
-	"log"
 	"math/big"
 
 	"github.com/nervosnetwork/ckb-sdk-go/v2/address"
@@ -202,7 +201,6 @@ func (ptb *PerunTransactionBuilder) Build(contexts ...interface{}) (*ckbtransact
 	if err := ptb.initializeScriptGroups(); err != nil {
 		return nil, fmt.Errorf("initializing script groups: %w", err)
 	}
-	log.Println("Initialized groups: ", contexts, ptb.scriptGroups, "\n Map: ", ptb.scriptGroupMap, ptb.Inputs, ptb.Outputs)
 
 	// We balance the transaction in an initial step, because SUDTs required for
 	// funding might not be accounted for in the inputs which might break
@@ -339,7 +337,6 @@ func (ptb *PerunTransactionBuilder) initializeScript(script *types.Script, scrip
 		appendToScriptGroup(ptb.scriptGroups[g], ioIdx, d)
 		return
 	}
-	log.Println("Creating new script group for script:", script.Hash(), script.Args, script.CodeHash)
 	idx := ptb.AddScriptGroup(&ckbtransaction.ScriptGroup{
 		Script:    script,
 		GroupType: scriptType,
@@ -499,12 +496,12 @@ func (ptb *PerunTransactionBuilder) balanceTransaction() error {
 			continue
 		}
 		alreadyProvidedAmount := alreadyProvidedFunding.assetAmounts[assetHash]
-		if alreadyProvidedAmount == requiredAmount {
+		if alreadyProvidedAmount == requiredAmount && requiredAmount > 0 {
 			// The inputs already account for the required amount.
 			continue
 		}
 
-		if alreadyProvidedAmount < requiredAmount {
+		if alreadyProvidedAmount < requiredAmount || requiredAmount == uint64(0) {
 			// We need more inputs to fund the required amount for the given UDT.
 			// This might require a change cell for the UDT modifying the
 			// required amount of CKB capacity.
@@ -706,7 +703,7 @@ func (ptb *PerunTransactionBuilder) addInputsAndChangeForFunding(assetHash types
 	iter := ptb.iterators[assetHash]
 
 	alreadyProvidedAssetAmount := alreadyProvidedFunding.AssetAmount(assetHash)
-	if alreadyProvidedAssetAmount < requestedAmount {
+	if alreadyProvidedAssetAmount < requestedAmount || requestedAmount == uint64(0) {
 		requiredAmount := requestedAmount - alreadyProvidedAssetAmount
 		amountAddedByInputs, err := ptb.addInputsForFunding(iter, assetHash, requiredAmount)
 		if err != nil {

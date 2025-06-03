@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"log"
 	"math/big"
 	"perun.network/go-perun/wire/perunio"
 
@@ -63,10 +62,8 @@ func (C *NervosAsset) UnmarshalBinary(data []byte) error {
 // Equal returns true if the CKBAssets are the same.
 func (C NervosAsset) Equal(asset pchannel.Asset) bool {
 	if nervAsset, ok := asset.(*NervosAsset); ok {
-		log.Println("Nervos Equal", C.Asset, nervAsset.Asset)
 		return C.Asset.Equal(&nervAsset.Asset)
 	}
-	log.Println("Equal", C.Asset, asset)
 	return C.Asset.Equal(asset)
 }
 
