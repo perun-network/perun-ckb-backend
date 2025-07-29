@@ -23,15 +23,21 @@ func GetKey(path string) (*secp256k1.PrivateKey, error) {
 	}
 	lines := strings.Split(string(rawBytes), "\n")
 	if len(lines) == 2 {
-		x := strings.Trim(lines[0], " \n")
-		xBytes, err := hex.DecodeString(x)
+		keyStr := strings.Trim(lines[0], " \n")
+		if strings.HasPrefix(keyStr, "0x") || strings.HasPrefix(keyStr, "0X") {
+			keyStr = keyStr[2:]
+		}
+		xBytes, err := hex.DecodeString(keyStr)
 		if err != nil {
 			return nil, err
 		}
 		return secp256k1.PrivKeyFromBytes(xBytes), nil
 	} else {
-		x := lines[0]
-		xBytes, err := hex.DecodeString(x)
+		keyStr := lines[0]
+		if strings.HasPrefix(keyStr, "0x") || strings.HasPrefix(keyStr, "0X") {
+			keyStr = keyStr[2:]
+		}
+		xBytes, err := hex.DecodeString(keyStr)
 		if err != nil {
 			return nil, err
 		}

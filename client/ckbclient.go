@@ -119,6 +119,7 @@ var _ CKBClient = (*Client)(nil)
 
 func (c Client) Start(ctx context.Context, params *channel.Params, state *channel.State) (*types.Script, error) {
 	// TODO: Override defaulthash logic.
+	log.Println("Starting channel with params: ", params, "and state: ", state)
 	iter, _, err := c.mkMyCKBCellIterator()
 	if err != nil {
 		return nil, fmt.Errorf("creating cell iterator: %w", err)
@@ -129,7 +130,7 @@ func (c Client) Start(ctx context.Context, params *channel.Params, state *channe
 	}
 	cid, _ := ckbchannel.Backend.CalcID(params)
 	oi := transaction.NewOpenInfo(cid, channelToken, params, state)
-
+	log.Println("Open Information: ", oi.ChannelToken.Token, oi.State.Assets[0].Address(), oi.State.Balances)
 	zeroHash := types.Hash{}
 	builder, err := c.newPerunTransactionBuilder(map[types.Hash]collector.CellIterator{zeroHash: iter})
 	if err != nil {
@@ -138,7 +139,7 @@ func (c Client) Start(ctx context.Context, params *channel.Params, state *channe
 	if err := builder.Open(oi); err != nil {
 		return nil, fmt.Errorf("creating open transaction: %w", err)
 	}
-	tx, err := builder.Build()
+	tx, err := builder.Build(c.signer.Contexts())
 	if err != nil {
 		return nil, fmt.Errorf("building open transaction: %w", err)
 	}
@@ -163,7 +164,9 @@ func (c Client) newPerunTransactionBuilder(withIterators map[types.Hash]collecto
 		iters[hash] = iter
 	}
 
-	return transaction.NewPerunTransactionBuilderWithDeployment(c.client, c.deployment, iters, c.signer.Address())
+	omni := c.signer.Address().Script.CodeHash != c.deployment.DefaultLockScript.CodeHash
+	log.Println("Using omni lock script:", omni, "for signer address:", c.signer.Address().Script.CodeHash, "and deployment default lock script:", c.deployment.DefaultLockScript.CodeHash, c.deployment.OmniLockScript.CodeHash)
+	return transaction.NewPerunTransactionBuilderWithDeployment(c.client, c.deployment, iters, c.signer.Address(), omni)
 }
 
 func iteratorsForDeployment(cl rpc.Client, deployment backend.Deployment, sender address.Address) (map[types.Hash]collector.CellIterator, error) {
@@ -203,6 +206,7 @@ func (c Client) submitTx(ctx context.Context, tx *ckbtransaction.TransactionWith
 	if err != nil {
 		return fmt.Errorf("signing transaction: %w", err)
 	}
+	fmt.Println("Submitting transaction with hash:", sTx.Hash, "and version:", sTx.Version, sTx.Witnesses)
 	return c.sendAndAwait(ctx, sTx)
 }
 
@@ -280,7 +284,7 @@ func (c Client) Fund(ctx context.Context, pcts *types.Script, state *channel.Sta
 	if err = builder.Fund(fi); err != nil {
 		return fmt.Errorf("creating fund transaction: %w", err)
 	}
-	tx, err := builder.Build()
+	tx, err := builder.Build(c.signer.Contexts())
 	if err != nil {
 		return fmt.Errorf("building fund transaction: %w", err)
 	}
@@ -328,7 +332,7 @@ func (c Client) Dispute(ctx context.Context, id channel.ID, state *channel.State
 	if err := builder.Dispute(di); err != nil {
 		return fmt.Errorf("creating dispute transaction: %w", err)
 	}
-	tx, err := builder.Build()
+	tx, err := builder.Build(c.signer.Contexts())
 	if err != nil {
 		return fmt.Errorf("building dispute transaction: %w", err)
 	}
@@ -491,7 +495,7 @@ func (c Client) DisputeVC(ctx context.Context, vcID, parentID channel.ID, vcStat
 		if err := builder.MergeVC(mergeVCInfo); err != nil {
 			return fmt.Errorf("creating dispute transaction: %w", err)
 		}
-		tx, err := builder.Build()
+		tx, err := builder.Build(c.signer.Contexts())
 		if err != nil {
 			return fmt.Errorf("building dispute transaction: %w", err)
 		}
@@ -538,7 +542,7 @@ func (c Client) DisputeVC(ctx context.Context, vcID, parentID channel.ID, vcStat
 	if err := builder.DisputeVC(di); err != nil {
 		return fmt.Errorf("creating dispute transaction: %w", err)
 	}
-	tx, err := builder.Build()
+	tx, err := builder.Build(c.signer.Contexts())
 	if err != nil {
 		return fmt.Errorf("building dispute transaction: %w", err)
 	}
@@ -579,7 +583,7 @@ func (c Client) Close(ctx context.Context, id channel.ID, state *channel.State, 
 	if err := builder.Close(ci); err != nil {
 		return fmt.Errorf("creating close transaction: %w", err)
 	}
-	tx, err := builder.Build()
+	tx, err := builder.Build(c.signer.Contexts())
 	if err != nil {
 		return fmt.Errorf("building close transaction: %w", err)
 	}
@@ -656,7 +660,7 @@ func (c Client) ForceClose(ctx context.Context, id channel.ID, state *channel.St
 	if err := builder.ForceClose(fci); err != nil {
 		return fmt.Errorf("creating force close transaction: %w", err)
 	}
-	tx, err := builder.Build()
+	tx, err := builder.Build(c.signer.Contexts())
 	if err != nil {
 		return fmt.Errorf("building force close transaction: %w", err)
 	}
@@ -763,7 +767,7 @@ func (c Client) ForceCloseWithVC(ctx context.Context, id channel.ID, vcid channe
 	if err := builder.ForceCloseWithVC(fcvi); err != nil {
 		return fmt.Errorf("creating close transaction: %w", err)
 	}
-	tx, err := builder.Build()
+	tx, err := builder.Build(c.signer.Contexts())
 	if err != nil {
 		return fmt.Errorf("building close transaction: %w", err)
 	}
@@ -801,7 +805,7 @@ func (c Client) Abort(ctx context.Context, script *types.Script, params *channel
 	if err := builder.Abort(ai); err != nil {
 		return fmt.Errorf("creating abort transaction: %w", err)
 	}
-	tx, err := builder.Build()
+	tx, err := builder.Build(c.signer.Contexts())
 	if err != nil {
 		return fmt.Errorf("building abort transaction: %w", err)
 	}
@@ -825,6 +829,7 @@ const defaultPollingInterval = 2 * time.Second
 // sendAndAwait sends the given transaction and waits for it to be committed
 // on-chain.
 func (c Client) sendAndAwait(ctx context.Context, tx *types.Transaction) error {
+	log.Println("TEST: ", tx.Outputs[1].Lock.CodeHash)
 	txHash, err := c.client.SendTransaction(ctx, tx)
 	if err != nil {
 		return fmt.Errorf("sending transaction: %w", err)

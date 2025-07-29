@@ -3,8 +3,9 @@ package address
 import (
 	"encoding/hex"
 	"errors"
-
+	"fmt"
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/address"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/systemscript"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types"
@@ -52,6 +53,34 @@ func NewDefaultParticipant(pubKey *secp256k1.PublicKey) (*Participant, error) {
 		PaymentScript: script,
 		UnlockScript:  script,
 	}, nil
+}
+
+func NewEthereumParticipantFromPublicKey(key *secp256k1.PublicKey, omniCodeHash types.Hash) (*Participant, [20]byte, error) {
+	var ethAddr [20]byte
+	if omniCodeHash == (types.Hash{}) {
+		return nil, ethAddr, fmt.Errorf("omni-lock code hash must be provided")
+	}
+
+	ecdsaPubKey := key.ToECDSA()
+	pubBytes := crypto.FromECDSAPub(ecdsaPubKey)[1:]
+
+	// Keccak256 hash of pubkey, then take last 20 bytes (Ethereum address)
+	ethAddr = [20]byte(crypto.Keccak256(pubBytes)[12:])
+
+	args := append([]byte{0x12}, ethAddr[:]...)
+	args = append(args, 0x00)
+
+	script := &types.Script{
+		CodeHash: omniCodeHash,
+		HashType: types.HashTypeType, // Omni-lock is typically deployed with `type`
+		Args:     args,
+	}
+
+	return &Participant{
+		PubKey:        key,
+		PaymentScript: script,
+		UnlockScript:  script, // same unless separated
+	}, ethAddr, nil
 }
 
 func NewParticipant(pubKey *secp256k1.PublicKey, paymentScript, unlockScript *types.Script) *Participant {

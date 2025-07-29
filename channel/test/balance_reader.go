@@ -59,10 +59,14 @@ func (br *BalanceReader) Balance(asset perunchannel.Asset) perunchannel.Bal {
 
 	if asset.Equal(ckbasset.NewCKBytesAsset()) {
 		return ckbBalance
-	} else if _, err := ckbasset.IsSUDTAsset(asset); err != nil {
+	} else if _, err := ckbasset.IsSUDTAsset(asset); err == nil {
 		return sudtBalance
 	}
-
+	sudt, err := ckbasset.IsSUDTAsset(asset)
+	if err == nil {
+		panic("unexpected SUDT asset in balance reader")
+	}
+	log.Println("Unknown asset type:", asset, sudt, sudtBalance)
 	panic("unknown asset")
 }
 

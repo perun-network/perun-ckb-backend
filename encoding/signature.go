@@ -21,7 +21,7 @@ func PackSignature(sig gpwallet.Sig) *molecule.Bytes {
 	return types.PackBytes(sig)
 }
 
-// PackVCDispute encodes the signatures needed for a VCDispute into the contracts' witnesses.
+// PackVCDispute encodes the signatures needed for a VCDispute into the contract' witnesses.
 func PackVCDispute(sigA, sigB, parentSigA, parentSigB *molecule.Bytes) molecule.VCDispute {
 	vcdispute := molecule.NewVCDisputeBuilder().
 		SigA(*sigA).

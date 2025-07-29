@@ -26,6 +26,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/nervosnetwork/ckb-sdk-go/v2/rpc"
+	ckbsigner "github.com/nervosnetwork/ckb-sdk-go/v2/transaction/signer"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types"
 
 	"perun.network/go-perun/channel"
@@ -63,15 +64,15 @@ type Setup struct {
 	Adjs    []channel.Adjudicator
 }
 
-func NewSetup(t *testing.T, rng *rand.Rand) *Setup {
+func NewSetup(t *testing.T, rng *rand.Rand, omni bool) *Setup {
 	setup := &Setup{}
 	setup.t = t
 	setup.Rng = rng
 
-	sudtOwnerLockArg, err := parseSUDTOwnerLockArg(devNetDir + "/accounts/sudt-owner-lock-hash.txt")
+	sudtOwnerLockArg, err := ParseSUDTOwnerLockArg(devNetDir + "/accounts/sudt-owner-lock-hash.txt")
 	require.NoError(t, err, "error getting SUDT owner lock arg")
 
-	d, sudtInfo, err := GetDeployment(devNetDir+"/contracts/migrations/dev/", devNetDir+"/system_scripts", sudtOwnerLockArg)
+	d, sudtInfo, err := GetDeployment(devNetDir+"/contract/migrations/dev/", devNetDir+"/contract/migrations_vc/dev/", devNetDir+"/system_scripts", sudtOwnerLockArg)
 	require.NoError(t, err, "error getting deployment")
 	setup.Deployment = d
 	setup.SUDTInfo = sudtInfo
@@ -90,12 +91,30 @@ func NewSetup(t *testing.T, rng *rand.Rand) *Setup {
 
 	keyBob, err := GetKey(devNetDir + "/accounts/bob.pk")
 	require.NoError(t, err, "error getting bob's private key")
-
-	parts[0], _ = address.NewDefaultParticipant(keyAlice.PubKey())
-	parts[1], _ = address.NewDefaultParticipant(keyBob.PubKey())
-	setup.Participants = parts
-	aliceAccount := wallet.NewAccountFromPrivateKey(keyAlice)
-	bobAccount := wallet.NewAccountFromPrivateKey(keyBob)
+	var evmAddresses [][20]byte
+	var aliceAccount, bobAccount *wallet.Account
+	if omni {
+		evmAddresses = make([][20]byte, 2)
+		parts[0], evmAddresses[0], _ = address.NewEthereumParticipantFromPublicKey(keyAlice.PubKey(), d.OmniLockScript.CodeHash)
+		parts[1], evmAddresses[1], _ = address.NewEthereumParticipantFromPublicKey(keyBob.PubKey(), d.OmniLockScript.CodeHash)
+		add0, _ := parts[0].ToCKBAddress(network).EncodeFullBech32m()
+		log.Println("Alice's CKB address: ", add0)
+		add1, _ := parts[1].ToCKBAddress(network).EncodeFullBech32m()
+		log.Println("Bob's CKB address: ", add1)
+		setup.Participants = parts
+		aliceAccount = wallet.NewAccountFromPrivateKey(keyAlice, d.OmniLockScript.CodeHash, false)
+		bobAccount = wallet.NewAccountFromPrivateKey(keyBob, d.OmniLockScript.CodeHash, false)
+	} else {
+		parts[0], _ = address.NewDefaultParticipant(keyAlice.PubKey())
+		parts[1], _ = address.NewDefaultParticipant(keyBob.PubKey())
+		add0, _ := parts[0].ToCKBAddress(network).EncodeFullBech32m()
+		log.Println("Alice's CKB address: ", add0)
+		add1, _ := parts[1].ToCKBAddress(network).EncodeFullBech32m()
+		log.Println("Bob's CKB address: ", add1)
+		setup.Participants = parts
+		aliceAccount = wallet.NewAccountFromPrivateKey(keyAlice, types.Hash{}, true)
+		bobAccount = wallet.NewAccountFromPrivateKey(keyBob, types.Hash{}, true)
+	}
 
 	wallets[0] = ckbwallettest.NewTestEphemeralWallet(aliceAccount)
 	err = wallets[0].AddAccount(aliceAccount)
@@ -108,7 +127,7 @@ func NewSetup(t *testing.T, rng *rand.Rand) *Setup {
 	setup.WalletAccs = []*wallet.Account{aliceAccount, bobAccount}
 	setup.AccKeys = []secp256k1.PrivateKey{*keyAlice, *keyBob}
 
-	funders, adjs := createFundersAndAdjudicators(t, setup.WalletAccs, setup.AccKeys, d, RpcNodeURL)
+	funders, adjs := createFundersAndAdjudicators(t, setup.WalletAccs, setup.AccKeys, d, RpcNodeURL, omni, evmAddresses)
 	setup.Funders = funders
 	setup.Adjs = adjs
 
@@ -120,10 +139,10 @@ func NewVirtualChannelSetup(t *testing.T, rng *rand.Rand) *Setup {
 	setup.t = t
 	setup.Rng = rng
 
-	sudtOwnerLockArg, err := parseSUDTOwnerLockArg(devNetDir + "/accounts/sudt-owner-lock-hash.txt")
+	sudtOwnerLockArg, err := ParseSUDTOwnerLockArg(devNetDir + "/accounts/sudt-owner-lock-hash.txt")
 	require.NoError(t, err, "error getting SUDT owner lock arg")
 
-	d, sudtInfo, err := GetDeployment(devNetDir+"/contracts/migrations/dev/", devNetDir+"/system_scripts", sudtOwnerLockArg)
+	d, sudtInfo, err := GetDeployment(devNetDir+"/contract/migrations/dev/", devNetDir+"/contract/migrations_vc/dev/", devNetDir+"/system_scripts", sudtOwnerLockArg)
 	require.NoError(t, err, "error getting deployment")
 	setup.Deployment = d
 	setup.SUDTInfo = sudtInfo
@@ -142,9 +161,9 @@ func NewVirtualChannelSetup(t *testing.T, rng *rand.Rand) *Setup {
 	keyIngrid, err := GetKey(devNetDir + "/accounts/ingrid.pk")
 	require.NoError(t, err, "error getting ingrid's private key")
 
-	aliceAccount := wallet.NewAccountFromPrivateKey(keyAlice)
-	bobAccount := wallet.NewAccountFromPrivateKey(keyBob)
-	ingridAccount := wallet.NewAccountFromPrivateKey(keyIngrid)
+	aliceAccount := wallet.NewAccountFromPrivateKey(keyAlice, d.OmniLockScript.CodeHash, true)
+	bobAccount := wallet.NewAccountFromPrivateKey(keyBob, d.OmniLockScript.CodeHash, true)
+	ingridAccount := wallet.NewAccountFromPrivateKey(keyIngrid, d.OmniLockScript.CodeHash, true)
 
 	wallets[0] = ckbwallettest.NewTestEphemeralWallet(aliceAccount)
 	err = wallets[0].AddAccount(aliceAccount)
@@ -161,14 +180,14 @@ func NewVirtualChannelSetup(t *testing.T, rng *rand.Rand) *Setup {
 	setup.WalletAccs = []*wallet.Account{aliceAccount, bobAccount, ingridAccount}
 	setup.AccKeys = []secp256k1.PrivateKey{*keyAlice, *keyBob, *keyIngrid}
 
-	funders, adjs := createFundersAndAdjudicators(t, setup.WalletAccs, setup.AccKeys, d, RpcNodeURL)
+	funders, adjs := createFundersAndAdjudicators(t, setup.WalletAccs, setup.AccKeys, d, RpcNodeURL, false, [][20]byte{})
 	setup.Funders = funders
 	setup.Adjs = adjs
 
 	return setup
 }
 
-func parseSUDTOwnerLockArg(pathToSUDTOwnerLockArg string) (string, error) {
+func ParseSUDTOwnerLockArg(pathToSUDTOwnerLockArg string) (string, error) {
 	b, err := os.ReadFile(pathToSUDTOwnerLockArg)
 	if err != nil {
 		return "", fmt.Errorf("reading sudt owner lock arg from file: %w", err)
@@ -180,7 +199,7 @@ func parseSUDTOwnerLockArg(pathToSUDTOwnerLockArg string) (string, error) {
 	return sudtOwnerLockArg, nil
 }
 
-func createFundersAndAdjudicators(t *testing.T, accs []*wallet.Account, keys []secp256k1.PrivateKey, deployment backend.Deployment, rpcURL string) ([]channel.Funder, []channel.Adjudicator) {
+func createFundersAndAdjudicators(t *testing.T, accs []*wallet.Account, keys []secp256k1.PrivateKey, deployment backend.Deployment, rpcURL string, omni bool, evmAddresses [][20]byte) ([]channel.Funder, []channel.Adjudicator) {
 	t.Helper()
 	funders := make([]channel.Funder, len(accs))
 	adjs := make([]channel.Adjudicator, len(accs))
@@ -189,9 +208,18 @@ func createFundersAndAdjudicators(t *testing.T, accs []*wallet.Account, keys []s
 		rpcClient, err := rpc.Dial(rpcURL)
 		require.NoError(t, err, "error connecting to ckb node")
 		log.Println("Participant: ", address.AsParticipant(acc.Address()).ToCKBAddress(network).Script.Hash())
-		signer := backend.NewSignerInstance(address.AsParticipant(acc.Address()).ToCKBAddress(network), keys[i], network)
+		var signer backend.Signer
+		if omni {
+			evmsigner := backend.NewEVMSignerInstance(address.AsParticipant(acc.Address()).ToCKBAddress(network), keys[i], network, evmAddresses[i])
+			txSigner := evmsigner.Signer()
+			txSigner.RegisterLockSigner(deployment.OmniLockScript.CodeHash, &ckbsigner.OmnilockSigner{})
+			signer = evmsigner
 
-		ckbClient, err := client.NewClient(rpcClient, *signer, deployment)
+		} else {
+			signer = backend.NewSignerInstance(address.AsParticipant(acc.Address()).ToCKBAddress(network), keys[i], network)
+		}
+
+		ckbClient, err := client.NewClient(rpcClient, signer, deployment)
 		require.NoError(t, err, "error creating ckb client")
 		funders[i] = funder.NewDefaultFunder(ckbClient, deployment)
 		adjs[i] = adjudicator.NewAdjudicator(ckbClient)

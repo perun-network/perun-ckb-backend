@@ -3,6 +3,7 @@ package client_test
 import (
 	"context"
 	"encoding/hex"
+	"fmt"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/indexer"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types"
 	"github.com/sirupsen/logrus"
@@ -41,32 +42,17 @@ func TestMultiPaymentHappy(t *testing.T) {
 		role [2]clienttest.Executer
 	)
 
-	s := btest.NewSetup(t, rng)
+	s := btest.NewSetup(t, rng, true)
 	setup := ctest.MakeRoleSetups(rng, s, name[:])
 
 	role[A] = clienttest.NewAlice(t, setup[A])
 	role[B] = clienttest.NewBob(t, setup[B])
-	balAlice, err := getBalance(*s.Asset, *s.Participants[0])
-	if err != nil {
-		logrus.Errorf("Failed to get Alice's balance: %v", err)
-		t.FailNow()
-	}
-	balBob, err := getBalance(*s.Asset, *s.Participants[1])
-	if err != nil {
-		logrus.Errorf("Failed to get Bob's balance: %v", err)
-		t.FailNow()
-	}
+	balAlice := setup[A].BalanceReader.Balance(s.Asset)
+	balBob := setup[B].BalanceReader.Balance(s.Asset)
+
 	logrus.Printf("Initial Balances - Alice: %s, Bob: %s", balAlice.String(), balBob.String())
-	balAlice, err = getBalance(*s.SudtAsset, *s.Participants[0])
-	if err != nil {
-		logrus.Errorf("Failed to get Alice's balance: %v", err)
-		t.FailNow()
-	}
-	balBob, err = getBalance(*s.SudtAsset, *s.Participants[1])
-	if err != nil {
-		logrus.Errorf("Failed to get Bob's balance: %v", err)
-		t.FailNow()
-	}
+	balAlice = setup[A].BalanceReader.Balance(s.SudtAsset)
+	balBob = setup[B].BalanceReader.Balance(s.SudtAsset)
 	logrus.Printf("Initial SUDT Balances - Alice: %s, Bob: %s", balAlice.String(), balBob.String())
 	// enable stages synchronization
 	stages := role[A].EnableStages()
@@ -79,7 +65,7 @@ func TestMultiPaymentHappy(t *testing.T) {
 			[]wallet.BackendID{3, 3},
 			[][2]*big.Int{
 				{asset.CKByteToShannon(big.NewFloat(80)), asset.CKByteToShannon(big.NewFloat(100))},
-				{new(big.Int).SetUint64(uint64(1)), new(big.Int).SetUint64(uint64(0))},
+				{new(big.Int).SetUint64(uint64(2)), new(big.Int).SetUint64(uint64(1))},
 			},
 			client.WithoutApp(),
 		),
@@ -98,27 +84,11 @@ func TestMultiPaymentHappy(t *testing.T) {
 	}
 
 	wg.Wait()
-	balAlice, err = getBalance(*s.Asset, *s.Participants[0])
-	if err != nil {
-		logrus.Errorf("Failed to get Alice's balance: %v", err)
-		t.FailNow()
-	}
-	balBob, err = getBalance(*s.Asset, *s.Participants[1])
-	if err != nil {
-		logrus.Errorf("Failed to get Bob's balance: %v", err)
-		t.FailNow()
-	}
+	balAlice = setup[A].BalanceReader.Balance(s.Asset)
+	balBob = setup[B].BalanceReader.Balance(s.Asset)
 	logrus.Printf("Initial Balances - Alice: %s, Bob: %s", balAlice.String(), balBob.String())
-	balAlice, err = getBalance(*s.SudtAsset, *s.Participants[0])
-	if err != nil {
-		logrus.Errorf("Failed to get Alice's balance: %v", err)
-		t.FailNow()
-	}
-	balBob, err = getBalance(*s.SudtAsset, *s.Participants[1])
-	if err != nil {
-		logrus.Errorf("Failed to get Bob's balance: %v", err)
-		t.FailNow()
-	}
+	balAlice = setup[A].BalanceReader.Balance(s.SudtAsset)
+	balBob = setup[B].BalanceReader.Balance(s.SudtAsset)
 	logrus.Printf("Initial SUDT Balances - Alice: %s, Bob: %s", balAlice.String(), balBob.String())
 
 	logrus.Info("Happy test done")
@@ -165,6 +135,7 @@ func makeMultiPaymentChannelSetup(t *testing.T, rng *rand.Rand) clienttest.Payme
 
 func getBalance(asset asset.Asset, participant address.Participant) (*big.Int, error) {
 	ctx := context.Background()
+	fmt.Println("Participant: ", participant.UnlockScript.CodeHash, "hashtype: ", participant.UnlockScript.HashType, "Args: ", participant.UnlockScript.Args)
 	indexerClient, _ := indexer.Dial("http://127.0.0.1:8114")
 	lockScript := &types.Script{
 		CodeHash: participant.UnlockScript.CodeHash, // secp256k1_blake160_sighash_all
@@ -194,13 +165,13 @@ func getBalance(asset asset.Asset, participant address.Participant) (*big.Int, e
 	var balance = big.NewInt(0)
 	cursor := ""
 	outputrange := [2]uint64{1, 129}
-	log.Println("getting sudt balance", asset.SUDT.TypeScript.CodeHash.String(), asset.SUDT.TypeScript.HashType, hex.EncodeToString(asset.SUDT.TypeScript.Args), hex.EncodeToString(lockScript.Args))
+	fmt.Println("getting sudt balance", asset.SUDT.TypeScript.CodeHash.String(), asset.SUDT.TypeScript.HashType, hex.EncodeToString(asset.SUDT.TypeScript.Args), hex.EncodeToString(lockScript.Args))
 	for {
 		resp, err := indexerClient.GetCells(ctx, &indexer.SearchKey{
 			Script: &types.Script{
 				CodeHash: asset.SUDT.TypeScript.CodeHash,
 				HashType: asset.SUDT.TypeScript.HashType,
-				Args:     asset.SUDT.TypeScript.Args, // <- wrong
+				Args:     asset.SUDT.TypeScript.Args,
 			},
 			WithData:   true,
 			ScriptType: types.ScriptTypeType,
@@ -213,7 +184,7 @@ func getBalance(asset asset.Asset, participant address.Participant) (*big.Int, e
 			log.Println("indexer query failed:", err)
 			return balance, err
 		}
-
+		log.Println("Found: ", len(resp.Objects), "cells with cursor:", resp.LastCursor)
 		for i, cell := range resp.Objects {
 			if len(cell.OutputData) < 16 {
 				log.Printf("Skipping cell %d due to short or missing data: %v", i, cell.OutputData)

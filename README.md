@@ -21,13 +21,13 @@ Learn how to use go-perun backends in the documentation of the go-perun core lib
 * `client/`: Client bindings with tests.
 * `wallet/`: Wallet interface implementations.
 * `encoding/`: On/off-chain serialization.
-* `testnet/`: Local testnet deployment.
+* `devnet/`: Local devnet deployment.
 * `transaction`: Contract bindings. 
 
 ## Development
  
 ### Dependencies
-We use various tools to enable a convenient setup for the local development testnet. If you want to use our `setup-devnet.sh` script, make sure the following commandline tools are installed:
+We use various tools to enable a convenient setup for the local development devnet. If you want to use our `setup-devnet.sh` script, make sure the following commandline tools are installed:
 * `jq`:
   - Used to parse and edit some configuration files.
 * `sed` and `awk`:
@@ -38,10 +38,8 @@ We use various tools to enable a convenient setup for the local development test
   - We completely automize the process for test-wallet creation, deploying of contracts etc. To make this work reliably, we use `expect` which allows to describe how a commandline application is fed input.
 * `make`:
   - Not strictly necessary, but it should be available on most systems by default. In case you do not want to install `make` check out the `Makefile` content and issue the command on your own.
-* `ckb` with version `0.109.0` or higher.
-* `ckb-cli` with version `1.4.0` or higher.
-* `capsule` with version `0.9.2`.
-* `docker` and a **running** `dockerd` instance!
+* `ckb` with version `0.201.0` or higher.
+* `ckb-cli` with version `1.13.0` or higher.
 
 ### Build and Test
 
@@ -56,9 +54,9 @@ cd perun-ckb-backend
 git submodule update --init --recursive
 ```
 
-1. Start the testnet on a separate terminal and wait for 30 seconds for the devnet to start.
+1. Start the devnet on a separate terminal and wait for 30 seconds for the devnet to start.
 ```sh
-cd testnet/devnet
+cd devnet
 
 make dev
 ```

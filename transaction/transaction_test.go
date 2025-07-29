@@ -62,7 +62,7 @@ func TestScriptHandler(t *testing.T) {
 		mockIterator.GenerateInput(rng, txtest.WithOutPoint(channelTokenOutpoint))
 		liveCellMap := liveCellMapFromIterators(mockIterator)
 		client := txtest.NewMockClient(txtest.WithMockLiveCells(liveCellMap))
-		b, err := transaction.NewPerunTransactionBuilder(client, iters, make(map[types.Hash]types.Script), psh, senderCkbAddr)
+		b, err := transaction.NewPerunTransactionBuilder(client, iters, make(map[types.Hash]types.Script), psh, senderCkbAddr, false)
 		require.NoError(t, err, "creating perun transaction builder")
 		b.Register(mockHandler)
 		// Open
@@ -115,7 +115,7 @@ func TestScriptHandler(t *testing.T) {
 		mockIterator.GenerateInput(rng, txtest.WithOutPoint(channelTokenOutpoint))
 		liveCellMap := liveCellMapFromIterators(mockIterator, sudtMockIterator)
 		client := txtest.NewMockClient(txtest.WithMockLiveCells(liveCellMap))
-		b, err := transaction.NewPerunTransactionBuilder(client, iters, map[types.Hash]types.Script{sudtTypeScript.Hash(): *sudtTypeScript}, psh, senderCkbAddr)
+		b, err := transaction.NewPerunTransactionBuilder(client, iters, map[types.Hash]types.Script{sudtTypeScript.Hash(): *sudtTypeScript}, psh, senderCkbAddr, false)
 		require.NoError(t, err, "creating perun transaction builder")
 		b.Register(mockHandler)
 		maxSUDTCellCapacity := transaction.CalculateCellCapacity(types.CellOutput{
@@ -178,7 +178,7 @@ func TestScriptHandler(t *testing.T) {
 		mockIterator.GenerateInput(rng, txtest.WithOutPoint(channelTokenOutpoint))
 		liveCellMap := liveCellMapFromIterators(mockIterator, sudtMockIterator)
 		client := txtest.NewMockClient(txtest.WithMockLiveCells(liveCellMap))
-		b, err := transaction.NewPerunTransactionBuilder(client, iters, map[types.Hash]types.Script{sudtTypeScript.Hash(): *sudtTypeScript}, psh, senderCkbAddr)
+		b, err := transaction.NewPerunTransactionBuilder(client, iters, map[types.Hash]types.Script{sudtTypeScript.Hash(): *sudtTypeScript}, psh, senderCkbAddr, false)
 		require.NoError(t, err, "creating perun transaction builder")
 		b.Register(mockHandler)
 		maxSUDTCellCapacity := transaction.CalculateCellCapacity(types.CellOutput{

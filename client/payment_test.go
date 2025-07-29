@@ -36,7 +36,7 @@ func TestPaymentHappy(t *testing.T) {
 		role [2]clienttest.Executer
 	)
 
-	s := btest.NewSetup(t, rng)
+	s := btest.NewSetup(t, rng, false)
 	setup := ctest.MakeRoleSetups(rng, s, name[:])
 
 	role[A] = clienttest.NewAlice(t, setup[A])

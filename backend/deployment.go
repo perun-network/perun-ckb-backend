@@ -30,6 +30,8 @@ type Deployment struct {
 
 	DefaultLockScript    types.Script         `json:"default_lock_script"`
 	DefaultLockScriptDep types.CellDep        `json:"default_lock_script_dep"`
+	OmniLockScript       types.Script         `json:"omni_lock_script"`
+	OmniLockScriptDep    []types.CellDep      `json:"omni_lock_script_dep"`
 	VCTSCodeHash         types.Hash           `json:"vcts_code_hash"`
 	VCTSHashType         types.ScriptHashType `json:"vcts_hash_type"`
 
