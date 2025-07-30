@@ -324,7 +324,6 @@ func (ptb *PerunTransactionBuilder) InitializeScriptGroups() error {
 	// Create all script groups that are required by the inputs specified by the
 	// user of this transaction.
 	for idx, input := range ptb.Inputs {
-		log.Println("Processing input", idx, "with previous output", input.PreviousOutput)
 		inputCell, err := ptb.cl.GetLiveCell(context.Background(), input.PreviousOutput, false)
 		if err != nil {
 			return fmt.Errorf("getting live cell when resolving script groups: %w", err)
@@ -895,10 +894,8 @@ func (ptb *PerunTransactionBuilder) callHandlers(group *ckbtransaction.ScriptGro
 		// Skip if there is no type script which has to be handled.
 		return nil
 	}
-	log.Println("Calling handlers for script group", group.GroupType, "with script", group.Script.Hash(), "and contexts", contexts, ptb.ScriptHandlers)
 	for _, handler := range ptb.ScriptHandlers {
 		for _, ctx := range contexts {
-			log.Println("Building transaction with handler", handler, "for script group", group.GroupType, "script", group.Script.Hash(), "and context", ctx)
 			if _, err := handler.BuildTransaction(ptb, group, ctx); err != nil {
 				return fmt.Errorf("building transaction with handler for %s script %x: %w",
 					group.GroupType, group.Script.Hash(), err)
@@ -913,7 +910,6 @@ func (ptb *PerunTransactionBuilder) processInputLockScript(input *types.CellInpu
 	if err != nil {
 		return fmt.Errorf("resolving input cell: %w", err)
 	}
-	log.Println("Processing input lock script for cell", input.PreviousOutput, "with lock script", cell.Cell.Output.Lock.CodeHash, cell.Cell.Output.Lock.Hash())
 	return ptb.processLockScript(cell.Cell.Output, groups, contexts...)
 }
 

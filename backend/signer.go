@@ -46,22 +46,7 @@ func NewSignerInstance(addr address.Address, key secp256k1.PrivateKey, network t
 }
 
 func (s LocalSigner) SignTransaction(tx *transaction.TransactionWithScriptGroups) (*types.Transaction, error) {
-	log.Println("Signing transaction with local signer...", tx)
-	for g := range tx.TxView.Witnesses {
-		log.Println("Script group: ", g, tx.TxView.Witnesses[g])
-	}
-	for input := range tx.TxView.Inputs {
-		log.Println("Input: ", input, tx.TxView.Inputs[input].PreviousOutput.TxHash)
-	}
-	for output := range tx.TxView.Outputs {
-		log.Println("Output: ", output, tx.TxView.Outputs[output].Capacity, tx.TxView.Outputs[output].Type, tx.TxView.Outputs[output].Lock)
-		if tx.TxView.Outputs[output].Lock != nil {
-			log.Println("Output lock: ", tx.TxView.Outputs[output].Lock.CodeHash)
-		}
-	}
 	log.Println("Signing transaction: ", tx.TxView)
-	hash := tx.TxView.ComputeHash()
-	log.Println("Transaction hash: ", hash)
 	_, err := s.TxSigner.SignTransactionByPrivateKeys(tx, s.key.Key.String())
 	return tx.TxView, err
 }
@@ -107,26 +92,11 @@ func NewEVMSignerInstance(addr address.Address, key secp256k1.PrivateKey, networ
 
 func (s EVMSigner) SignTransaction(tx *transaction.TransactionWithScriptGroups) (*types.Transaction, error) {
 	log.Println("Signing transaction with evm signer...", tx)
-	for g := range tx.TxView.Witnesses {
-		log.Println("Script group: ", g, tx.TxView.Witnesses[g])
-	}
-	for input := range tx.TxView.Inputs {
-		log.Println("Input: ", input, tx.TxView.Inputs[input].PreviousOutput.TxHash)
-	}
-	for output := range tx.TxView.Outputs {
-		log.Println("Output: ", output, tx.TxView.Outputs[output].Capacity, tx.TxView.Outputs[output].Type, tx.TxView.Outputs[output].Lock)
-		if tx.TxView.Outputs[output].Lock != nil {
-			log.Println("Output lock: ", tx.TxView.Outputs[output].Lock.CodeHash)
-		}
-	}
 
 	ctx := &transaction.Context{
 		Key:     &ckbsecp.Secp256k1Key{PrivateKey: s.key.ToECDSA()},
 		Payload: s.contexts,
 	}
-	log.Println("Signing transaction: ", tx.TxView)
-	hash := tx.TxView.ComputeHash()
-	log.Println("Transaction hash: ", hash)
 	_, err := s.TxSigner.SignTransaction(tx, ctx)
 	return tx.TxView, err
 }

@@ -206,7 +206,6 @@ func (c Client) submitTx(ctx context.Context, tx *ckbtransaction.TransactionWith
 	if err != nil {
 		return fmt.Errorf("signing transaction: %w", err)
 	}
-	fmt.Println("Submitting transaction with hash:", sTx.Hash, "and version:", sTx.Version, sTx.Witnesses)
 	return c.sendAndAwait(ctx, sTx)
 }
 
@@ -829,7 +828,6 @@ const defaultPollingInterval = 2 * time.Second
 // sendAndAwait sends the given transaction and waits for it to be committed
 // on-chain.
 func (c Client) sendAndAwait(ctx context.Context, tx *types.Transaction) error {
-	log.Println("TEST: ", tx.Outputs[1].Lock.CodeHash)
 	txHash, err := c.client.SendTransaction(ctx, tx)
 	if err != nil {
 		return fmt.Errorf("sending transaction: %w", err)
