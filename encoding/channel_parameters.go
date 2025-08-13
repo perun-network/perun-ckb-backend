@@ -3,6 +3,7 @@ package encoding
 import (
 	"errors"
 	"fmt"
+	"log"
 
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types/molecule"
@@ -20,7 +21,8 @@ func PackChannelParameters(params *channel.Params) (molecule.ChannelParameters, 
 		return molecule.ChannelParameters{}, errors.New("only ledger channels are supported")
 	}
 	if params.App != channel.NoApp() {
-		return molecule.ChannelParameters{}, errors.New("app channels are not supported")
+		// return molecule.ChannelParameters{}, errors.New("app channels are not supported")
+		log.Println("app channels are not supported on-chain, currently using TempApp") //TODO: add app to molecule definition
 	}
 	if params.VirtualChannel {
 		return molecule.ChannelParameters{}, errors.New("virtual channels are not supported")
