@@ -16,11 +16,15 @@ import (
 	molecule2 "perun.network/perun-ckb-backend/encoding/molecule"
 )
 
+var _ multi.Asset = (*NervosAsset)(nil)
+
 var (
 	CKByteMagic  byte = 0x00
 	SUDTMagic    byte = 0x01
 	CKBBackendID      = 3
 )
+
+const EthBackendID = 1
 
 type (
 	Asset struct {
