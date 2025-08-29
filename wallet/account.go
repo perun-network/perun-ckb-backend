@@ -41,7 +41,7 @@ func NewAccount() (*Account, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Account{key: key}, nil
+	return &Account{key: key, defaultScript: true}, nil
 }
 
 func NewAccountFromPrivateKey(key *secp256k1.PrivateKey, codeHash types.Hash, defaultScript bool) *Account {
