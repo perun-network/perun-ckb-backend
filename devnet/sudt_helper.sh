@@ -23,7 +23,7 @@ GENESIS=$(awk '/^ckb_address:/ {print $2}' "$ACCOUNTS_DIR/genesis-2.txt")
 
 fund_genesis() {
   echo "Funding accounts for Alice, Bob and Ingrid with SUDT tokens"
-  SUDT_AMOUNT=400000000
+  SUDT_AMOUNT=600000000
 
   expect << EOF
   spawn ckb-cli sudt issue --owner $GENESIS --udt-to $GENESIS:$SUDT_AMOUNT --cell-deps $SYSTEM_SCRIPTS_DIR/sudt-celldep.json

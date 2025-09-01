@@ -209,7 +209,7 @@ func GetDeployment(migrationDir, migrationDirVC, systemScriptsDir, sudtOwnerLock
 		return backend.Deployment{}, SUDTInfo{}, err
 	}
 	if len(vc_dir) != 1 {
-		return backend.Deployment{}, SUDTInfo{}, fmt.Errorf("migration dir must contain exactly one file")
+		return backend.Deployment{}, SUDTInfo{}, fmt.Errorf("vc migration dir must contain exactly one file")
 	}
 
 	migrationName := dir[0].Name()

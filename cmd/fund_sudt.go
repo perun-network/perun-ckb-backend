@@ -118,9 +118,14 @@ func main() {
 	if err != nil {
 		log.Fatal("parsing bob: ", err)
 	}
+	ingridArgHex, err := parseLockArg("accounts/ingrid.txt")
+	if err != nil {
+		log.Fatal("parsing ingrid: ", err)
+	}
 
 	aliceArgs, _ := hex.DecodeString(strings.TrimPrefix(aliceArgHex, "0x"))
 	bobArgs, _ := hex.DecodeString(strings.TrimPrefix(bobArgHex, "0x"))
+	ingridArgs, _ := hex.DecodeString(strings.TrimPrefix(ingridArgHex, "0x"))
 
 	iters, err := iteratorsForDeployment(rpcClient, d, signer.Address())
 	if err != nil {
@@ -200,7 +205,7 @@ func main() {
 	}
 
 	// SUDT outputs for Alice and Bob
-	for _, args := range [][]byte{aliceArgs, bobArgs} {
+	for _, args := range [][]byte{aliceArgs, bobArgs, ingridArgs} {
 		lock := &types.Script{
 			CodeHash: d.OmniLockScript.CodeHash,
 			HashType: types.HashTypeType,
@@ -214,7 +219,7 @@ func main() {
 		}
 
 		totalAmount := inputAmount
-		eachAmount := totalAmount / 2
+		eachAmount := totalAmount / 3
 		buf := make([]byte, 16)
 		binary.LittleEndian.PutUint64(buf, eachAmount)
 		builder.AddOutput(output, buf)
