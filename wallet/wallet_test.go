@@ -1,8 +1,6 @@
 package wallet_test
 
 import (
-	"encoding/hex"
-	"log"
 	"math/big"
 	"testing"
 
@@ -65,7 +63,6 @@ func TestStateSignature(t *testing.T) {
 	participant := address.AsParticipant(acc.Address())
 	publicKey := participant.PubKey
 	require.NotNil(t, publicKey)
-	log.Println("public key:", hex.EncodeToString(publicKey.SerializeCompressed()))
 
 	alloc := &gpchannel.Allocation{
 		Assets: []gpchannel.Asset{asset.NewCKBytesAsset()},
@@ -88,8 +85,6 @@ func TestStateSignature(t *testing.T) {
 	require.NoError(t, err)
 
 	signature, err := acc.SignData(packedState.AsSlice())
-	log.Println("signature:", hex.EncodeToString(signature))
-	log.Println("packed state:", "0x"+hex.EncodeToString(packedState.AsSlice()))
 	require.NoError(t, err)
 
 	b, err := wallet.Backend.VerifySignature(packedState.AsSlice(), signature, acc.Address())

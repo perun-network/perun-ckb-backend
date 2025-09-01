@@ -69,6 +69,27 @@ func (m Migration) MakeDeployment(systemScripts SystemScripts, sudtOwnerLockArg 
 		return backend.Deployment{}, SUDTInfo{}, fmt.Errorf("invalid sudt owner lock arg: %v", err)
 	}
 
+	pctsCodeHash, pctsHashType, err := getCodeHashAndType(pcts.DataHash, pcts.TypeId)
+	if err != nil {
+		return backend.Deployment{}, SUDTInfo{}, err
+	}
+	pclsCodeHash, pclsHashType, err := getCodeHashAndType(pcls.DataHash, pcls.TypeId)
+	if err != nil {
+		return backend.Deployment{}, SUDTInfo{}, err
+	}
+	pflsCodeHash, pflsHashType, err := getCodeHashAndType(pfls.DataHash, pfls.TypeId)
+	if err != nil {
+		return backend.Deployment{}, SUDTInfo{}, err
+	}
+	vctsCodeHash, vctsHashType, err := getCodeHashAndType(vcts.DataHash, vcts.TypeId)
+	if err != nil {
+		return backend.Deployment{}, SUDTInfo{}, err
+	}
+	vclsCodeHash, vclsHashType, err := getCodeHashAndType(vcls.DataHash, vcls.TypeId)
+	if err != nil {
+		return backend.Deployment{}, SUDTInfo{}, err
+	}
+
 	return backend.Deployment{
 		Network: types.NetworkTest,
 		PCTSDep: types.CellDep{
@@ -106,16 +127,16 @@ func (m Migration) MakeDeployment(systemScripts SystemScripts, sudtOwnerLockArg 
 			},
 			DepType: types.DepTypeCode,
 		},
-		PCTSCodeHash:    types.HexToHash(pcts.DataHash),
-		PCTSHashType:    types.HashTypeData1,
-		PCLSCodeHash:    types.HexToHash(pcls.DataHash),
-		PCLSHashType:    types.HashTypeData1,
-		VCTSCodeHash:    types.HexToHash(vcts.DataHash),
-		VCTSHashType:    types.HashTypeData1,
-		VCLSCodeHash:    types.HexToHash(vcls.DataHash),
-		VCLSHashType:    types.HashTypeData1,
-		PFLSCodeHash:    types.HexToHash(pfls.DataHash),
-		PFLSHashType:    types.HashTypeData1,
+		PCTSCodeHash:    pctsCodeHash,
+		PCTSHashType:    pctsHashType,
+		PCLSCodeHash:    pclsCodeHash,
+		PCLSHashType:    pclsHashType,
+		VCTSCodeHash:    vctsCodeHash,
+		VCTSHashType:    vctsHashType,
+		VCLSCodeHash:    vclsCodeHash,
+		VCLSHashType:    vclsHashType,
+		PFLSCodeHash:    pflsCodeHash,
+		PFLSHashType:    pflsHashType,
 		PFLSMinCapacity: PFLSMinCapacity,
 		DefaultLockScript: types.Script{
 			CodeHash: systemScripts.Secp256k1Blake160SighashAll.ScriptID.CodeHash,
@@ -138,11 +159,29 @@ func (m Migration) GetSUDT() (*SUDTInfo, error) {
 		return nil, fmt.Errorf("first cell recipe must be sudt")
 	}
 
+	var codeHash types.Hash
+	var hashType types.ScriptHashType
+
+	if sudt.TypeId != nil {
+		// If TypeId is given, prefer that
+		typeIDStr, ok := sudt.TypeId.(string)
+		if !ok {
+			return nil, fmt.Errorf("invalid type_id format")
+		}
+		codeHash = types.HexToHash(typeIDStr)
+		hashType = types.HashTypeType
+	} else {
+		// Default: use data hash
+		codeHash = types.HexToHash(sudt.DataHash)
+		hashType = types.HashTypeData1
+	}
+
 	sudtScript := types.Script{
-		CodeHash: types.HexToHash(sudt.DataHash),
-		HashType: types.HashTypeData1,
+		CodeHash: codeHash,
+		HashType: hashType,
 		Args:     []byte{},
 	}
+
 	sudtCellDep := types.CellDep{
 		OutPoint: &types.OutPoint{
 			TxHash: types.HexToHash(sudt.TxHash),
@@ -150,6 +189,7 @@ func (m Migration) GetSUDT() (*SUDTInfo, error) {
 		},
 		DepType: types.DepTypeCode,
 	}
+
 	return &SUDTInfo{
 		Script:  &sudtScript,
 		CellDep: &sudtCellDep,
@@ -225,4 +265,15 @@ func GetDeployment(migrationDir, migrationDirVC, systemScriptsDir, sudtOwnerLock
 	fmt.Printf("Migration: %v\n", migration)
 	fmt.Printf("VC Migration: %v\n", vcMigration)
 	return migration.MakeDeployment(ss, sudtOwnerLockArg, vcMigration)
+}
+
+func getCodeHashAndType(dataHash string, typeId interface{}) (types.Hash, types.ScriptHashType, error) {
+	if typeId != nil {
+		typeIDStr, ok := typeId.(string)
+		if !ok {
+			return types.Hash{}, types.HashTypeData, fmt.Errorf("invalid type_id format")
+		}
+		return types.HexToHash(typeIDStr), types.HashTypeType, nil
+	}
+	return types.HexToHash(dataHash), types.HashTypeData1, nil
 }
