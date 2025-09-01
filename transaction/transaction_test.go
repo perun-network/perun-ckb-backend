@@ -30,6 +30,7 @@ func TestScriptHandler(t *testing.T) {
 	senderCkbAddr := sender.ToCKBAddress(types.NetworkTest)
 	defaultLock := btest.NewRandomScript(rng)
 	defaultLockDep := btest.NewRandomCellDep(rng)
+	omnilockDep := []types.CellDep{*btest.NewRandomCellDep(rng), *btest.NewRandomCellDep(rng)}
 	pctsDep := btest.NewRandomCellDep(rng)
 	pclsDep := btest.NewRandomCellDep(rng)
 	pflsDep := btest.NewRandomCellDep(rng)
@@ -38,6 +39,7 @@ func TestScriptHandler(t *testing.T) {
 		btest.WithPCLS(types.Hash{}, *pclsDep, types.HashTypeData),
 		btest.WithPFLS(types.Hash{}, *pflsDep, types.HashTypeData),
 		btest.WithDefaultLockScript(*defaultLock, *defaultLockDep),
+		btest.WithOmniLockScript(*btest.NewRandomScript(rng), omnilockDep...),
 	)
 	psh := transaction.NewPerunScriptHandlerWithDeployment(*deployment)
 

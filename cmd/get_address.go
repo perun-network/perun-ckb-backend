@@ -1,3 +1,5 @@
+//go:build getaddress
+
 package main
 
 import (
