@@ -53,9 +53,9 @@ func TestVirtualChannelDispute(t *testing.T) {
 func makeVirtualChannelSetup(t *testing.T, rng *rand.Rand) clienttest.VirtualChannelSetup {
 	t.Helper()
 	name := [3]string{"Alice", "Bob", "Ingrid"}
-	setup := btest.NewVirtualChannelSetup(t, rng)
+	setup := btest.NewDevnetVirtualChannelSetup(t, rng)
 
-	roleSetup := ctest.MakeRoleSetups(rng, setup, name[:])
+	roleSetup := ctest.MakeRoleSetups(rng, setup, name[:], true)
 
 	return clienttest.VirtualChannelSetup{
 		Clients:           [3]clienttest.RoleSetup(roleSetup),

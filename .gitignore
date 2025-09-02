@@ -21,3 +21,8 @@ devnet/ckb.toml
 devnet/fundingtx.json
 devnet/default.db-options
 devnet/system_scripts
+
+
+# Testnet
+testnet/accounts/*
+!testnet/accounts/sudt-owner-lock-hash.txt

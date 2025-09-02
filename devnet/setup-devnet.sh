@@ -38,7 +38,7 @@ fi
 # Build all required contracts for Perun.
 DEVNET=$(pwd)
 cd $PERUN_CONTRACTS_DIR
-source ./setup_env.sh build && make build
+source ./setup_env.sh build && make build --release
 cd $DEVNET
 
 # Genesis cell #1

@@ -34,8 +34,8 @@ func TestPaymentHappy(t *testing.T) {
 		role [2]clienttest.Executer
 	)
 
-	s := btest.NewSetup(t, rng)
-	setup := ctest.MakeRoleSetups(rng, s, name[:])
+	s := btest.NewDevnetLedgerChannelSetup(t, rng)
+	setup := ctest.MakeRoleSetups(rng, s, name[:], false)
 
 	role[A] = clienttest.NewAlice(t, setup[A])
 	role[B] = clienttest.NewBob(t, setup[B])
@@ -89,9 +89,9 @@ func TestPaymentDispute(t *testing.T) {
 func makePaymentChannelSetup(t *testing.T, rng *rand.Rand) clienttest.PaymentChannelSetup {
 	t.Helper()
 	name := [2]string{"Alice", "Bob"}
-	setup := btest.NewVirtualChannelSetup(t, rng)
+	setup := btest.NewDevnetVirtualChannelSetup(t, rng)
 
-	roleSetup := ctest.MakeRoleSetups(rng, setup, name[:])
+	roleSetup := ctest.MakeRoleSetups(rng, setup, name[:], false)
 
 	return clienttest.PaymentChannelSetup{
 		Clients:           [2]clienttest.RoleSetup(roleSetup),

@@ -15,6 +15,7 @@
 package test
 
 import (
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"math/rand"
@@ -39,9 +40,11 @@ import (
 )
 
 const (
-	RpcNodeURL = "http://localhost:8114"
-	network    = types.NetworkTest
-	devNetDir  = "../devnet"
+	DevnetRpcNodeURL  = "http://localhost:8114"
+	TestnetRpcNodeURL = "https://testnet.ckb.dev/"
+	testNetwork       = types.NetworkTest
+	devNetDir         = "../devnet"
+	testNetDir        = "../testnet"
 )
 
 type Setup struct {
@@ -59,7 +62,7 @@ type Setup struct {
 	Adjs    []channel.Adjudicator
 }
 
-func NewSetup(t *testing.T, rng *rand.Rand) *Setup {
+func NewDevnetLedgerChannelSetup(t *testing.T, rng *rand.Rand) *Setup {
 	setup := &Setup{}
 	setup.t = t
 	setup.Rng = rng
@@ -67,7 +70,7 @@ func NewSetup(t *testing.T, rng *rand.Rand) *Setup {
 	sudtOwnerLockArg, err := parseSUDTOwnerLockArg(devNetDir + "/accounts/sudt-owner-lock-hash.txt")
 	require.NoError(t, err, "error getting SUDT owner lock arg")
 
-	d, sudtInfo, err := GetDeployment(devNetDir+"/contract/migrations/dev/", devNetDir+"/contract/migrations_vc/dev/", devNetDir+"/system_scripts", sudtOwnerLockArg)
+	d, sudtInfo, err := GetDeploymentDevnet(devNetDir+"/contract/migrations/dev/", devNetDir+"/contract/migrations_vc/dev/", devNetDir+"/system_scripts", sudtOwnerLockArg)
 	require.NoError(t, err, "error getting deployment")
 	setup.Deployment = d
 	setup.SUDTInfo = sudtInfo
@@ -97,14 +100,14 @@ func NewSetup(t *testing.T, rng *rand.Rand) *Setup {
 	setup.WalletAccs = []*wallet.Account{aliceAccount, bobAccount}
 	setup.AccKeys = []secp256k1.PrivateKey{*keyAlice, *keyBob}
 
-	funders, adjs := createFundersAndAdjudicators(t, setup.WalletAccs, setup.AccKeys, d, RpcNodeURL)
+	funders, adjs := createFundersAndAdjudicators(t, setup.WalletAccs, setup.AccKeys, d, DevnetRpcNodeURL)
 	setup.Funders = funders
 	setup.Adjs = adjs
 
 	return setup
 }
 
-func NewVirtualChannelSetup(t *testing.T, rng *rand.Rand) *Setup {
+func NewDevnetVirtualChannelSetup(t *testing.T, rng *rand.Rand) *Setup {
 	setup := &Setup{}
 	setup.t = t
 	setup.Rng = rng
@@ -112,7 +115,7 @@ func NewVirtualChannelSetup(t *testing.T, rng *rand.Rand) *Setup {
 	sudtOwnerLockArg, err := parseSUDTOwnerLockArg(devNetDir + "/accounts/sudt-owner-lock-hash.txt")
 	require.NoError(t, err, "error getting SUDT owner lock arg")
 
-	d, sudtInfo, err := GetDeployment(devNetDir+"/contract/migrations/dev/", devNetDir+"/contract/migrations_vc/dev", devNetDir+"/system_scripts", sudtOwnerLockArg)
+	d, sudtInfo, err := GetDeploymentDevnet(devNetDir+"/contract/migrations/dev/", devNetDir+"/contract/migrations_vc/dev", devNetDir+"/system_scripts", sudtOwnerLockArg)
 	require.NoError(t, err, "error getting deployment")
 	setup.Deployment = d
 	setup.SUDTInfo = sudtInfo
@@ -150,7 +153,121 @@ func NewVirtualChannelSetup(t *testing.T, rng *rand.Rand) *Setup {
 	setup.WalletAccs = []*wallet.Account{aliceAccount, bobAccount, ingridAccount}
 	setup.AccKeys = []secp256k1.PrivateKey{*keyAlice, *keyBob, *keyIngrid}
 
-	funders, adjs := createFundersAndAdjudicators(t, setup.WalletAccs, setup.AccKeys, d, RpcNodeURL)
+	funders, adjs := createFundersAndAdjudicators(t, setup.WalletAccs, setup.AccKeys, d, DevnetRpcNodeURL)
+	setup.Funders = funders
+	setup.Adjs = adjs
+
+	return setup
+}
+
+func NewTestnetLedgerChannelSetup(t *testing.T, rng *rand.Rand) *Setup {
+	setup := &Setup{}
+	setup.t = t
+	setup.Rng = rng
+
+	sudtOwnerLockArg, err := parseSUDTOwnerLockArg(testNetDir + "/accounts/sudt-owner-lock-hash.txt")
+	require.NoError(t, err, "error getting SUDT owner lock arg")
+
+	d, sudtInfo, err := GetDeploymentTestnet(testNetDir+"/system_scripts", sudtOwnerLockArg)
+	require.NoError(t, err, "error getting deployment")
+	setup.Deployment = d
+	setup.SUDTInfo = sudtInfo
+
+	setup.Asset = asset.NewCKBytesAsset()
+
+	wallets := make([]*ckbwallettest.TestEphemeralWallet, 2)
+	setup.EphemeralWallets = wallets
+
+	aliceHex := os.Getenv("ALICE_PK")
+	require.NotEmpty(t, aliceHex, "ALICE_PK env variable must be set")
+	alicePKBytes, err := hex.DecodeString(aliceHex)
+	require.NoError(t, err, "error decoding alice private key")
+	keyAlice := secp256k1.PrivKeyFromBytes(alicePKBytes)
+
+	bobHex := os.Getenv("BOB_PK")
+	require.NotEmpty(t, bobHex, "BOB_PK env variable must be set")
+	bobPKBytes, err := hex.DecodeString(bobHex)
+	require.NoError(t, err, "error decoding bob private key")
+	keyBob := secp256k1.PrivKeyFromBytes(bobPKBytes)
+
+	aliceAccount := wallet.NewAccountFromPrivateKey(keyAlice)
+	bobAccount := wallet.NewAccountFromPrivateKey(keyBob)
+
+	wallets[0] = ckbwallettest.NewTestEphemeralWallet(aliceAccount)
+	err = wallets[0].AddAccount(aliceAccount)
+	require.NoError(t, err, "error adding alice's account")
+
+	wallets[1] = ckbwallettest.NewTestEphemeralWallet(bobAccount)
+	err = wallets[1].AddAccount(bobAccount)
+	require.NoError(t, err, "error adding bob's account")
+
+	setup.WalletAccs = []*wallet.Account{aliceAccount, bobAccount}
+	setup.AccKeys = []secp256k1.PrivateKey{*keyAlice, *keyBob}
+
+	funders, adjs := createFundersAndAdjudicators(t, setup.WalletAccs, setup.AccKeys, d, TestnetRpcNodeURL)
+	setup.Funders = funders
+	setup.Adjs = adjs
+
+	return setup
+}
+
+func NewTestNetVirtualChannelSetup(t *testing.T, rng *rand.Rand) *Setup {
+	setup := &Setup{}
+	setup.t = t
+	setup.Rng = rng
+
+	sudtOwnerLockArg, err := parseSUDTOwnerLockArg(testNetDir + "/accounts/sudt-owner-lock-hash.txt")
+	require.NoError(t, err, "error getting SUDT owner lock arg")
+
+	d, sudtInfo, err := GetDeploymentTestnet(testNetDir+"/system_scripts", sudtOwnerLockArg)
+	require.NoError(t, err, "error getting deployment")
+	setup.Deployment = d
+	setup.SUDTInfo = sudtInfo
+
+	setup.Asset = asset.NewCKBytesAsset()
+
+	wallets := make([]*ckbwallettest.TestEphemeralWallet, 3)
+	setup.EphemeralWallets = wallets
+
+	// Read private keys from environment variables
+	aliceHex := os.Getenv("ALICE_PK")
+	require.NotEmpty(t, aliceHex, "ALICE_PK env variable must be set")
+	alicePKBytes, err := hex.DecodeString(aliceHex)
+	require.NoError(t, err, "error decoding alice private key")
+	keyAlice := secp256k1.PrivKeyFromBytes(alicePKBytes)
+
+	bobHex := os.Getenv("BOB_PK")
+	require.NotEmpty(t, bobHex, "BOB_PK env variable must be set")
+	bobPKBytes, err := hex.DecodeString(bobHex)
+	require.NoError(t, err, "error decoding bob private key")
+	keyBob := secp256k1.PrivKeyFromBytes(bobPKBytes)
+
+	ingridHex := os.Getenv("INGRID_PK")
+	require.NotEmpty(t, ingridHex, "INGRID_PK env variable must be set")
+	ingridPKBytes, err := hex.DecodeString(ingridHex)
+	require.NoError(t, err, "error decoding ingrid private key")
+	keyIngrid := secp256k1.PrivKeyFromBytes(ingridPKBytes)
+
+	aliceAccount := wallet.NewAccountFromPrivateKey(keyAlice)
+	bobAccount := wallet.NewAccountFromPrivateKey(keyBob)
+	ingridAccount := wallet.NewAccountFromPrivateKey(keyIngrid)
+
+	wallets[0] = ckbwallettest.NewTestEphemeralWallet(aliceAccount)
+	err = wallets[0].AddAccount(aliceAccount)
+	require.NoError(t, err, "error adding alice's account")
+
+	wallets[1] = ckbwallettest.NewTestEphemeralWallet(bobAccount)
+	err = wallets[1].AddAccount(bobAccount)
+	require.NoError(t, err, "error adding bob's account")
+
+	wallets[2] = ckbwallettest.NewTestEphemeralWallet(ingridAccount)
+	err = wallets[2].AddAccount(ingridAccount)
+	require.NoError(t, err, "error adding ingrid's account")
+
+	setup.WalletAccs = []*wallet.Account{aliceAccount, bobAccount, ingridAccount}
+	setup.AccKeys = []secp256k1.PrivateKey{*keyAlice, *keyBob, *keyIngrid}
+
+	funders, adjs := createFundersAndAdjudicators(t, setup.WalletAccs, setup.AccKeys, d, TestnetRpcNodeURL)
 	setup.Funders = funders
 	setup.Adjs = adjs
 
@@ -178,8 +295,7 @@ func createFundersAndAdjudicators(t *testing.T, accs []*wallet.Account, keys []s
 		rpcClient, err := rpc.Dial(rpcURL)
 		require.NoError(t, err, "error connecting to ckb node")
 
-		signer := backend.NewSignerInstance(address.AsParticipant(acc.Address()).ToCKBAddress(network), keys[i], network)
-
+		signer := backend.NewSignerInstance(address.AsParticipant(acc.Address()).ToCKBAddress(testNetwork), keys[i], testNetwork)
 		ckbClient, err := client.NewClient(rpcClient, *signer, deployment)
 		require.NoError(t, err, "error creating ckb client")
 		funders[i] = funder.NewDefaultFunder(ckbClient, deployment)

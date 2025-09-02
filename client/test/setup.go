@@ -24,7 +24,14 @@ const (
 	ChallengeDurationBlocks = 90
 )
 
-func MakeRoleSetups(rng *rand.Rand, s *test.Setup, names []string) []clienttest.RoleSetup {
+const (
+	// Testnet Config
+	TestnetTimeout                 = 5 * time.Minute
+	TestnetBlockInterval           = 3 * time.Second
+	TestnetChallengeDurationBlocks = 120
+)
+
+func MakeRoleSetups(rng *rand.Rand, s *test.Setup, names []string, isTestnet bool) []clienttest.RoleSetup {
 	setups := make([]clienttest.RoleSetup, len(names))
 	bus := wire.NewLocalBus()
 
@@ -34,7 +41,19 @@ func MakeRoleSetups(rng *rand.Rand, s *test.Setup, names []string) []clienttest.
 			panic("Error initializing watcher: " + err.Error())
 		}
 
-		balanceRPC, err := rpc.Dial(test.RpcNodeURL)
+		var rpcURL string
+		var challengeDuration uint64
+		var timeout time.Duration
+		if isTestnet {
+			rpcURL = test.TestnetRpcNodeURL
+			challengeDuration = TestnetChallengeDurationBlocks
+			timeout = TestnetTimeout
+		} else {
+			rpcURL = test.DevnetRpcNodeURL
+			challengeDuration = ChallengeDurationBlocks * uint64(time.Second/BlockInterval)
+			timeout = DefaultTimeout
+		}
+		balanceRPC, err := rpc.Dial(rpcURL)
 		if err != nil {
 			panic("Error dialing RPC: " + err.Error())
 		}
@@ -57,9 +76,9 @@ func MakeRoleSetups(rng *rand.Rand, s *test.Setup, names []string) []clienttest.
 			Adjudicator: s.Adjs[i],
 			Watcher:     watcher,
 			Wallet:      s.EphemeralWallets[i],
-			Timeout:     DefaultTimeout,
+			Timeout:     timeout,
 			// Scaled due to simbackend automining progressing faster than real time.
-			ChallengeDuration: ChallengeDurationBlocks * uint64(time.Second/BlockInterval),
+			ChallengeDuration: challengeDuration,
 			Errors:            errors,
 			BalanceReader:     test.NewBalanceReader(balanceRPC, s.WalletAccs[i].Address()),
 		}
