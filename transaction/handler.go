@@ -172,9 +172,7 @@ func (psh *PerunScriptHandler) buildOpenTransaction(builder collector.Transactio
 }
 
 func (psh *PerunScriptHandler) AddSudtCellDeps(builder collector.TransactionBuilder) {
-	log.Println("AddSudtCellDeps")
 	for _, d := range psh.sudtDeps {
-		log.Println("Adding SUDT cell dep", d.OutPoint.TxHash, d.OutPoint.Index)
 		builder.AddCellDep(&d)
 	}
 }
@@ -937,7 +935,6 @@ func (psh PerunScriptHandler) AddAssetsToOutputs(builder collector.TransactionBu
 		if index >= len(sudtBalances.Distribution) || index < 0 {
 			return errors.New("index out of range")
 		}
-		log.Println("Adding SUDT asset to output", sudtBalances.Asset.TypeScript.CodeHash, "at index", index, "with balance", sudtBalances.Distribution[index])
 		paymentOutput, data := psh.mkAssetOutput(lock, sudtBalances, index, additionalBalance)
 		additionalBalance = 0
 		builder.AddOutput(paymentOutput, data)

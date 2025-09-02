@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
-	"log"
 	"math/big"
 
 	"github.com/nervosnetwork/ckb-sdk-go/v2/address"
@@ -130,7 +129,6 @@ func NewPerunTransactionBuilderWithDeployment(
 
 func NewSimpleTransactionBuilder(lockScriptCodeHash types.Hash, lockScriptDep types.CellDep, omni bool) *builder.SimpleTransactionBuilder {
 	if omni {
-		log.Println("Using OmniLock script handler for transaction builder")
 		omniLockScriptHandler := &handler.OmnilockScriptHandler{
 			CellDep:  &lockScriptDep,
 			CodeHash: lockScriptCodeHash,
@@ -226,9 +224,6 @@ func (ptb *PerunTransactionBuilder) Build(contexts ...interface{}) (*ckbtransact
 	// transactions for Perun channels.
 	if err := ptb.InitializeScriptGroups(); err != nil {
 		return nil, fmt.Errorf("initializing script groups: %w", err)
-	}
-	for _, g := range ptb.scriptGroups {
-		log.Println("Script group: ", g.Script.Hash(), "Type: ", g.GroupType, "Inputs: ", g.InputIndices, "Outputs: ", g.OutputIndices)
 	}
 
 	// We balance the transaction in an initial step, because SUDTs required for
@@ -370,7 +365,6 @@ func (ptb *PerunTransactionBuilder) initializeScript(script *types.Script, scrip
 		Script:    script,
 		GroupType: scriptType,
 	})
-	log.Println("Adding script group for script", script.Hash(), "of type", scriptType, "at index", idx, "with ioIdx", ioIdx, "and direction", d)
 	ptb.scriptGroupMap[script.Hash()] = idx
 	appendToScriptGroup(ptb.scriptGroups[idx], ioIdx, d)
 }
@@ -929,7 +923,7 @@ func (ptb *PerunTransactionBuilder) groupForScript(script *types.Script) (*ckbtr
 	hash := script.Hash()
 	groupIdx, ok := ptb.scriptGroupMap[hash]
 	if !ok {
-		return nil, fmt.Errorf("no script group for script %s \n %s", hash, ptb.scriptGroupMap)
+		return nil, fmt.Errorf("no script group for script %s \n %x", hash, ptb.scriptGroupMap)
 	}
 	return ptb.scriptGroups[groupIdx], nil
 }

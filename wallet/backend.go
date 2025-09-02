@@ -1,14 +1,12 @@
 package wallet
 
 import (
-	"encoding/hex"
 	"errors"
 	"fmt"
-	"golang.org/x/crypto/sha3"
 	"io"
-	"log"
 
 	"github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
+	"golang.org/x/crypto/sha3"
 	"perun.network/go-perun/wallet"
 	"perun.network/perun-ckb-backend/wallet/address"
 )
@@ -50,12 +48,10 @@ func (b backend) VerifySignature(msg []byte, sig wallet.Sig, a wallet.Address) (
 	if err != nil {
 		return false, fmt.Errorf("removing padding: %w", err)
 	}
-	log.Println("signature without padding:", hex.EncodeToString(sigWithoutPadding))
 	signature, err := ecdsa.ParseDERSignature(sigWithoutPadding)
 	if err != nil {
 		return false, fmt.Errorf("parsing DER signature: %w", err)
 	}
-	log.Println("Verifying: ", signature.Verify(hash[:], addr.PubKey))
 	return signature.Verify(hash[:], addr.PubKey), nil
 }
 
