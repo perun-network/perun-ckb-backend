@@ -511,7 +511,7 @@ func (c Client) DisputeVC(ctx context.Context, vcID, parentID channel.ID, vcStat
 		}
 
 		signerPub := c.signer.PublicKey()
-		signerParticipant, err := ckbaddress.NewDefaultParticipant(signerPub)
+		signerParticipant, err := ckbaddress.NewDefaultParticipant(signerPub, ethAddr)
 		if err != nil {
 			return fmt.Errorf("creating default participant: %w", err)
 		}

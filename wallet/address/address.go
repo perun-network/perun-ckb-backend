@@ -32,6 +32,9 @@ type Participant struct {
 	// UnlockScriptHash is the script-hash of the unlock script of this participant. The participant uses it to authorize
 	// itself to interact with a channel through an on-chain transaction.
 	UnlockScript *types.Script
+	// EthAddress is an Ethereum L2 address (20 bytes). It is derived either from the Ethereum L1 public key,
+	//  or from an L2 public key generated specifically for this purpose.
+	EthAddress molecule.EthAddress
 }
 
 func (p Participant) BackendID() wallet.BackendID {
@@ -40,7 +43,7 @@ func (p Participant) BackendID() wallet.BackendID {
 
 // NewDefaultParticipant creates a new participant with the script hash of the secp256k1_blake160_sighash_all script for
 // the given public key as payment and unlock script hash.
-func NewDefaultParticipant(pubKey *secp256k1.PublicKey) (*Participant, error) {
+func NewDefaultParticipant(pubKey *secp256k1.PublicKey, ethAddr molecule.EthAddress) (*Participant, error) {
 	if pubKey == nil {
 		return nil, errors.New("public key is nil")
 	}
@@ -52,6 +55,7 @@ func NewDefaultParticipant(pubKey *secp256k1.PublicKey) (*Participant, error) {
 		PubKey:        pubKey,
 		PaymentScript: script,
 		UnlockScript:  script,
+		EthAddress:    ethAddr,
 	}, nil
 }
 
@@ -83,11 +87,43 @@ func NewEthereumParticipantFromPublicKey(key *secp256k1.PublicKey, omniCodeHash 
 	}, ethAddr, nil
 }
 
-func NewParticipant(pubKey *secp256k1.PublicKey, paymentScript, unlockScript *types.Script) *Participant {
+func NewCrossChainParticipantFromPublicKeys(CKBL1Key *secp256k1.PublicKey, EthL1Key *secp256k1.PublicKey, omniCodeHash types.Hash) (*Participant, [20]byte, error) {
+	var ethAddr [20]byte
+	if omniCodeHash == (types.Hash{}) {
+		return nil, ethAddr, fmt.Errorf("omni-lock code hash must be provided")
+	}
+
+	ecdsaEthPubKey := EthL1Key.ToECDSA()
+	pubBytesEth := crypto.FromECDSAPub(ecdsaEthPubKey)[1:]
+
+	// Keccak256 hash of pubkey, then take last 20 bytes (Ethereum address)
+	ethAddr = [20]byte(crypto.Keccak256(pubBytesEth)[12:])
+
+	args := append([]byte{0x12}, ethAddr[:]...)
+	args = append(args, 0x00)
+
+	script := &types.Script{
+		CodeHash: omniCodeHash,
+		HashType: types.HashTypeType, // Omni-lock is typically deployed with `type`
+		Args:     args,
+	}
+
+	ethAddrMol := molecule.EthAddressFromSliceUnchecked(ethAddr[:])
+
+	return &Participant{
+		PubKey:        CKBL1Key,
+		PaymentScript: script,
+		UnlockScript:  script, // same unless separated
+		EthAddress:    *ethAddrMol,
+	}, ethAddr, nil
+}
+
+func NewParticipant(pubKey *secp256k1.PublicKey, paymentScript, unlockScript *types.Script, ethAddress molecule.EthAddress) *Participant {
 	return &Participant{
 		PubKey:        pubKey,
 		PaymentScript: paymentScript,
 		UnlockScript:  unlockScript,
+		EthAddress:    ethAddress,
 	}
 }
 
