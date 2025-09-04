@@ -120,7 +120,7 @@ func assetToCKBAsset(asset channel.Asset) ChannelAsset {
 	var err error
 
 	switch v := asset.(type) {
-	case *ckbasset.NervosAsset:
+	case *ckbasset.Asset:
 		assetBytes, err = v.MarshalBinary()
 	default:
 		log.Panicf("expected asset of type Stellar or MultiAsset, but got: %T", asset)
