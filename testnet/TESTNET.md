@@ -65,13 +65,7 @@ ckb-cli account export --lock-arg <ingrid-lock-args> --extended-privkey-path ./a
 cd ..
 ```
 2. Fund the `accounts` with at least 200CKB using [Testnet Faucet](https://faucet.nervos.org/)
-3. Export the private key of each accounts to environment variables.
-```sh
-export ALICE_PK="0xabc123..."
-export BOB_PK="0xdef456..."
-export INGRID_PK="0x7890..."
-```
-4. Run the integration test
+3. Run the integration test
 ```bash
-go test ./... -testnet
+go test -tags testnet ./client -v
 ```

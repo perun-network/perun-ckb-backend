@@ -1,3 +1,6 @@
+//go:build !testnet
+// +build !testnet
+
 package client_test
 
 import (

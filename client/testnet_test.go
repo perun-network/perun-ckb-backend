@@ -1,9 +1,13 @@
+//go:build testnet
+// +build testnet
+
 package client_test
 
 import (
+	"context"
 	"math/big"
-	"os"
 	"testing"
+	"time"
 
 	"perun.network/go-perun/client"
 	clienttest "perun.network/go-perun/client/test"
@@ -21,10 +25,6 @@ import (
 // The test checks if the final balances are as expected and if the channel state is updated correctly.
 // The test also checks if the payment channel is closed correctly.
 func TestTestnetPaymentHappy(t *testing.T) {
-	if !(os.Getenv("TESTNET") == "true") {
-		t.Skip("Skipping testnet test")
-	}
-
 	log.Info("Starting happy test")
 	rng := pkgtest.Prng(t)
 
@@ -68,4 +68,16 @@ func TestTestnetPaymentHappy(t *testing.T) {
 	wg.Wait()
 
 	log.Info("Happy test done")
+}
+
+func TestTestnetPaymentDispute(t *testing.T) {
+	log.Info("Starting payment dispute test")
+	rng := pkgtest.Prng(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+
+	setup := ctest.MakePaymentChannelSetup(t, rng, true)
+	clienttest.TestPaymentChannelDispute(ctx, t, setup)
+	log.Info("Payment dispute test done")
 }

@@ -15,7 +15,6 @@
 package test
 
 import (
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"math/rand"
@@ -178,17 +177,11 @@ func NewTestnetLedgerChannelSetup(t *testing.T, rng *rand.Rand) *Setup {
 	wallets := make([]*ckbwallettest.TestEphemeralWallet, 2)
 	setup.EphemeralWallets = wallets
 
-	aliceHex := os.Getenv("ALICE_PK")
-	require.NotEmpty(t, aliceHex, "ALICE_PK env variable must be set")
-	alicePKBytes, err := hex.DecodeString(aliceHex)
-	require.NoError(t, err, "error decoding alice private key")
-	keyAlice := secp256k1.PrivKeyFromBytes(alicePKBytes)
+	keyAlice, err := GetKey(testNetDir + "/accounts/alice.pk")
+	require.NoError(t, err, "error getting alice's private key")
 
-	bobHex := os.Getenv("BOB_PK")
-	require.NotEmpty(t, bobHex, "BOB_PK env variable must be set")
-	bobPKBytes, err := hex.DecodeString(bobHex)
-	require.NoError(t, err, "error decoding bob private key")
-	keyBob := secp256k1.PrivKeyFromBytes(bobPKBytes)
+	keyBob, err := GetKey(testNetDir + "/accounts/bob.pk")
+	require.NoError(t, err, "error getting bob's private key")
 
 	aliceAccount := wallet.NewAccountFromPrivateKey(keyAlice)
 	bobAccount := wallet.NewAccountFromPrivateKey(keyBob)
@@ -211,7 +204,7 @@ func NewTestnetLedgerChannelSetup(t *testing.T, rng *rand.Rand) *Setup {
 	return setup
 }
 
-func NewTestNetVirtualChannelSetup(t *testing.T, rng *rand.Rand) *Setup {
+func NewTestnetVirtualChannelSetup(t *testing.T, rng *rand.Rand) *Setup {
 	setup := &Setup{}
 	setup.t = t
 	setup.Rng = rng
@@ -229,24 +222,14 @@ func NewTestNetVirtualChannelSetup(t *testing.T, rng *rand.Rand) *Setup {
 	wallets := make([]*ckbwallettest.TestEphemeralWallet, 3)
 	setup.EphemeralWallets = wallets
 
-	// Read private keys from environment variables
-	aliceHex := os.Getenv("ALICE_PK")
-	require.NotEmpty(t, aliceHex, "ALICE_PK env variable must be set")
-	alicePKBytes, err := hex.DecodeString(aliceHex)
-	require.NoError(t, err, "error decoding alice private key")
-	keyAlice := secp256k1.PrivKeyFromBytes(alicePKBytes)
+	keyAlice, err := GetKey(testNetDir + "/accounts/alice.pk")
+	require.NoError(t, err, "error getting alice's private key")
 
-	bobHex := os.Getenv("BOB_PK")
-	require.NotEmpty(t, bobHex, "BOB_PK env variable must be set")
-	bobPKBytes, err := hex.DecodeString(bobHex)
-	require.NoError(t, err, "error decoding bob private key")
-	keyBob := secp256k1.PrivKeyFromBytes(bobPKBytes)
+	keyBob, err := GetKey(testNetDir + "/accounts/bob.pk")
+	require.NoError(t, err, "error getting bob's private key")
 
-	ingridHex := os.Getenv("INGRID_PK")
-	require.NotEmpty(t, ingridHex, "INGRID_PK env variable must be set")
-	ingridPKBytes, err := hex.DecodeString(ingridHex)
-	require.NoError(t, err, "error decoding ingrid private key")
-	keyIngrid := secp256k1.PrivKeyFromBytes(ingridPKBytes)
+	keyIngrid, err := GetKey(testNetDir + "/accounts/ingrid.pk")
+	require.NoError(t, err, "error getting ingrid's private key")
 
 	aliceAccount := wallet.NewAccountFromPrivateKey(keyAlice)
 	bobAccount := wallet.NewAccountFromPrivateKey(keyBob)

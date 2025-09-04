@@ -2,12 +2,16 @@ package test
 
 import (
 	"log"
+	"math/big"
 	"math/rand"
+	"testing"
 	"time"
 
 	"github.com/nervosnetwork/ckb-sdk-go/v2/rpc"
 
+	"perun.network/perun-ckb-backend/channel/asset"
 	"perun.network/perun-ckb-backend/channel/test"
+	"perun.network/perun-ckb-backend/transaction"
 
 	gpwiretest "perun.network/go-perun/backend/sim/wire"
 	clienttest "perun.network/go-perun/client/test"
@@ -86,4 +90,31 @@ func MakeRoleSetups(rng *rand.Rand, s *test.Setup, names []string, isTestnet boo
 	}
 
 	return setups
+}
+
+func MakePaymentChannelSetup(t *testing.T, rng *rand.Rand, isTestnet bool) clienttest.PaymentChannelSetup {
+	t.Helper()
+	name := [2]string{"Alice", "Bob"}
+	var setup *test.Setup
+	if isTestnet {
+		setup = test.NewTestnetVirtualChannelSetup(t, rng)
+	} else {
+		setup = test.NewDevnetVirtualChannelSetup(t, rng)
+	}
+	roleSetup := MakeRoleSetups(rng, setup, name[:], isTestnet)
+
+	return clienttest.PaymentChannelSetup{
+		Clients:           [2]clienttest.RoleSetup(roleSetup),
+		ChallengeDuration: roleSetup[0].ChallengeDuration,
+		Asset:             setup.Asset,
+		Balances: clienttest.PaymentChannelBalances{
+			InitBalsAliceBob: []*big.Int{asset.CKByteToShannon(big.NewFloat(100)), asset.CKByteToShannon(big.NewFloat(100))},
+			BalsUpdated:      []*big.Int{asset.CKByteToShannon(big.NewFloat(70)), asset.CKByteToShannon(big.NewFloat(130))},
+			FinalBals:        []*big.Int{asset.CKByteToShannon(big.NewFloat(70)), asset.CKByteToShannon(big.NewFloat(130))},
+		},
+		BalanceDelta:       big.NewInt(int64(3 * transaction.DefaultFeeShannon)), // Max Fee: (Open + Dispute + Close) * 1 CKB
+		Rng:                rng,
+		WaitWatcherTimeout: 1 * time.Second,
+		IsUTXO:             true,
+	}
 }
