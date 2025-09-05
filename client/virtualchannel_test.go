@@ -5,17 +5,12 @@ package client_test
 
 import (
 	"context"
-	"math/big"
-	"math/rand"
 	"testing"
 	"time"
 
 	clienttest "perun.network/go-perun/client/test"
 	"perun.network/go-perun/log"
-	"perun.network/perun-ckb-backend/channel/asset"
-	btest "perun.network/perun-ckb-backend/channel/test"
 	ctest "perun.network/perun-ckb-backend/client/test"
-	"perun.network/perun-ckb-backend/transaction"
 	"polycry.pt/poly-go/test"
 )
 
@@ -33,7 +28,7 @@ func TestVirtualChannelOptimistic(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), testDuration)
 	defer cancel()
 
-	setup := makeVirtualChannelSetup(t, rng)
+	setup := ctest.MakeVirtualChannelSetup(t, rng, false)
 	clienttest.TestVirtualChannelOptimistic(ctx, t, setup)
 	log.Info("Virtual channel happy test done")
 }
@@ -48,33 +43,7 @@ func TestVirtualChannelDispute(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), testDuration)
 	defer cancel()
 
-	setup := makeVirtualChannelSetup(t, rng)
+	setup := ctest.MakeVirtualChannelSetup(t, rng, false)
 	clienttest.TestVirtualChannelDispute(ctx, t, setup)
 	log.Info("Virtual channel dispute test done")
-}
-
-func makeVirtualChannelSetup(t *testing.T, rng *rand.Rand) clienttest.VirtualChannelSetup {
-	t.Helper()
-	name := [3]string{"Alice", "Bob", "Ingrid"}
-	setup := btest.NewDevnetVirtualChannelSetup(t, rng)
-
-	roleSetup := ctest.MakeRoleSetups(rng, setup, name[:], true)
-
-	return clienttest.VirtualChannelSetup{
-		Clients:           [3]clienttest.RoleSetup(roleSetup),
-		ChallengeDuration: roleSetup[0].ChallengeDuration,
-		Asset:             setup.Asset,
-		Balances: clienttest.VirtualChannelBalances{
-			InitBalsAliceIngrid: []*big.Int{asset.CKByteToShannon(big.NewFloat(100)), asset.CKByteToShannon(big.NewFloat(100))},
-			InitBalsBobIngrid:   []*big.Int{asset.CKByteToShannon(big.NewFloat(100)), asset.CKByteToShannon(big.NewFloat(100))},
-			InitBalsAliceBob:    []*big.Int{asset.CKByteToShannon(big.NewFloat(50)), asset.CKByteToShannon(big.NewFloat(50))},
-			VirtualBalsUpdated:  []*big.Int{asset.CKByteToShannon(big.NewFloat(20)), asset.CKByteToShannon(big.NewFloat(80))},
-			FinalBalsAlice:      []*big.Int{asset.CKByteToShannon(big.NewFloat(70)), asset.CKByteToShannon(big.NewFloat(130))},
-			FinalBalsBob:        []*big.Int{asset.CKByteToShannon(big.NewFloat(130)), asset.CKByteToShannon(big.NewFloat(70))},
-		},
-		BalanceDelta:       big.NewInt(int64(6 * transaction.DefaultFeeShannon)), // Max Fee (Ingrid): (Open + Fund + 2 * Dispute + 2 * Close) * 1 CKB
-		Rng:                rng,
-		WaitWatcherTimeout: 1 * time.Second,
-		IsUTXO:             true,
-	}
 }

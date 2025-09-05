@@ -118,3 +118,34 @@ func MakePaymentChannelSetup(t *testing.T, rng *rand.Rand, isTestnet bool) clien
 		IsUTXO:             true,
 	}
 }
+
+func MakeVirtualChannelSetup(t *testing.T, rng *rand.Rand, isTestnet bool) clienttest.VirtualChannelSetup {
+	t.Helper()
+	name := [3]string{"Alice", "Bob", "Ingrid"}
+	var setup *test.Setup
+	if isTestnet {
+		setup = test.NewTestnetVirtualChannelSetup(t, rng)
+	} else {
+		setup = test.NewDevnetVirtualChannelSetup(t, rng)
+	}
+
+	roleSetup := MakeRoleSetups(rng, setup, name[:], isTestnet)
+
+	return clienttest.VirtualChannelSetup{
+		Clients:           [3]clienttest.RoleSetup(roleSetup),
+		ChallengeDuration: roleSetup[0].ChallengeDuration,
+		Asset:             setup.Asset,
+		Balances: clienttest.VirtualChannelBalances{
+			InitBalsAliceIngrid: []*big.Int{asset.CKByteToShannon(big.NewFloat(100)), asset.CKByteToShannon(big.NewFloat(100))},
+			InitBalsBobIngrid:   []*big.Int{asset.CKByteToShannon(big.NewFloat(100)), asset.CKByteToShannon(big.NewFloat(100))},
+			InitBalsAliceBob:    []*big.Int{asset.CKByteToShannon(big.NewFloat(50)), asset.CKByteToShannon(big.NewFloat(50))},
+			VirtualBalsUpdated:  []*big.Int{asset.CKByteToShannon(big.NewFloat(20)), asset.CKByteToShannon(big.NewFloat(80))},
+			FinalBalsAlice:      []*big.Int{asset.CKByteToShannon(big.NewFloat(70)), asset.CKByteToShannon(big.NewFloat(130))},
+			FinalBalsBob:        []*big.Int{asset.CKByteToShannon(big.NewFloat(130)), asset.CKByteToShannon(big.NewFloat(70))},
+		},
+		BalanceDelta:       big.NewInt(int64(6 * transaction.DefaultFeeShannon)), // Max Fee (Ingrid): (Open + Fund + 2 * Dispute + 2 * Close) * 1 CKB
+		Rng:                rng,
+		WaitWatcherTimeout: 1 * time.Second,
+		IsUTXO:             true,
+	}
+}

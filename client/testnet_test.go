@@ -17,6 +17,7 @@ import (
 	btest "perun.network/perun-ckb-backend/channel/test"
 	ctest "perun.network/perun-ckb-backend/client/test"
 	"polycry.pt/poly-go/sync"
+	"polycry.pt/poly-go/test"
 	pkgtest "polycry.pt/poly-go/test"
 )
 
@@ -80,4 +81,15 @@ func TestTestnetPaymentDispute(t *testing.T) {
 	setup := ctest.MakePaymentChannelSetup(t, rng, true)
 	clienttest.TestPaymentChannelDispute(ctx, t, setup)
 	log.Info("Payment dispute test done")
+}
+
+func TestTestnetVirtualOptimistic(t *testing.T) {
+	log.Info("Starting virtual channel happy test")
+	rng := test.Prng(t)
+	ctx, cancel := context.WithTimeout(context.Background(), testDuration)
+	defer cancel()
+
+	setup := ctest.MakeVirtualChannelSetup(t, rng)
+	clienttest.TestVirtualChannelOptimistic(ctx, t, setup)
+	log.Info("Virtual channel happy test done")
 }
