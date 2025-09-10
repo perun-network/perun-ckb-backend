@@ -90,6 +90,43 @@ type CKBClient interface {
 	GetBlockTime(ctx context.Context, blockNumber BlockNumber) (time.Time, error)
 }
 
+type FilteredCellIterator struct {
+	base      collector.CellIterator
+	filter    func(*types.CellOutput) bool
+	nextInput *types.TransactionInput
+	loaded    bool
+}
+
+func NewFilteredCellIterator(base collector.CellIterator, filter func(*types.CellOutput) bool) *FilteredCellIterator {
+	return &FilteredCellIterator{
+		base:   base,
+		filter: filter,
+	}
+}
+
+func (f *FilteredCellIterator) HasNext() bool {
+	if f.loaded {
+		return true
+	}
+	for f.base.HasNext() {
+		candidate := f.base.Next()
+		if f.filter(candidate.Output) {
+			f.nextInput = candidate
+			f.loaded = true
+			return true
+		}
+	}
+	return false
+}
+
+func (f *FilteredCellIterator) Next() *types.TransactionInput {
+	if !f.loaded && !f.HasNext() {
+		return nil
+	}
+	f.loaded = false
+	return f.nextInput
+}
+
 // TODO: Require sudt handlers!
 
 type Client struct {
@@ -98,9 +135,10 @@ type Client struct {
 	signer     backend.Signer
 	deployment backend.Deployment
 
-	psh     *transaction.PerunScriptHandler
-	cache   StableScriptCache
-	vccache StableScriptCache
+	psh           *transaction.PerunScriptHandler
+	cache         StableScriptCache
+	vccache       StableScriptCache
+	ownScriptHash types.Hash
 }
 
 func NewClient(rpcClient rpc.Client, signer backend.Signer, deployment backend.Deployment) (*Client, error) {
@@ -189,11 +227,22 @@ func iteratorsForDeployment(cl rpc.Client, deployment backend.Deployment, sender
 			Script:           &udt,
 			ScriptType:       types.ScriptTypeType,
 			ScriptSearchMode: types.ScriptSearchModePrefix,
-			Filter:           nil,
 			WithData:         true,
 		}
-		sudtIter := collector.NewLiveCellIterator(cl, searchKey)
-		iters[udt.Hash()] = sudtIter
+
+		// Create the base UDT iterator (fetches all live cells with this type)
+		baseIter := collector.NewLiveCellIterator(cl, searchKey)
+
+		// Get sender lock script hash
+		senderLockHash := sender.Script.Hash()
+
+		// Filter UDT cells to only use sender's lock script
+		filteredIter := NewFilteredCellIterator(baseIter, func(cell *types.CellOutput) bool {
+			return cell.Lock.Hash() == senderLockHash
+		})
+
+		// Register filtered iterator
+		iters[udt.Hash()] = filteredIter
 	}
 	return iters, nil
 }
@@ -249,16 +298,32 @@ func (c Client) createOrGetChannelToken(ctx context.Context, iter collector.Cell
 	if !iter.HasNext() {
 		return backend.Token{}, errors.New("sending account has no funds available")
 	}
-	transactionInput := iter.Next()
-	channelToken := molecule.
-		NewChannelTokenBuilder().
-		OutPoint(*transactionInput.OutPoint.Pack()).
-		Build()
-	return backend.Token{
-		Idx:      transactionInput.OutPoint.Index,
-		Outpoint: *transactionInput.OutPoint.Pack(),
-		Token:    channelToken,
-	}, nil
+	for iter.HasNext() {
+		txInput := iter.Next()
+
+		// Resolve the full cell to check the lock script
+		liveCell, err := c.client.GetLiveCell(ctx, txInput.OutPoint, false)
+		if err != nil || liveCell == nil || liveCell.Cell == nil {
+			log.Println("Skipping cell due to error or nil:", err, liveCell)
+			continue
+		}
+
+		if liveCell.Cell.Output.Lock.Hash() != c.signer.Address().Script.Hash() {
+			log.Println("Skipping cell due to lock hash mismatch:", liveCell.Cell.Output.Lock.Hash(), c.signer.Address().Script.Hash())
+			continue
+		}
+
+		channelToken := molecule.
+			NewChannelTokenBuilder().
+			OutPoint(*txInput.OutPoint.Pack()).
+			Build()
+		return backend.Token{
+			Idx:      txInput.OutPoint.Index,
+			Outpoint: *txInput.OutPoint.Pack(),
+			Token:    channelToken,
+		}, nil
+	}
+	return backend.Token{}, errors.New("no suitable cell found for channel token")
 }
 
 func (c Client) Fund(ctx context.Context, pcts *types.Script, state *channel.State, params *channel.Params) error {
