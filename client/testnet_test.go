@@ -86,10 +86,21 @@ func TestTestnetPaymentDispute(t *testing.T) {
 func TestTestnetVirtualOptimistic(t *testing.T) {
 	log.Info("Starting virtual channel happy test")
 	rng := test.Prng(t)
-	ctx, cancel := context.WithTimeout(context.Background(), testDuration)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
-	setup := ctest.MakeVirtualChannelSetup(t, rng)
+	setup := ctest.MakeVirtualChannelSetup(t, rng, true)
 	clienttest.TestVirtualChannelOptimistic(ctx, t, setup)
 	log.Info("Virtual channel happy test done")
+}
+
+func TestTestnetVirtualDispute(t *testing.T) {
+	log.Info("Starting virtual channel dispute test")
+	rng := test.Prng(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+
+	setup := ctest.MakeVirtualChannelSetup(t, rng, true)
+	clienttest.TestVirtualChannelDispute(ctx, t, setup)
+	log.Info("Virtual channel dispute test done")
 }

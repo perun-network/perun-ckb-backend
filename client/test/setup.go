@@ -32,7 +32,7 @@ const (
 	// Testnet Config
 	TestnetTimeout                 = 5 * time.Minute
 	TestnetBlockInterval           = 3 * time.Second
-	TestnetChallengeDurationBlocks = 120
+	TestnetChallengeDurationBlocks = 9
 )
 
 func MakeRoleSetups(rng *rand.Rand, s *test.Setup, names []string, isTestnet bool) []clienttest.RoleSetup {

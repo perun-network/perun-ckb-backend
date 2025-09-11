@@ -324,18 +324,21 @@ func GetDeploymentTestnet(systemScriptsDir string, sudtOwnerLockArg string) (bac
 			// VCTS
 			{
 				Name:     "vcts",
-				TxHash:   "0x...testnet_txhash_vcts",
+				TxHash:   "0x0f024bbf4180247031d20541eb2757cf15996821d81b9910b5b3e65990502aa2",
 				Index:    0,
-				DataHash: "0x...datahash_vcts",
+				DataHash: "0x979629341d3435a8155ff4867e604cdf018f60c391bf2fa03ccf46f7ead07c81",
+				TypeId:   "0x43b3139ed05cdd86d5d0cbbcf414b3d89193a05493593f88e12f4effd1d39fce",
 			},
 			// VCLS
 			{
 				Name:     "vcls",
-				TxHash:   "0x...testnet_txhash_vcls",
-				Index:    0,
-				DataHash: "0x...datahash_vcls",
+				TxHash:   "0x0f024bbf4180247031d20541eb2757cf15996821d81b9910b5b3e65990502aa2",
+				Index:    1,
+				DataHash: "0x13870abb0ab8b56d0500f06c3c7af7fa93648259d6945203493907ac11da8b66",
+				TypeId:   "0x74c694dad6b36e72526a9345153d7f16759b9c3071b7c9119bdc1bb9898f3928",
 			},
 		},
+		DepGroupRecipes: nil,
 	}
 
 	ss, err := GetSystemScripts(systemScriptsDir)

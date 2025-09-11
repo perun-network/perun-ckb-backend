@@ -19,7 +19,7 @@ import (
 var zeroHash types.Hash = types.Hash{}
 
 const (
-	DefaultFeeShannon uint64 = 1 * CKBYTE
+	DefaultFeeShannon uint64 = 0.0001 * CKBYTE
 	CKBYTE                   = 1 * 100_000_000
 	MinCKBFeeAmount   uint64 = 1_000
 )
