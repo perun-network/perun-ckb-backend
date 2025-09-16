@@ -1,5 +1,5 @@
 session_name: devnet
-before_script: ./setup-devnet.sh
+before_script: go run ../cmd/get_address.go && ./setup-devnet.sh
 windows:
         - layout: tiled
           panes:
@@ -24,3 +24,5 @@ windows:
                             - echo "Waiting 10 seconds before listing SUDT account balances"
                             - sleep 10.0
                             - ./sudt_helper.sh balances
+                            - sleep 2.0
+                            - go run ../cmd/fund_sudt.go
