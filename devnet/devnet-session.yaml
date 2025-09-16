@@ -1,5 +1,5 @@
 session_name: devnet
-before_script: go run ../cmd/get_address.go && ./setup-devnet.sh
+before_script: ./setup-devnet.sh
 windows:
         - layout: tiled
           panes:
