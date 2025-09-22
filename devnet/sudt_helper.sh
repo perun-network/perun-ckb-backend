@@ -16,17 +16,18 @@ check_files() {
 
 check_files "$ACCOUNTS_DIR/alice.txt" "$ACCOUNTS_DIR/bob.txt" "$ACCOUNTS_DIR/ingrid.txt" "$ACCOUNTS_DIR/genesis-2.txt" "$SYSTEM_SCRIPTS_DIR/sudt-celldep.json"
 
-ALICE=$(awk '/^ckb_address:/ {print $2}' "$ACCOUNTS_DIR/alice.txt")
-BOB=$(awk '/^ckb_address:/ {print $2}' "$ACCOUNTS_DIR/bob.txt")
-INGRID=$(awk '/^ckb_address:/ {print $2}' "$ACCOUNTS_DIR/ingrid.txt")
-GENESIS=$(awk '/^ckb_address:/ {print $2}' "$ACCOUNTS_DIR/genesis-2.txt")
+ALICE=$(cat $ACCOUNTS_DIR/alice.txt | awk '/testnet/ { count++; if (count == 1) print $2}')
+BOB=$(cat $ACCOUNTS_DIR/bob.txt | awk '/testnet/ { count++; if (count == 1) print $2}')
+INGRID=$(cat $ACCOUNTS_DIR/ingrid.txt | awk '/testnet/ { count++; if (count == 1) print $2}')
+genesis=$(cat $ACCOUNTS_DIR/genesis-2.txt | awk '/testnet/ { count++; if (count == 2) print $2}')
+GENESIS=$(cat $ACCOUNTS_DIR/genesis-2.txt | awk '/testnet/ { count++; if (count == 1) print $2}')
 
-fund_genesis() {
+fund_accounts() {
   echo "Funding accounts for Alice, Bob and Ingrid with SUDT tokens"
-  SUDT_AMOUNT=600000000
+  SUDT_AMOUNT=100000000
 
   expect << EOF
-  spawn ckb-cli sudt issue --owner $GENESIS --udt-to $GENESIS:$SUDT_AMOUNT --cell-deps $SYSTEM_SCRIPTS_DIR/sudt-celldep.json
+  spawn ckb-cli sudt issue --owner $GENESIS --udt-to $ALICE:$SUDT_AMOUNT $BOB:$SUDT_AMOUNT $INGRID:$SUDT_AMOUNT --cell-deps $SYSTEM_SCRIPTS_DIR/sudt-celldep.json
   expect "owner Password:"
   send "\r"
   expect eof
@@ -41,8 +42,6 @@ list_accounts_balances() {
   ckb-cli sudt get-amount --owner $GENESIS --cell-deps $SYSTEM_SCRIPTS_DIR/sudt-celldep.json --address $BOB
   echo "INGRID: ========================================"
   ckb-cli sudt get-amount --owner $GENESIS --cell-deps $SYSTEM_SCRIPTS_DIR/sudt-celldep.json --address $INGRID
-  echo "GENESIS: ========================================"
-    ckb-cli sudt get-amount --owner $GENESIS --cell-deps $SYSTEM_SCRIPTS_DIR/sudt-celldep.json --address $GENESIS
   echo "============================================="
 }
 
@@ -59,7 +58,7 @@ for arg in "$@"; do
     list_accounts_balances
     ;;
   fund)
-    fund_genesis
+    fund_accounts
     ;;
   *)
     echo "Unknown argument: $arg"

@@ -2,6 +2,7 @@ package client_test
 
 import (
 	"context"
+	"github.com/sirupsen/logrus"
 	"math/big"
 	"math/rand"
 	"perun.network/go-perun/channel"
@@ -41,6 +42,13 @@ func TestPaymentHappy(t *testing.T) {
 
 	role[A] = clienttest.NewAlice(t, setup[A])
 	role[B] = clienttest.NewBob(t, setup[B])
+	balAlice := setup[A].BalanceReader.Balance(s.Asset)
+	balBob := setup[B].BalanceReader.Balance(s.Asset)
+
+	logrus.Printf("Initial Balances - Alice: %s, Bob: %s", balAlice.String(), balBob.String())
+	balAlice = setup[A].BalanceReader.Balance(s.SudtAsset)
+	balBob = setup[B].BalanceReader.Balance(s.SudtAsset)
+	logrus.Printf("Initial SUDT Balances - Alice: %s, Bob: %s", balAlice.String(), balBob.String())
 
 	// enable stages synchronization
 	stages := role[A].EnableStages()

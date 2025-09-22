@@ -33,18 +33,6 @@ type Migration struct {
 	DepGroupRecipes []interface{} `json:"dep_group_recipes"`
 }
 
-func parseDepType(depTypeRaw string) types.DepType {
-	switch strings.ToLower(depTypeRaw) {
-	case "code":
-		return types.DepTypeCode
-	case "depgroup", "dep_group":
-		return types.DepTypeDepGroup
-	default:
-		log.Fatalf("Unknown dep type: %s", depTypeRaw)
-		return "" // unreachable
-	}
-}
-
 func (m Migration) MakeDeployment(systemScripts SystemScripts, sudtOwnerLockArg string, vcm Migration) (backend.Deployment, SUDTInfo, error) {
 	sudtInfo, err := m.GetSUDT()
 	if err != nil {
@@ -130,38 +118,11 @@ func (m Migration) MakeDeployment(systemScripts SystemScripts, sudtOwnerLockArg 
 		PFLSHashType:    types.HashTypeData1,
 		PFLSMinCapacity: PFLSMinCapacity,
 		DefaultLockScript: types.Script{
-			CodeHash: systemScripts.Secp256k1Blake160.CodeHash,
-			HashType: systemScripts.Secp256k1Blake160.HashType,
+			CodeHash: systemScripts.Secp256k1Blake160SighashAll.ScriptID.CodeHash,
+			HashType: systemScripts.Secp256k1Blake160SighashAll.ScriptID.HashType,
 			Args:     make([]byte, 32),
 		},
-		DefaultLockScriptDep: types.CellDep{
-			OutPoint: &types.OutPoint{
-				TxHash: systemScripts.Secp256k1Blake160.CellDeps[0].CellDep.OutPoint.TxHash,
-				Index:  systemScripts.Secp256k1Blake160.CellDeps[0].CellDep.OutPoint.Index,
-			},
-			DepType: parseDepType(string(systemScripts.Secp256k1Blake160.CellDeps[0].CellDep.DepType)),
-		},
-		OmniLockScript: types.Script{
-			CodeHash: systemScripts.OmniLock.CodeHash,
-			HashType: systemScripts.OmniLock.HashType,
-			Args:     make([]byte, 32),
-		},
-		OmniLockScriptDep: []types.CellDep{
-			{
-				OutPoint: &types.OutPoint{
-					TxHash: systemScripts.OmniLock.CellDeps[0].CellDep.OutPoint.TxHash,
-					Index:  systemScripts.OmniLock.CellDeps[0].CellDep.OutPoint.Index,
-				},
-				DepType: parseDepType(string(systemScripts.OmniLock.CellDeps[0].CellDep.DepType)),
-			},
-			{
-				OutPoint: &types.OutPoint{
-					TxHash: systemScripts.OmniLock.CellDeps[1].CellDep.OutPoint.TxHash,
-					Index:  systemScripts.OmniLock.CellDeps[1].CellDep.OutPoint.Index,
-				},
-				DepType: parseDepType(string(systemScripts.OmniLock.CellDeps[1].CellDep.DepType)),
-			},
-		},
+		DefaultLockScriptDep: systemScripts.Secp256k1Blake160SighashAll.CellDep,
 		SUDTDeps: map[types.Hash]types.CellDep{
 			sudtInfo.Script.Hash(): *sudtInfo.CellDep,
 		},
@@ -209,7 +170,7 @@ func GetDeployment(migrationDir, migrationDirVC, systemScriptsDir, sudtOwnerLock
 		return backend.Deployment{}, SUDTInfo{}, err
 	}
 	if len(vc_dir) != 1 {
-		return backend.Deployment{}, SUDTInfo{}, fmt.Errorf("vc migration dir must contain exactly one file")
+		return backend.Deployment{}, SUDTInfo{}, fmt.Errorf("migration dir must contain exactly one file")
 	}
 
 	migrationName := dir[0].Name()
