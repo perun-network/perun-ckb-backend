@@ -133,8 +133,10 @@ func (psh *PerunScriptHandler) buildOpenTransaction(builder collector.Transactio
 	const partyIndex = 0
 	// Add required cell dependencies for Perun scripts.
 	builder.AddCellDep(&psh.defaultLockScriptDep)
-	builder.AddCellDep(&psh.omniLockScriptDep[0])
-	builder.AddCellDep(&psh.omniLockScriptDep[1])
+	if len(psh.omniLockScriptDep) != 0 {
+		builder.AddCellDep(&psh.omniLockScriptDep[0])
+		builder.AddCellDep(&psh.omniLockScriptDep[1])
+	}
 	builder.AddCellDep(&psh.pctsDep)
 	psh.AddSudtCellDeps(builder)
 	// Add channel token as input.
@@ -180,8 +182,10 @@ func (psh *PerunScriptHandler) AddSudtCellDeps(builder collector.TransactionBuil
 func (psh *PerunScriptHandler) buildCloseTransaction(builder collector.TransactionBuilder, group *transaction.ScriptGroup, closeInfo *CloseInfo) (bool, error) {
 	log.Println("buildCloseTransaction")
 	// TODO: How do we make sure that we unlock the channel?
-	builder.AddCellDep(&psh.omniLockScriptDep[0])
-	builder.AddCellDep(&psh.omniLockScriptDep[1])
+	if len(psh.omniLockScriptDep) != 0 {
+		builder.AddCellDep(&psh.omniLockScriptDep[0])
+		builder.AddCellDep(&psh.omniLockScriptDep[1])
+	}
 	builder.AddCellDep(&psh.pctsDep)
 	builder.AddCellDep(&psh.pclsDep)
 	builder.AddCellDep(&psh.pflsDep)
@@ -232,8 +236,10 @@ func (psh *PerunScriptHandler) buildAbortTransaction(builder collector.Transacti
 	log.Println("buildAbortTransaction")
 	const partyIdx = 0
 	// TODO: How do we make sure that we unlock the channel?
-	builder.AddCellDep(&psh.omniLockScriptDep[0])
-	builder.AddCellDep(&psh.omniLockScriptDep[1])
+	if len(psh.omniLockScriptDep) != 0 {
+		builder.AddCellDep(&psh.omniLockScriptDep[0])
+		builder.AddCellDep(&psh.omniLockScriptDep[1])
+	}
 	builder.AddCellDep(&psh.pctsDep)
 	builder.AddCellDep(&psh.pclsDep)
 	builder.AddCellDep(&psh.pflsDep)
@@ -279,8 +285,10 @@ func (psh *PerunScriptHandler) buildAbortTransaction(builder collector.Transacti
 func (psh *PerunScriptHandler) buildForceCloseTransaction(builder collector.TransactionBuilder, group *transaction.ScriptGroup, forceCloseInfo *ForceCloseInfo) (bool, error) {
 	log.Println("buildForceCloseTransaction")
 	// TODO: How do we make sure that we unlock the channel?
-	builder.AddCellDep(&psh.omniLockScriptDep[0])
-	builder.AddCellDep(&psh.omniLockScriptDep[1])
+	if len(psh.omniLockScriptDep) != 0 {
+		builder.AddCellDep(&psh.omniLockScriptDep[0])
+		builder.AddCellDep(&psh.omniLockScriptDep[1])
+	}
 	builder.AddCellDep(&psh.pctsDep)
 	builder.AddCellDep(&psh.pclsDep)
 	builder.AddCellDep(&psh.pflsDep)
@@ -333,8 +341,10 @@ func (psh *PerunScriptHandler) buildFundTransaction(builder collector.Transactio
 	const partyIndex = 1
 	// Dependencies.
 	builder.AddCellDep(&psh.defaultLockScriptDep)
-	builder.AddCellDep(&psh.omniLockScriptDep[0])
-	builder.AddCellDep(&psh.omniLockScriptDep[1])
+	if len(psh.omniLockScriptDep) != 0 {
+		builder.AddCellDep(&psh.omniLockScriptDep[0])
+		builder.AddCellDep(&psh.omniLockScriptDep[1])
+	}
 	builder.AddCellDep(&psh.pclsDep)
 	builder.AddCellDep(&psh.pctsDep)
 	psh.AddSudtCellDeps(builder)
@@ -388,8 +398,10 @@ func (psh *PerunScriptHandler) mkWitnessFund() []byte {
 }
 
 func (psh *PerunScriptHandler) buildDisputeTransaction(builder collector.TransactionBuilder, group *transaction.ScriptGroup, disputeInfo *DisputeInfo) (bool, error) {
-	builder.AddCellDep(&psh.omniLockScriptDep[0])
-	builder.AddCellDep(&psh.omniLockScriptDep[1])
+	if len(psh.omniLockScriptDep) != 0 {
+		builder.AddCellDep(&psh.omniLockScriptDep[0])
+		builder.AddCellDep(&psh.omniLockScriptDep[1])
+	}
 	builder.AddCellDep(&psh.pclsDep)
 	builder.AddCellDep(&psh.pctsDep)
 	builder.AddHeaderDep(disputeInfo.Header)
@@ -419,8 +431,10 @@ func (psh *PerunScriptHandler) buildDisputeTransaction(builder collector.Transac
 
 func (psh *PerunScriptHandler) buildFirstVCDisputeTransaction(builder collector.TransactionBuilder, group *transaction.ScriptGroup, disputeInfo *VcDisputeInfo) (bool, error) {
 	log.Println("buildFirstVCDisputeTransaction")
-	builder.AddCellDep(&psh.omniLockScriptDep[0])
-	builder.AddCellDep(&psh.omniLockScriptDep[1])
+	if len(psh.omniLockScriptDep) != 0 {
+		builder.AddCellDep(&psh.omniLockScriptDep[0])
+		builder.AddCellDep(&psh.omniLockScriptDep[1])
+	}
 	builder.AddCellDep(&psh.pclsDep)
 	builder.AddCellDep(&psh.pctsDep)
 	builder.AddCellDep(&psh.vclsDep)
@@ -461,8 +475,10 @@ func (psh *PerunScriptHandler) buildFirstVCDisputeTransaction(builder collector.
 
 func (psh *PerunScriptHandler) buildVCDisputeProgressTransaction(builder collector.TransactionBuilder, group *transaction.ScriptGroup, disputeInfo *VcDisputeInfo) (bool, error) {
 	log.Println("buildVCDisputeProgressTransaction")
-	builder.AddCellDep(&psh.omniLockScriptDep[0])
-	builder.AddCellDep(&psh.omniLockScriptDep[1])
+	if len(psh.omniLockScriptDep) != 0 {
+		builder.AddCellDep(&psh.omniLockScriptDep[0])
+		builder.AddCellDep(&psh.omniLockScriptDep[1])
+	}
 	builder.AddCellDep(&psh.pclsDep)
 	builder.AddCellDep(&psh.pctsDep)
 	builder.AddCellDep(&psh.vclsDep)
@@ -521,8 +537,10 @@ func (psh *PerunScriptHandler) buildVCDisputeProgressTransaction(builder collect
 }
 
 func (psh *PerunScriptHandler) buildVCMergeTransaction(builder collector.TransactionBuilder, group *transaction.ScriptGroup, disputeInfo *VcMergeInfo) (bool, error) {
-	builder.AddCellDep(&psh.omniLockScriptDep[0])
-	builder.AddCellDep(&psh.omniLockScriptDep[1])
+	if len(psh.omniLockScriptDep) != 0 {
+		builder.AddCellDep(&psh.omniLockScriptDep[0])
+		builder.AddCellDep(&psh.omniLockScriptDep[1])
+	}
 	builder.AddCellDep(&psh.vctsDep)
 	builder.AddCellDep(&psh.vclsDep)
 	builder.AddCellDep(&psh.vctsDep)
@@ -581,8 +599,10 @@ func (psh *PerunScriptHandler) buildVCMergeTransaction(builder collector.Transac
 
 func (psh *PerunScriptHandler) buildFirstForceCloseWithVCTransaction(builder collector.TransactionBuilder, group *transaction.ScriptGroup, forceCloseWithVCInfo *ForceCloseWithVCInfo) (bool, error) {
 	log.Println("buildFirstForceCloseWithVCTransaction")
-	builder.AddCellDep(&psh.omniLockScriptDep[0])
-	builder.AddCellDep(&psh.omniLockScriptDep[1])
+	if len(psh.omniLockScriptDep) != 0 {
+		builder.AddCellDep(&psh.omniLockScriptDep[0])
+		builder.AddCellDep(&psh.omniLockScriptDep[1])
+	}
 	builder.AddCellDep(&psh.pctsDep)
 	builder.AddCellDep(&psh.pclsDep)
 	builder.AddCellDep(&psh.pflsDep)
@@ -668,8 +688,10 @@ func (psh *PerunScriptHandler) buildFirstForceCloseWithVCTransaction(builder col
 
 func (psh *PerunScriptHandler) buildSecondForceCloseWithVCTransaction(builder collector.TransactionBuilder, group *transaction.ScriptGroup, forceCloseWithVCInfo *ForceCloseWithVCInfo) (bool, error) {
 	log.Println("buildSecondForceCloseWithVCTransaction")
-	builder.AddCellDep(&psh.omniLockScriptDep[0])
-	builder.AddCellDep(&psh.omniLockScriptDep[1])
+	if len(psh.omniLockScriptDep) != 0 {
+		builder.AddCellDep(&psh.omniLockScriptDep[0])
+		builder.AddCellDep(&psh.omniLockScriptDep[1])
+	}
 	builder.AddCellDep(&psh.pctsDep)
 	builder.AddCellDep(&psh.pclsDep)
 	builder.AddCellDep(&psh.pflsDep)
