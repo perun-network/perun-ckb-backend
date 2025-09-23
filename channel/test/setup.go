@@ -161,9 +161,9 @@ func NewVirtualChannelSetup(t *testing.T, rng *rand.Rand) *Setup {
 	keyIngrid, err := GetKey(devNetDir + "/accounts/ingrid.pk")
 	require.NoError(t, err, "error getting ingrid's private key")
 
-	aliceAccount := wallet.NewAccountFromPrivateKey(keyAlice, types.Hash{}, true)
-	bobAccount := wallet.NewAccountFromPrivateKey(keyBob, types.Hash{}, true)
-	ingridAccount := wallet.NewAccountFromPrivateKey(keyIngrid, types.Hash{}, true)
+	aliceAccount := wallet.NewAccountFromPrivateKey(keyAlice, d.OmniLockScript.CodeHash, true)
+	bobAccount := wallet.NewAccountFromPrivateKey(keyBob, d.OmniLockScript.CodeHash, true)
+	ingridAccount := wallet.NewAccountFromPrivateKey(keyIngrid, d.OmniLockScript.CodeHash, true)
 
 	wallets[0] = ckbwallettest.NewTestEphemeralWallet(aliceAccount)
 	err = wallets[0].AddAccount(aliceAccount)

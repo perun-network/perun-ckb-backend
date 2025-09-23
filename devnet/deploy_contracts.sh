@@ -11,7 +11,7 @@ DEPLOYMENT_INFO="info"
 DEPLOYMENT_INFO_VC="info_vc"
 MIGRATION="migrations/dev"
 MIGRATION_VC="migrations_vc/dev"
-genesis=$( cat ./accounts/genesis-2.txt | awk '/testnet/ {print$2}' | head -n 1)
+genesis=$(awk '/^ckb_address:/ {print $2}' "$ACCOUNTS_DIR/genesis-2.txt")
 
 if [ -f "$DEPLOYMENT_INFO.json" ]; then
   rm "$DEPLOYMENT_INFO.json"
@@ -35,7 +35,7 @@ fi
 
 echo "Deploying normal contracts..."
 expect << EOF
-spawn ckb-cli deploy gen-txs --deployment-config ./deployment/dev/deployment.toml --migration-dir ./$MIGRATION  --from-address $genesis  --sign-now  --info-file $DEPLOYMENT_INFO.json
+spawn ckb-cli deploy gen-txs --deployment-config ./deployment/dev/deployment.toml --migration-dir ./$MIGRATION  --from-address $genesis  --sign-now  --info-file $DEPLOYMENT_INFO.json --output-format json
 expect "Password:"
 send "\r"
 expect eof
@@ -80,13 +80,7 @@ if [ -d "$SYSTEM_SCRIPTS_DIR" ]; then
 fi
 
 mkdir -p "$SYSTEM_SCRIPTS_DIR"
-## jq will interpret the code_hash and tx_hash as numbers, so we need to wrap them in quotes.
-## The index must also be a string value, but yaml does not support hex values as a top level block argument
-## so we have to do that in a second pass...
-ckb-cli util genesis-scripts --output-format json \
-  | sed 's/code_hash: \(.*\)/code_hash: \"\1\"/; s/tx_hash: \(.*\)/tx_hash: \"\1\"/' \
-  | sed 's/"index": \([0-9]\+\),/echo "\\"index\\": $(python3 -c "print(\\\"\\\\\\"{}\\\\\\"\\\".format(hex(\1)))"),";/e' \
-  | jq . > "$SYSTEM_SCRIPTS_DIR/default_scripts.json"
+offckb system-scripts --export-style ccc | tail -n +2 > "$SYSTEM_SCRIPTS_DIR/default_scripts.json"
 
 echo "Fetching default contracts done."
 
