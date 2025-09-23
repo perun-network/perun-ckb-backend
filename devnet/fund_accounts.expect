@@ -1,0 +1,8 @@
+#!/usr/bin/expect -f
+
+spawn ./fund_accounts.sh
+
+expect "Password:"
+send "\r"
+expect eof
+wait
