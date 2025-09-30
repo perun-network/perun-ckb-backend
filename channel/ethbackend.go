@@ -17,25 +17,26 @@ package channel
 
 import (
 	"log"
-	"math/big"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/pkg/errors"
+	"math/big"
 	"perun.network/go-perun/channel"
 	"perun.network/go-perun/channel/multi"
+	ckbaddress "perun.network/perun-ckb-backend/wallet/address"
 
 	ckbasset "perun.network/perun-ckb-backend/channel/asset"
 )
 
 const EthBackendID = 1
 
-// This part of the package transfers Ethereum backend functionality to encode States the same way they are encoded in the Eth Backend
-
 // ToEthState converts a channel.State to a ChannelState struct.
 func ToEthState(s *channel.State) EthChannelState {
-	backends := make([]*big.Int, len(s.Allocation.Assets))
-	for i := range s.Allocation.Assets { // we assume that for each asset there is an element in backends corresponding to the backendID the asset belongs to.
+	numAssets := len(s.Allocation.Assets)
+	backends := make([]*big.Int, numAssets)
+	for i := range s.Allocation.Assets {
 		backends[i] = big.NewInt(int64(s.Allocation.Backends[i]))
 	}
 	locked := make([]ChannelSubAlloc, len(s.Locked))
@@ -55,10 +56,7 @@ func ToEthState(s *channel.State) EthChannelState {
 		locked[i] = ChannelSubAlloc{ID: sub.ID, Balances: sub.Bals, IndexMap: indexMap}
 	}
 
-	// iterate over s.Allocation.Backends and check if they are of type EthAsset
-	// if not, panic
-
-	assets := make([]ChannelAsset, len(s.Allocation.Assets))
+	assets := make([]ChannelAsset, numAssets)
 
 	for i, backendID := range s.Allocation.Backends {
 		switch backendID {
@@ -102,7 +100,7 @@ func assetToEthAsset(asset channel.Asset) ChannelAsset {
 		log.Panicf("expected asset of type MultiLedgerAsset, but got wrong asset type: %T", asset)
 	}
 	id := new(big.Int)
-	_, ok = id.SetString(string(multiAsset.LedgerBackendID().LedgerID().MapKey()), 10) //nolint:gomnd
+	_, ok = id.SetString(string(multiAsset.LedgerBackendID().LedgerID().MapKey()), 10)
 	if !ok {
 		log.Panicf("Error: Failed to parse string into big.Int")
 	}
@@ -111,7 +109,7 @@ func assetToEthAsset(asset channel.Asset) ChannelAsset {
 	return ChannelAsset{
 		ChainID:  id,
 		EthAsset: ethAddress,
-		CCAsset:  make([]byte, 32), //nolint:gomnd
+		CCAsset:  make([]byte, 32),
 	}
 }
 
@@ -120,14 +118,13 @@ func assetToCKBAsset(asset channel.Asset) ChannelAsset {
 	var err error
 
 	switch v := asset.(type) {
-	case *ckbasset.Asset:
-		assetBytes, err = v.MarshalBinary()
+	case *ckbasset.NervosAsset:
+		assetBytes, err = v.Asset.MarshalBinary()
+		if err != nil {
+			log.Panicf("Could not encode NervosAsset: %v", err)
+		}
 	default:
-		log.Panicf("expected asset of type Stellar or MultiAsset, but got: %T", asset)
-	}
-
-	if err != nil {
-		log.Panicf("error encoding asset: %v", err)
+		log.Panicf("expected asset of type NervosAsset, but got: %T", asset)
 	}
 
 	return ChannelAsset{
@@ -137,40 +134,46 @@ func assetToCKBAsset(asset channel.Asset) ChannelAsset {
 	}
 }
 
-// ToEthParams converts a channel.Params to a ChannelParams struct.
 func ToEthParams(params *channel.Params) (ChannelParams, error) {
 	participants := make([]ChannelParticipant, len(params.Parts))
 	for i, p := range params.Parts {
-		ethAddress := common.Address{}
+		var ccAddress []byte
+		var ethAddress common.Address
 		if add, ok := p[EthBackendID]; ok {
+			ethAddress := common.Address{}
+			var err error
 			ethBytes, err := add.MarshalBinary()
 			if err != nil {
 				return ChannelParams{}, errors.WithMessage(err, "could not encode eth address")
 			}
 			ethAddress.SetBytes(ethBytes)
 		}
-		ccAddress := make([]byte, 32) //nolint:gomnd
 		if add, ok := p[CKBBackendID]; ok {
-			ccBytes, err := add.MarshalBinary()
-			if err != nil {
-				return ChannelParams{}, errors.WithMessage(err, "error encoding cc address")
+			participant, ok := add.(*ckbaddress.Participant)
+			if !ok {
+				return ChannelParams{}, errors.New("participant is not *address.Participant")
 			}
-			ccAddress = ccBytes
+			onchainParticipant, err := participant.PackOnChainParticipant()
+			if err != nil {
+				return ChannelParams{}, errors.New("error packing onchain participant: " + err.Error())
+			}
+			ccAddress = onchainParticipant.AsSlice()
+			pubKey, err := ckbaddress.UnpackSEC1EncodedPubKey(onchainParticipant.PubKey())
+			if err != nil {
+				return ChannelParams{}, errors.New("error unpacking sec1 encoded pubkey: " + err.Error())
+			}
+			pubKeyUncompressed := pubKey.SerializeUncompressed()
+			pubKeyNoPrefix := pubKeyUncompressed[1:]
+			ethHash := crypto.Keccak256(pubKeyNoPrefix)
+			copy(ethAddress[:], ethHash[12:32])
 		}
-		participants[i] = ChannelParticipant{EthAddress: ethAddress, CcAddress: ccAddress}
+		participants[i] = ChannelParticipant{
+			EthAddress: ethAddress,
+			CcAddress:  ccAddress,
+		}
 	}
 	var app common.Address
-	if params.App != nil && !channel.IsNoApp(params.App) {
-		appDef, ok := params.App.Def().(*AppID)
-		if !ok {
-			return ChannelParams{}, errors.New("appDef is not of type *AppID")
-		}
-		appBytes, err := appDef.Address.MarshalBinary()
-		if err != nil {
-			log.Panicf("error encoding app address: %v", err)
-		}
-		app.SetBytes(appBytes)
-	}
+	app.SetBytes(make([]byte, 20))
 	return ChannelParams{
 		ChallengeDuration: new(big.Int).SetUint64(params.ChallengeDuration),
 		Nonce:             params.Nonce,

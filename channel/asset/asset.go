@@ -1,3 +1,16 @@
+// Copyright 2025 PolyCrypt GmbH
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//	http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 package asset
 
 import (
@@ -49,6 +62,10 @@ type (
 
 // MarshalBinary marshals the NervosAsset into its binary representation.
 func (C NervosAsset) MarshalBinary() ([]byte, error) {
+	// Normalize Args slice before encoding to avoid nil vs []byte{} mismatch
+	if C.Asset.SUDT != nil && C.Asset.SUDT.TypeScript.Args == nil {
+		C.Asset.SUDT.TypeScript.Args = []byte{}
+	}
 	var buf bytes.Buffer
 	err := perunio.Encode(&buf, C.id.ledgerID, C.id.backendID, C.Asset)
 	if err != nil {
@@ -60,7 +77,15 @@ func (C NervosAsset) MarshalBinary() ([]byte, error) {
 // UnmarshalBinary unmarshals the NervosAsset from its binary representation.
 func (C *NervosAsset) UnmarshalBinary(data []byte) error {
 	buf := bytes.NewBuffer(data)
-	return perunio.Decode(buf, &C.id.ledgerID, &C.id.backendID, &C.Asset)
+	err := perunio.Decode(buf, &C.id.ledgerID, &C.id.backendID, &C.Asset)
+	if err != nil {
+		return err
+	}
+	// Normalize Args slice before encoding to avoid nil vs []byte{} mismatch
+	if C.Asset.SUDT != nil && C.Asset.SUDT.TypeScript.Args == nil {
+		C.Asset.SUDT.TypeScript.Args = []byte{}
+	}
+	return nil
 }
 
 // Equal returns true if the CKBAssets are the same.
@@ -98,7 +123,6 @@ func (id *ContractLID) UnmarshalBinary(data []byte) error {
 	return nil
 }
 
-// MarshalBinary marshals the contractID into its binary representation.
 func (id ContractLID) MarshalBinary() ([]byte, error) {
 	if id.string == "" {
 		return nil, errors.New("nil ContractID")
@@ -215,7 +239,7 @@ func NewCKBytesAsset() *Asset {
 
 func NewCKBytesNervosAsset() *NervosAsset {
 	a := Asset{IsCKBytes: true}
-	return &NervosAsset{Asset: a, id: CCID{uint32(CKBBackendID), ContractLID{"3"}}}
+	return &NervosAsset{Asset: a, id: CCID{uint32(CKBBackendID), ContractLID{"03"}}}
 }
 
 func NewSUDTAsset(sudt *SUDT) *Asset {

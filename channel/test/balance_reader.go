@@ -1,16 +1,29 @@
+// Copyright 2025 PolyCrypt GmbH
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//	http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 package test
 
 import (
 	"context"
 	"encoding/binary"
+	"fmt"
+	"github.com/nervosnetwork/ckb-sdk-go/v2/indexer"
+	"github.com/nervosnetwork/ckb-sdk-go/v2/rpc"
+	"github.com/nervosnetwork/ckb-sdk-go/v2/types"
 	"log"
 	"math"
 	"math/big"
 	"time"
-
-	"github.com/nervosnetwork/ckb-sdk-go/v2/indexer"
-	"github.com/nervosnetwork/ckb-sdk-go/v2/rpc"
-	"github.com/nervosnetwork/ckb-sdk-go/v2/types"
 
 	"perun.network/go-perun/wallet"
 	"perun.network/perun-ckb-backend/wallet/address"
@@ -32,9 +45,8 @@ func NewBalanceReader(rpcClient rpc.Client, acc wallet.Address) *BalanceReader {
 	return &BalanceReader{rpcClient: rpcClient, acc: acc}
 }
 
-// Balance returns the asset balance of the associated account.
 func (br *BalanceReader) Balance(asset perunchannel.Asset) perunchannel.Bal {
-	pollingInterval := time.Duration(1) * time.Second
+	pollingInterval := time.Second
 	searchKey := &indexer.SearchKey{
 		Script:           address.AsParticipant(br.acc).PaymentScript,
 		ScriptType:       types.ScriptTypeLock,
@@ -57,17 +69,38 @@ func (br *BalanceReader) Balance(asset perunchannel.Asset) perunchannel.Bal {
 		sudtBalance = new(big.Int).Add(sudtBalance, sudtBalanceExtractor(cell))
 	}
 
-	if asset.Equal(ckbasset.NewCKBytesAsset()) {
-		return ckbBalance
-	} else if _, err := ckbasset.IsSUDTAsset(asset); err == nil {
-		return sudtBalance
+	switch a := asset.(type) {
+	case *ckbasset.EthAsset:
+
+		// EthAsset: Not available on the NERVOS CKB blockchain, so it cannot be extracted from a Cell
+
+		return big.NewInt(0)
+
+	case *ckbasset.NervosAsset:
+
+		// Check if CKBytes or SUDT inside NervosAsset
+		if a.Asset.IsCKBytes {
+			return ckbBalance
+		}
+		if a.Asset.SUDT != nil {
+			return sudtBalance
+		}
+		panic("NervosAsset invalid: neither CKBytes nor SUDT")
+
+	case *ckbasset.Asset:
+		fmt.Println("ckbasset.Asset balance requested")
+		// Raw Asset passed - check CKBytes or SUDT similarly
+		if a.IsCKBytes {
+			return ckbBalance
+		}
+		if a.SUDT != nil {
+			return sudtBalance
+		}
+		panic("Asset invalid: neither CKBytes nor SUDT")
+
+	default:
+		panic(fmt.Sprintf("Unknown asset type: %T", a))
 	}
-	sudt, err := ckbasset.IsSUDTAsset(asset)
-	if err == nil {
-		panic("unexpected SUDT asset in balance reader")
-	}
-	log.Println("Unknown asset type:", asset, sudt, sudtBalance)
-	panic("unknown asset")
 }
 
 func ckbBalanceExtractor(cell *indexer.LiveCell) *big.Int {
