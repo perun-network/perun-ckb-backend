@@ -51,7 +51,7 @@ func TestMarshallingSUDT(t *testing.T) {
 func TestMarshallingNervosAsset(t *testing.T) {
 	t.Run("CKBytes", func(t *testing.T) {
 		// CKByte asset with a fixed contract LID for reproducibility
-		contractLid := asset.MakeContractID("0102aabbcc") // example hex string
+		contractLid := asset.MakeContractID("03") // example hex string
 		ccid := asset.MakeCCID(contractLid)
 		nervosCKB := asset.NewNervosAsset(*asset.NewCKBytesAsset(), ccid)
 
@@ -83,7 +83,7 @@ func TestMarshallingNervosAsset(t *testing.T) {
 		randomScript := btest.NewRandomScript(rng)
 		sudt := asset.NewSUDT(*randomScript, 42)
 		assetIn := asset.NewSUDTAsset(sudt)
-		contractLid := asset.MakeContractID("deadbeef00")
+		contractLid := asset.MakeContractID("03")
 		ccid := asset.MakeCCID(contractLid)
 		nervosSUDT := asset.NewNervosAsset(*assetIn, ccid)
 

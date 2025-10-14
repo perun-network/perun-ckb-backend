@@ -905,11 +905,11 @@ func (psh PerunScriptHandler) mkWitnessClose(state *channel.State, paddedSigs []
 	if err != nil {
 		panic(err)
 	}
-	sigA, err := encoding.NewDEREncodedSignatureFromPadded(paddedSigs[0])
+	sigA, err := encoding.NewMoleculeSignature(paddedSigs[0])
 	if err != nil {
 		panic(err)
 	}
-	sigB, err := encoding.NewDEREncodedSignatureFromPadded(paddedSigs[1])
+	sigB, err := encoding.NewMoleculeSignature(paddedSigs[1])
 	if err != nil {
 		panic(err)
 	}

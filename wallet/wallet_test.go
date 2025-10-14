@@ -4,14 +4,17 @@ import (
 	"encoding/hex"
 	"log"
 	"math/big"
-	"perun.network/go-perun/channel"
+	wallet2 "perun.network/go-perun/wallet"
+	"perun.network/perun-ckb-backend/encoding"
 	"testing"
+
+	"perun.network/go-perun/channel"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	gptest "perun.network/go-perun/wallet/test"
+	nchannel "perun.network/perun-ckb-backend/channel"
 	"perun.network/perun-ckb-backend/channel/asset"
-	"perun.network/perun-ckb-backend/encoding"
 	"perun.network/perun-ckb-backend/wallet"
 	"perun.network/perun-ckb-backend/wallet/address"
 )
@@ -46,11 +49,12 @@ func TestStateSignature(t *testing.T) {
 	log.Println("public key:", hex.EncodeToString(publicKey.SerializeCompressed()))
 
 	alloc := &channel.Allocation{
-		Assets: []channel.Asset{asset.NewCKBytesAsset()},
+		Assets: []channel.Asset{asset.NewCKBytesNervosAsset()},
 		Balances: [][]channel.Bal{
 			{big.NewInt(10), big.NewInt(11)},
 		},
-		Locked: []channel.SubAlloc{},
+		Backends: []wallet2.BackendID{3},
+		Locked:   []channel.SubAlloc{},
 	}
 
 	state := &channel.State{
@@ -62,15 +66,21 @@ func TestStateSignature(t *testing.T) {
 		IsFinal:    true,
 	}
 
-	packedState, err := encoding.PackChannelState(state)
+	ethState := nchannel.ToEthState(state)
+	log.Println("eth state:", ethState)
+	bytes, err := nchannel.EncodeEthState(&ethState)
+	log.Println("encoded state:", bytes)
 	require.NoError(t, err)
 
-	signature, err := acc.SignData(packedState.AsSlice())
+	signature, err := acc.SignData(bytes)
 	log.Println("signature:", hex.EncodeToString(signature))
-	log.Println("packed state:", "0x"+hex.EncodeToString(packedState.AsSlice()))
+	sig, err := encoding.NewMoleculeSignature(signature)
+	require.NoError(t, err)
+	log.Println("molecule signature:", hex.EncodeToString(sig.AsSlice()))
+	log.Println("packed state:", "0x"+hex.EncodeToString(bytes))
 	require.NoError(t, err)
 
-	b, err := wallet.Backend.VerifySignature(packedState.AsSlice(), signature, acc.Address())
+	b, err := wallet.Backend.VerifySignature(bytes, signature, acc.Address())
 	require.NoError(t, err)
 	assert.Truef(t, b, "signature verification failed for address %s", acc.Address().String())
 }

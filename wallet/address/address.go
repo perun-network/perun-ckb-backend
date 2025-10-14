@@ -121,17 +121,17 @@ func NewParticipant(pubKey *secp256k1.PublicKey, paymentScript, unlockScript *ty
 
 // MarshalBinary encodes the participant into a binary representation as a molecule.OffChainParticipant.
 func (p Participant) MarshalBinary() ([]byte, error) {
-	offChainParticipant, err := p.PackOffChainParticipant()
+	offChainParticipant, err := p.PackOnChainParticipant()
 	return offChainParticipant.AsSlice(), err
 }
 
 // UnmarshalBinary decodes the participant from a molecule.OffChainParticipant.
 func (p *Participant) UnmarshalBinary(data []byte) error {
-	offChainParticipant, err := molecule.OffChainParticipantFromSlice(data, false)
+	onChainParticipant, err := molecule.ParticipantFromSlice(data, true)
 	if err != nil {
 		return err
 	}
-	return p.UnpackOffChainParticipant(offChainParticipant)
+	return p.UnpackOnChainParticipant(onChainParticipant)
 }
 
 func (p Participant) String() string {

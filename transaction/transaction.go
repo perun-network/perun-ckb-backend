@@ -527,7 +527,7 @@ func (ptb *PerunTransactionBuilder) balanceTransaction() error {
 			continue
 		}
 
-		if alreadyProvidedAmount < requiredAmount || requiredAmount == uint64(0) { //TODO: check if this is correct
+		if alreadyProvidedAmount < requiredAmount {
 			// We need more inputs to fund the required amount for the given UDT.
 			// This might require a change cell for the UDT modifying the
 			// required amount of CKB capacity.

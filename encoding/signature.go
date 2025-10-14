@@ -1,19 +1,59 @@
 package encoding
 
 import (
+	"encoding/asn1"
+	"fmt"
+	"github.com/ethereum/go-ethereum/crypto/secp256k1"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types/molecule"
+	"math/big"
 	gpwallet "perun.network/go-perun/wallet"
-	"perun.network/perun-ckb-backend/wallet"
 )
 
-// NewDEREncodedSignatureFromPadded converts a padded signature to a DER encoded signature.
-func NewDEREncodedSignatureFromPadded(paddedSignature []byte) (*molecule.Bytes, error) {
-	sig, err := wallet.RemovePadding(paddedSignature)
-	if err != nil {
-		return nil, err
+// ASN.1 container for ECDSA (r,s)
+type ecdsaSignature struct {
+	R, S *big.Int
+}
+
+func toLowS(s *big.Int) *big.Int {
+	n := secp256k1.S256().Params().N
+	halfN := new(big.Int).Rsh(new(big.Int).Set(n), 1)
+	if s.Cmp(halfN) > 0 {
+		return new(big.Int).Sub(n, s)
 	}
-	return types.PackBytes(sig), nil
+	return s
+}
+
+// NewMoleculeSignature converts an incoming signature to DER (R,S) and packs it.
+// Accepts:
+//   - 65 bytes: Ethereum R||S||V (with V=27/28 or 0/1)  <-- your SignData output
+//   - 64 bytes: R||S (no V)
+//   - DER:      starts with 0x30 (passes through)
+func NewMoleculeSignature(sig []byte) (*molecule.Bytes, error) {
+	// Already DER? (SEQUENCE tag = 0x30)
+	if len(sig) > 0 && sig[0] == 0x30 {
+		return types.PackBytes(sig), nil
+	}
+
+	var r, s *big.Int
+	switch len(sig) {
+	case 65: // R||S||V
+		r = new(big.Int).SetBytes(sig[:32])
+		s = new(big.Int).SetBytes(sig[32:64])
+		// ignore V (sig[64])
+	case 64: // R||S
+		r = new(big.Int).SetBytes(sig[:32])
+		s = new(big.Int).SetBytes(sig[32:64])
+	default:
+		return nil, fmt.Errorf("unexpected signature length %d (want 65/64 or DER)", len(sig))
+	}
+
+	s = toLowS(s) // k256 expects canonical (low-S)
+	der, err := asn1.Marshal(ecdsaSignature{R: r, S: s})
+	if err != nil {
+		return nil, fmt.Errorf("asn1 marshal: %w", err)
+	}
+	return types.PackBytes(der), nil
 }
 
 // PackSignature converts a perun signature to a molecule signature.

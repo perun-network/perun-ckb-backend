@@ -49,7 +49,7 @@ func TestCrossPaymentHappy(t *testing.T) {
 		role [2]clienttest.Executer
 	)
 
-	s := btest.NewCrossSetup(t, rng, false)
+	s := btest.NewCrossSetup(t, rng, true)
 	setup := ctest.MakeRoleSetupsCross(rng, s, name[:])
 
 	role[A] = clienttest.NewAlice(t, setup[A])

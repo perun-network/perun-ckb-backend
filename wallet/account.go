@@ -2,7 +2,7 @@ package wallet
 
 import (
 	"crypto/ecdsa"
-	"encoding/asn1"
+	"encoding/hex"
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types"
@@ -45,27 +45,16 @@ func (a Account) Address() wallet.Address {
 // }
 
 func (a Account) SignData(data []byte) ([]byte, error) {
-	phash := PrefixedHash(data)
-
-	// Convert Decred key to standard *ecdsa.PrivateKey for go-ethereum usage
-	ecdsaKey := ConvertDecredKeyToECDSA(a.key)
-
-	// Sign using go-ethereum crypto.Sign, produces 65-byte [R||S||V]
-	sig, err := crypto.Sign(phash, ecdsaKey)
+	hash := crypto.Keccak256(data)
+	prefix := []byte("\x19Ethereum Signed Message:\n32")
+	phash := crypto.Keccak256(prefix, hash)
+	privateKeyECDSA, err := crypto.HexToECDSA(hex.EncodeToString(a.key.Serialize()))
+	sig, err := crypto.Sign(phash, privateKeyECDSA)
 	if err != nil {
-		return nil, errors.Wrap(err, "sign hash failed")
+		return nil, errors.Wrap(err, "SignHash")
 	}
-
-	// Extract R and S to marshal DER signature (drop recovery id V)
-	r := new(big.Int).SetBytes(sig[:32])
-	s := new(big.Int).SetBytes(sig[32:64])
-
-	derEncoded, err := asn1.Marshal(ECDSASignature{R: r, S: s})
-	if err != nil {
-		return nil, errors.Wrap(err, "DER marshal failed")
-	}
-
-	return PadDEREncodedSignature(derEncoded)
+	sig[64] += 27
+	return sig, nil
 }
 
 func NewAccount() (*Account, error) {

@@ -47,17 +47,17 @@ type CKBClient interface {
 
 	// Dispute registers a dispute for the channel with the given channel ID on chain.
 	// It should register the given state with the given signatures as witness.
-	// Note: The given signatures are padded (see encoding.NewDEREncodedSignatureFromPadded).
+	// Note: The given signatures are padded (see encoding.NewMoleculeSignature).
 	Dispute(ctx context.Context, id channel.ID, state *channel.State, sigs []wallet.Sig, params *channel.Params) error
 
 	// DisputeVC registers a dispute for a channel and its virtual channel with the given channel ID on chain.
 	// It should register the given state with the given signatures as witness.
-	// Note: The given signatures are padded (see encoding.NewDEREncodedSignatureFromPadded).
+	// Note: The given signatures are padded (see encoding.NewMoleculeSignature).
 	DisputeVC(ctx context.Context, vcID, parentID channel.ID, vcState, parentState *channel.State, vcParams, parentParams *channel.Params, sigs, parentSigs []wallet.Sig, indexMap []channel.Index) error
 
 	// Close closes the channel with the given channel ID on chain.
 	// The implementation can assume that the given state is final.
-	// Note: The given signatures are padded (see encoding.NewDEREncodedSignatureFromPadded).
+	// Note: The given signatures are padded (see encoding.NewMoleculeSignature).
 	Close(ctx context.Context, id channel.ID, state *channel.State, sigs []wallet.Sig, params *channel.Params) error
 
 	// ForceClose closes the channel with the given channel ID on chain.
@@ -371,12 +371,12 @@ func (c Client) Dispute(ctx context.Context, id channel.ID, state *channel.State
 		return fmt.Errorf("expected 2 signatures, got %d", len(sigs))
 	}
 
-	sigA, err := encoding.NewDEREncodedSignatureFromPadded(sigs[0])
+	sigA, err := encoding.NewMoleculeSignature(sigs[0])
 	if err != nil {
 		return fmt.Errorf("encoding signature A: %w", err)
 	}
 
-	sigB, err := encoding.NewDEREncodedSignatureFromPadded(sigs[1])
+	sigB, err := encoding.NewMoleculeSignature(sigs[1])
 	if err != nil {
 		return fmt.Errorf("encoding signature B: %w", err)
 	}
@@ -413,12 +413,12 @@ func (c Client) DisputeVC(ctx context.Context, vcID, parentID channel.ID, vcStat
 	if len(vcSigs) != 2 {
 		return fmt.Errorf("expected 2 signatures, got %d", len(vcSigs))
 	}
-	sigA, err := encoding.NewDEREncodedSignatureFromPadded(vcSigs[0])
+	sigA, err := encoding.NewMoleculeSignature(vcSigs[0])
 	if err != nil {
 		return fmt.Errorf("encoding signature A: %w", err)
 	}
 
-	sigB, err := encoding.NewDEREncodedSignatureFromPadded(vcSigs[1])
+	sigB, err := encoding.NewMoleculeSignature(vcSigs[1])
 	if err != nil {
 		return fmt.Errorf("encoding signature B: %w", err)
 	}
@@ -426,12 +426,12 @@ func (c Client) DisputeVC(ctx context.Context, vcID, parentID channel.ID, vcStat
 	if len(parentSigs) != 2 {
 		return fmt.Errorf("expected 2 parent signatures, got %d", len(parentSigs))
 	}
-	parentSigA, err := encoding.NewDEREncodedSignatureFromPadded(parentSigs[0])
+	parentSigA, err := encoding.NewMoleculeSignature(parentSigs[0])
 	if err != nil {
 		return fmt.Errorf("encoding signature A: %w", err)
 	}
 
-	parentSigB, err := encoding.NewDEREncodedSignatureFromPadded(parentSigs[1])
+	parentSigB, err := encoding.NewMoleculeSignature(parentSigs[1])
 	if err != nil {
 		return fmt.Errorf("encoding signature B: %w", err)
 	}
@@ -760,22 +760,22 @@ func (c Client) ForceCloseWithVC(ctx context.Context, id channel.ID, vcid channe
 		return fmt.Errorf("retrieving assets locked in channel: %w", err)
 	}
 
-	sigA, err := encoding.NewDEREncodedSignatureFromPadded(sigs[0])
+	sigA, err := encoding.NewMoleculeSignature(sigs[0])
 	if err != nil {
 		return fmt.Errorf("encoding signature A: %w", err)
 	}
 
-	sigB, err := encoding.NewDEREncodedSignatureFromPadded(sigs[1])
+	sigB, err := encoding.NewMoleculeSignature(sigs[1])
 	if err != nil {
 		return fmt.Errorf("encoding signature B: %w", err)
 	}
 
-	vcSigA, err := encoding.NewDEREncodedSignatureFromPadded(vcSigs[0])
+	vcSigA, err := encoding.NewMoleculeSignature(vcSigs[0])
 	if err != nil {
 		return fmt.Errorf("encoding signature A: %w", err)
 	}
 
-	vcSigB, err := encoding.NewDEREncodedSignatureFromPadded(vcSigs[1])
+	vcSigB, err := encoding.NewMoleculeSignature(vcSigs[1])
 	if err != nil {
 		return fmt.Errorf("encoding signature B: %w", err)
 	}
@@ -1185,9 +1185,9 @@ func updateState(state *channel.State, newState *molecule.ChannelState) (*channe
 	}
 
 	for sudtIndex, pAsset := range state.Assets {
-		a, err := asset.IsCompatibleAsset(pAsset)
-		if err != nil {
-			return nil, err
+		a, ckb := asset.IsCompatibleAsset(pAsset)
+		if ckb != true {
+			continue
 		}
 		if a.IsInvalid() {
 			return nil, errors.New("invalid asset")

@@ -2,7 +2,6 @@ package client_test
 
 import (
 	"context"
-	"github.com/sirupsen/logrus"
 	"math/big"
 	"math/rand"
 	"perun.network/go-perun/channel"
@@ -37,18 +36,11 @@ func TestPaymentHappy(t *testing.T) {
 		role [2]clienttest.Executer
 	)
 
-	s := btest.NewSetup(t, rng, false)
-	setup := ctest.MakeRoleSetups(rng, s, name[:])
+	s := btest.NewCrossSetup(t, rng, true)
+	setup := ctest.MakeRoleSetupsCross(rng, s, name[:])
 
 	role[A] = clienttest.NewAlice(t, setup[A])
 	role[B] = clienttest.NewBob(t, setup[B])
-	balAlice := setup[A].BalanceReader.Balance(s.Asset)
-	balBob := setup[B].BalanceReader.Balance(s.Asset)
-
-	logrus.Printf("Initial Balances - Alice: %s, Bob: %s", balAlice.String(), balBob.String())
-	balAlice = setup[A].BalanceReader.Balance(s.SudtAsset)
-	balBob = setup[B].BalanceReader.Balance(s.SudtAsset)
-	logrus.Printf("Initial SUDT Balances - Alice: %s, Bob: %s", balAlice.String(), balBob.String())
 
 	// enable stages synchronization
 	stages := role[A].EnableStages()
@@ -57,7 +49,7 @@ func TestPaymentHappy(t *testing.T) {
 	execConfig := &clienttest.AliceBobExecConfig{
 		BaseExecConfig: clienttest.MakeBaseExecConfig(
 			[2]map[wallet.BackendID]wire.Address{{3: setup[A].Identity[3].Address()}, {3: setup[B].Identity[3].Address()}},
-			[]channel.Asset{s.Asset},
+			[]channel.Asset{s.CkbAsset},
 			[]wallet.BackendID{3},
 			[][2]*big.Int{{asset.CKByteToShannon(big.NewFloat(100)), asset.CKByteToShannon(big.NewFloat(100))}},
 			client.WithoutApp(),

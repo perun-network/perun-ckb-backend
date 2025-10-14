@@ -9,28 +9,32 @@ import (
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types"
 )
 
-type SystemScripts struct {
-	DAO struct {
-		CellDep  types.CellDep `json:"cell_dep"`
-		ScriptID ScriptID      `json:"script_id"`
-	} `json:"dao"`
-	Secp256k1Blake160MultisigAll struct {
-		CellDep  types.CellDep `json:"cell_dep"`
-		ScriptID ScriptID      `json:"script_id"`
-	} `json:"secp256k1_blake160_multisig_all"`
-	Secp256k1Blake160SighashAll struct {
-		CellDep  types.CellDep `json:"cell_dep"`
-		ScriptID ScriptID      `json:"script_id"`
-	} `json:"secp256k1_blake160_sighash_all"`
-	Secp256k1Data types.OutPoint `json:"secp256k1_data"`
-	TypeID        struct {
-		ScriptID ScriptID `json:"script_id"`
-	} `json:"type_id"`
+type OutPoint struct {
+	TxHash types.Hash `json:"txHash"`
+	Index  uint32     `json:"index"`
 }
 
-type ScriptID struct {
-	CodeHash types.Hash           `json:"code_hash"`
-	HashType types.ScriptHashType `json:"hash_type"`
+type CellDep struct {
+	OutPoint *OutPoint     `json:"outPoint"`
+	DepType  types.DepType `json:"depType"`
+}
+type ScriptDep struct {
+	CellDep CellDep `json:"cellDep"`
+}
+
+type ScriptEntry struct {
+	CodeHash types.Hash           `json:"codeHash"`
+	HashType types.ScriptHashType `json:"hashType"`
+	CellDeps []ScriptDep          `json:"cellDeps"`
+}
+
+type SystemScripts struct {
+	Secp256k1Blake160 ScriptEntry `json:"Secp256k1Blake160"`
+	Secp256k1Multisig ScriptEntry `json:"Secp256k1Multisig"`
+	AnyoneCanPay      ScriptEntry `json:"AnyoneCanPay"`
+	OmniLock          ScriptEntry `json:"OmniLock"`
+	XUdt              ScriptEntry `json:"XUdt"`
+	TypeID            ScriptEntry `json:"TypeId"`
 }
 
 const systemScriptName = "default_scripts.json"

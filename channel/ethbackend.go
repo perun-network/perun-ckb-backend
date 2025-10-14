@@ -119,7 +119,7 @@ func assetToCKBAsset(asset channel.Asset) ChannelAsset {
 
 	switch v := asset.(type) {
 	case *ckbasset.NervosAsset:
-		assetBytes, err = v.Asset.MarshalBinary()
+		assetBytes, err = v.MarshalBinary()
 		if err != nil {
 			log.Panicf("Could not encode NervosAsset: %v", err)
 		}
@@ -140,7 +140,7 @@ func ToEthParams(params *channel.Params) (ChannelParams, error) {
 		var ccAddress []byte
 		var ethAddress common.Address
 		if add, ok := p[EthBackendID]; ok {
-			ethAddress := common.Address{}
+			ethAddress = common.Address{}
 			var err error
 			ethBytes, err := add.MarshalBinary()
 			if err != nil {
@@ -157,7 +157,10 @@ func ToEthParams(params *channel.Params) (ChannelParams, error) {
 			if err != nil {
 				return ChannelParams{}, errors.New("error packing onchain participant: " + err.Error())
 			}
-			ccAddress = onchainParticipant.AsSlice()
+			ccAddress, err = participant.MarshalBinary()
+			if err != nil {
+				return ChannelParams{}, errors.New("error marshalling participant: " + err.Error())
+			}
 			pubKey, err := ckbaddress.UnpackSEC1EncodedPubKey(onchainParticipant.PubKey())
 			if err != nil {
 				return ChannelParams{}, errors.New("error unpacking sec1 encoded pubkey: " + err.Error())

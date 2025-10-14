@@ -2,11 +2,8 @@ package wallet
 
 import (
 	"errors"
-	"fmt"
+	"github.com/ethereum/go-ethereum/crypto"
 	"io"
-
-	"github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
-	"golang.org/x/crypto/sha3"
 	"perun.network/go-perun/wallet"
 	"perun.network/perun-ckb-backend/wallet/address"
 )
@@ -43,31 +40,19 @@ func (b backend) VerifySignature(msg []byte, sig wallet.Sig, a wallet.Address) (
 	if !ok {
 		return false, errors.New("address is not of type Participant")
 	}
-	hash := PrefixedHash(msg)
-	sigWithoutPadding, err := RemovePadding(sig)
-	if err != nil {
-		return false, fmt.Errorf("removing padding: %w", err)
-	}
-	signature, err := ecdsa.ParseDERSignature(sigWithoutPadding)
-	if err != nil {
-		return false, fmt.Errorf("parsing DER signature: %w", err)
-	}
-	return signature.Verify(hash[:], addr.PubKey), nil
-}
-
-// PrefixedHash adds an ethereum specific prefix to the hash of given data, rehashes the results
-// and returns it.
-func PrefixedHash(data []byte) []byte {
-	msgHash := keccak256(data)
+	hash := crypto.Keccak256(msg)
 	prefix := []byte("\x19Ethereum Signed Message:\n32")
-	full := append(prefix, msgHash...)
-
-	finalHash := keccak256(full)
-	return finalHash
-}
-
-func keccak256(data []byte) []byte {
-	h := sha3.NewLegacyKeccak256()
-	h.Write(data)
-	return h.Sum(nil)
+	hash = crypto.Keccak256(prefix, hash)
+	sigCopy := make([]byte, 65) //nolint:gomnd
+	copy(sigCopy, sig)
+	if len(sigCopy) == 65 && (sigCopy[65-1] >= 27) { //nolint:gomnd
+		sigCopy[65-1] -= 27
+	}
+	pk, err := crypto.SigToPub(hash, sigCopy)
+	if err != nil {
+		return false, err
+	}
+	recovered := crypto.PubkeyToAddress(*pk)
+	expected := crypto.PubkeyToAddress(*addr.PubKey.ToECDSA())
+	return recovered == expected, nil
 }

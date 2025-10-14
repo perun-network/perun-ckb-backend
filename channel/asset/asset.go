@@ -14,16 +14,13 @@
 package asset
 
 import (
-	"bytes"
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"math/big"
-	"perun.network/go-perun/wire/perunio"
-
 	"github.com/Pilatuz/bigz/uint128"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types/molecule"
+	"math/big"
 	pchannel "perun.network/go-perun/channel"
 	"perun.network/go-perun/channel/multi"
 	molecule2 "perun.network/perun-ckb-backend/encoding/molecule"
@@ -62,29 +59,18 @@ type (
 
 // MarshalBinary marshals the NervosAsset into its binary representation.
 func (C NervosAsset) MarshalBinary() ([]byte, error) {
-	// Normalize Args slice before encoding to avoid nil vs []byte{} mismatch
-	if C.Asset.SUDT != nil && C.Asset.SUDT.TypeScript.Args == nil {
-		C.Asset.SUDT.TypeScript.Args = []byte{}
-	}
-	var buf bytes.Buffer
-	err := perunio.Encode(&buf, C.id.ledgerID, C.id.backendID, C.Asset)
-	if err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
+	return C.Asset.MarshalBinary()
 }
 
 // UnmarshalBinary unmarshals the NervosAsset from its binary representation.
 func (C *NervosAsset) UnmarshalBinary(data []byte) error {
-	buf := bytes.NewBuffer(data)
-	err := perunio.Decode(buf, &C.id.ledgerID, &C.id.backendID, &C.Asset)
+	var innerAsset Asset
+	err := innerAsset.UnmarshalBinary(data)
 	if err != nil {
 		return err
 	}
-	// Normalize Args slice before encoding to avoid nil vs []byte{} mismatch
-	if C.Asset.SUDT != nil && C.Asset.SUDT.TypeScript.Args == nil {
-		C.Asset.SUDT.TypeScript.Args = []byte{}
-	}
+	C.Asset = innerAsset
+	C.id = MakeCCID(ContractLID{"03"})
 	return nil
 }
 
@@ -247,17 +233,17 @@ func NewSUDTAsset(sudt *SUDT) *Asset {
 }
 
 // IsCompatibleAsset returns the Asset if the asset is compatible with the CKB backend.
-func IsCompatibleAsset(asset pchannel.Asset) (*Asset, error) {
+func IsCompatibleAsset(asset pchannel.Asset) (*Asset, bool) {
 	a, ok := asset.(*NervosAsset)
 	if !ok {
 		b, ok := asset.(*Asset)
 		if !ok {
-			return nil, errors.New("asset is not of type Asset")
+			return nil, false
 		} else {
-			return b, nil
+			return b, true
 		}
 	}
-	return &a.Asset, nil
+	return &a.Asset, true
 }
 
 // SUDT is the asset type for SUDT tokens.
