@@ -25,7 +25,7 @@ func (b backend) NewAddress() wallet.Address {
 // The padding used is defined by PadDEREncodedSignature / RemovePadding.
 // The signature is then returned (still padded, as VerifySignature also expects a padded signature).
 func (b backend) DecodeSig(reader io.Reader) (wallet.Sig, error) {
-	sig := make([]byte, PaddedSignatureLength)
+	sig := make([]byte, 65)
 	if _, err := io.ReadFull(reader, sig); err != nil {
 		return nil, err
 	}

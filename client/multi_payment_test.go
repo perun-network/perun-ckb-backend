@@ -42,8 +42,8 @@ func TestMultiPaymentHappy(t *testing.T) {
 		role [2]clienttest.Executer
 	)
 
-	s := btest.NewSetup(t, rng, false)
-	setup := ctest.MakeRoleSetups(rng, s, name[:])
+	s := btest.NewCrossSetup(t, rng, false)
+	setup := ctest.MakeRoleSetupsCross(rng, s, name[:])
 
 	role[A] = clienttest.NewAlice(t, setup[A])
 	role[B] = clienttest.NewBob(t, setup[B])

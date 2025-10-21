@@ -178,6 +178,9 @@ func (a *Asset) UnmarshalBinary(data []byte) error {
 		}
 		a.IsCKBytes = false
 		a.SUDT = s
+		if a.SUDT.TypeScript.Args == nil {
+			a.SUDT.TypeScript.Args = []byte{}
+		}
 		return nil
 	default:
 		return errors.New("asset invalid: unknown asset type")

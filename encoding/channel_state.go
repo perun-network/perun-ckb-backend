@@ -32,8 +32,7 @@ func PackChannelState(state *pchannel.State) (molecule.ChannelState, error) {
 // PackBalances extracts the balances from a perun channel state to a molecule Balances.
 func PackBalances(state *pchannel.State) (molecule.Balances, error) {
 	balancesBuilder := molecule.NewBalancesBuilder()
-	sudtAllocBuilder := molecule.NewSUDTAllocationBuilder()
-	ethAllocBuilder := molecule.NewETHAllocationBuilder()
+	allocBuilder := molecule.NewAllocationBuilder()
 	for _, pAsset := range state.Assets {
 		a, ckb := asset.IsCompatibleAsset(pAsset)
 		if ckb != true {
@@ -45,7 +44,9 @@ func PackBalances(state *pchannel.State) (molecule.Balances, error) {
 			if err != nil {
 				return molecule.Balances{}, err
 			}
-			ethAllocBuilder.Push(d)
+			ab := molecule.NewAnyBalancesBuilder()
+			ab.Eth(d)
+			allocBuilder.Push(ab.Build())
 		} else {
 			if a.IsInvalid() {
 				return molecule.Balances{}, errors.New("invalid asset")
@@ -59,7 +60,9 @@ func PackBalances(state *pchannel.State) (molecule.Balances, error) {
 				if err != nil {
 					return molecule.Balances{}, err
 				}
-				balancesBuilder.Ckbytes(d)
+				ab := molecule.NewAnyBalancesBuilder()
+				ab.Ckb(d)
+				allocBuilder.Push(ab.Build())
 			} else {
 				b, err := PackSUDTBalances(a,
 					[2]*big.Int{
@@ -69,13 +72,14 @@ func PackBalances(state *pchannel.State) (molecule.Balances, error) {
 				if err != nil {
 					return molecule.Balances{}, err
 				}
-				sudtAllocBuilder.Push(b)
+				ab := molecule.NewAnyBalancesBuilder()
+				ab.Sudt(b)
+				allocBuilder.Push(ab.Build())
 			}
 		}
 	}
 
-	balancesBuilder.Sudts(sudtAllocBuilder.Build())
-	balancesBuilder.EthAssets(ethAllocBuilder.Build())
+	balancesBuilder.Assets(allocBuilder.Build())
 
 	// Locked_Balances
 	lockedBalancesBuilder := molecule.NewLockedBalancesBuilder()
