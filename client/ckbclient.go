@@ -25,6 +25,8 @@ import (
 
 var ErrNoChannelLiveCell = errors.New("no channel live cell found")
 
+const SearchIndexerLimit = 1199
+
 type BlockNumber = uint64
 
 type CKBClient interface {
@@ -102,6 +104,7 @@ var _ CKBClient = (*Client)(nil)
 
 func (c Client) Start(ctx context.Context, params *channel.Params, state *channel.State) (*types.Script, error) {
 	// TODO: Override defaulthash logic.
+	log.Println("Start called")
 	iter, _, err := c.mkMyCKBCellIterator()
 	if err != nil {
 		return nil, fmt.Errorf("creating cell iterator: %w", err)
@@ -118,17 +121,21 @@ func (c Client) Start(ctx context.Context, params *channel.Params, state *channe
 	if err != nil {
 		return nil, fmt.Errorf("creating Perun transaction builder: %w", err)
 	}
+	log.Println("Start: created Perun transaction builder")
 	if err := builder.Open(oi); err != nil {
 		return nil, fmt.Errorf("creating open transaction: %w", err)
 	}
+	log.Println("Start: created open transaction")
 	tx, err := builder.Build()
 	if err != nil {
+		log.Println("Start: error while building open Tx")
 		return nil, fmt.Errorf("building open transaction: %w", err)
 	}
+	log.Println("Start: built open transaction")
 	if err := c.submitTx(ctx, tx); err != nil {
 		return nil, fmt.Errorf("submitting transaction: %w", err)
 	}
-
+	log.Println("Start: submitted open transaction")
 	return oi.GetPCTS(), nil
 }
 
@@ -170,11 +177,19 @@ func iteratorsForDeployment(cl rpc.Client, deployment backend.Deployment, sender
 			Script:           &udt,
 			ScriptType:       types.ScriptTypeType,
 			ScriptSearchMode: types.ScriptSearchModePrefix,
-			Filter:           nil,
 			WithData:         true,
 		}
-		sudtIter := collector.NewLiveCellIterator(cl, searchKey)
-		iters[udt.Hash()] = sudtIter
+
+		// Create the base UDT iterator (fetches all live cells with this type)
+		baseIter := collector.NewLiveCellIterator(cl, searchKey)
+
+		// Filter UDT cells to only use sender's lock script
+		senderLockHash := sender.Script.Hash()
+		filteredIter := NewFilteredCellIterator(baseIter, func(cell *types.CellOutput) bool {
+			return cell.Lock.Hash() == senderLockHash
+		})
+		// Register filtered iterator
+		iters[udt.Hash()] = filteredIter
 	}
 	return iters, nil
 }
@@ -228,19 +243,35 @@ func (c Client) createOrGetChannelToken(ctx context.Context, iter collector.Cell
 	if !iter.HasNext() {
 		return backend.Token{}, errors.New("sending account has no funds available")
 	}
-	transactionInput := iter.Next()
-	channelToken := molecule.
-		NewChannelTokenBuilder().
-		OutPoint(*transactionInput.OutPoint.Pack()).
-		Build()
-	return backend.Token{
-		Idx:      transactionInput.OutPoint.Index,
-		Outpoint: *transactionInput.OutPoint.Pack(),
-		Token:    channelToken,
-	}, nil
+	for iter.HasNext() {
+		txInput := iter.Next()
+		// Resolve the full cell to check the lock script
+		liveCell, err := c.client.GetLiveCell(ctx, txInput.OutPoint, false)
+		if err != nil || liveCell == nil || liveCell.Cell == nil {
+			log.Println("Skipping cell due to error or nil:", err, liveCell)
+			continue
+		}
+		if liveCell.Cell.Output.Lock.Hash() != c.signer.Address().Script.Hash() {
+			log.Println("Skipping cell due to lock hash mismatch:", liveCell.Cell.Output.Lock.Hash(), c.signer.Address().Script.Hash())
+			continue
+		}
+
+		channelToken := molecule.
+			NewChannelTokenBuilder().
+			OutPoint(*txInput.OutPoint.Pack()).
+			Build()
+		return backend.Token{
+			Idx:      txInput.OutPoint.Index,
+			Outpoint: *txInput.OutPoint.Pack(),
+			Token:    channelToken,
+		}, nil
+	}
+
+	return backend.Token{}, errors.New("no suitable cell found for channel token")
 }
 
 func (c Client) Fund(ctx context.Context, pcts *types.Script, state *channel.State, params *channel.Params) error {
+	log.Println("Fund(ckbclient) called")
 	channelCell, err := c.getExactChannelLiveCell(ctx, pcts)
 	if err != nil {
 		return fmt.Errorf("getting channel live cell: %w", err)
@@ -259,6 +290,7 @@ func (c Client) Fund(ctx context.Context, pcts *types.Script, state *channel.Sta
 	if err != nil {
 		return fmt.Errorf("creating Perun transaction builder: %w", err)
 	}
+	log.Println("Fund: created Perun transaction builder")
 	if err := builder.Fund(fi); err != nil {
 		return fmt.Errorf("creating fund transaction: %w", err)
 	}
@@ -266,6 +298,7 @@ func (c Client) Fund(ctx context.Context, pcts *types.Script, state *channel.Sta
 	if err != nil {
 		return fmt.Errorf("building fund transaction: %w", err)
 	}
+	log.Println("Fund: built fund transaction")
 	return c.submitTx(ctx, tx)
 }
 
@@ -368,7 +401,7 @@ func (c Client) getAssets(ctx context.Context, pcts *types.Script) (*indexer.Liv
 		Filter:           nil,
 		WithData:         true,
 	}
-	return c.client.GetCells(ctx, searchKey, indexer.SearchOrderDesc, math.MaxUint32, "")
+	return c.client.GetCells(ctx, searchKey, indexer.SearchOrderDesc, SearchIndexerLimit, "")
 }
 
 func (c Client) ForceClose(ctx context.Context, id channel.ID, state *channel.State, params *channel.Params) error {
@@ -537,7 +570,7 @@ func (c Client) getAllChannelLiveCells(ctx context.Context) (*indexer.LiveCells,
 		Filter:           nil,
 		WithData:         true,
 	}
-	return c.client.GetCells(ctx, searchKey, indexer.SearchOrderDesc, math.MaxUint32, "")
+	return c.client.GetCells(ctx, searchKey, indexer.SearchOrderDesc, SearchIndexerLimit, "")
 }
 
 func (c Client) getExactChannelLiveCell(ctx context.Context, pcts *types.Script) (*indexer.LiveCell, error) {
@@ -548,7 +581,7 @@ func (c Client) getExactChannelLiveCell(ctx context.Context, pcts *types.Script)
 		Filter:           nil,
 		WithData:         true,
 	}
-	cells, err := c.client.GetCells(ctx, searchKey, indexer.SearchOrderDesc, math.MaxUint32, "")
+	cells, err := c.client.GetCells(ctx, searchKey, indexer.SearchOrderDesc, SearchIndexerLimit, "")
 	log.Println("getExactChannelLiveCell: GetCells")
 	if err != nil {
 		log.Println("getExactChannelLiveCell: GetCells error: ", err)
