@@ -2,12 +2,16 @@ package test
 
 import (
 	"log"
+	"math/big"
 	"math/rand"
+	"testing"
 	"time"
 
 	"github.com/nervosnetwork/ckb-sdk-go/v2/rpc"
 
+	"perun.network/perun-ckb-backend/channel/asset"
 	"perun.network/perun-ckb-backend/channel/test"
+	"perun.network/perun-ckb-backend/transaction"
 
 	gpwiretest "perun.network/go-perun/backend/sim/wire"
 	clienttest "perun.network/go-perun/client/test"
@@ -24,7 +28,14 @@ const (
 	ChallengeDurationBlocks = 90
 )
 
-func MakeRoleSetups(rng *rand.Rand, s *test.Setup, names []string) []clienttest.RoleSetup {
+const (
+	// Testnet Config
+	TestnetTimeout                 = 5 * time.Minute
+	TestnetBlockInterval           = 3 * time.Second
+	TestnetChallengeDurationBlocks = 9
+)
+
+func MakeRoleSetups(rng *rand.Rand, s *test.Setup, names []string, isTestnet bool) []clienttest.RoleSetup {
 	setups := make([]clienttest.RoleSetup, len(names))
 	bus := wire.NewLocalBus()
 
@@ -34,7 +45,19 @@ func MakeRoleSetups(rng *rand.Rand, s *test.Setup, names []string) []clienttest.
 			panic("Error initializing watcher: " + err.Error())
 		}
 
-		balanceRPC, err := rpc.Dial(test.RpcNodeURL)
+		var rpcURL string
+		var challengeDuration uint64
+		var timeout time.Duration
+		if isTestnet {
+			rpcURL = test.TestnetRpcNodeURL
+			challengeDuration = TestnetChallengeDurationBlocks
+			timeout = TestnetTimeout
+		} else {
+			rpcURL = test.DevnetRpcNodeURL
+			challengeDuration = ChallengeDurationBlocks * uint64(time.Second/BlockInterval)
+			timeout = DefaultTimeout
+		}
+		balanceRPC, err := rpc.Dial(rpcURL)
 		if err != nil {
 			panic("Error dialing RPC: " + err.Error())
 		}
@@ -57,9 +80,9 @@ func MakeRoleSetups(rng *rand.Rand, s *test.Setup, names []string) []clienttest.
 			Adjudicator: s.Adjs[i],
 			Watcher:     watcher,
 			Wallet:      s.EphemeralWallets[i],
-			Timeout:     DefaultTimeout,
+			Timeout:     timeout,
 			// Scaled due to simbackend automining progressing faster than real time.
-			ChallengeDuration: ChallengeDurationBlocks * uint64(time.Second/BlockInterval),
+			ChallengeDuration: challengeDuration,
 			Errors:            errors,
 			BalanceReader:     test.NewBalanceReader(balanceRPC, s.WalletAccs[i].Address()),
 		}
@@ -67,4 +90,62 @@ func MakeRoleSetups(rng *rand.Rand, s *test.Setup, names []string) []clienttest.
 	}
 
 	return setups
+}
+
+func MakePaymentChannelSetup(t *testing.T, rng *rand.Rand, isTestnet bool) clienttest.PaymentChannelSetup {
+	t.Helper()
+	name := [2]string{"Alice", "Bob"}
+	var setup *test.Setup
+	if isTestnet {
+		setup = test.NewTestnetVirtualChannelSetup(t, rng)
+	} else {
+		setup = test.NewDevnetVirtualChannelSetup(t, rng)
+	}
+	roleSetup := MakeRoleSetups(rng, setup, name[:], isTestnet)
+
+	return clienttest.PaymentChannelSetup{
+		Clients:           [2]clienttest.RoleSetup(roleSetup),
+		ChallengeDuration: roleSetup[0].ChallengeDuration,
+		Asset:             setup.Asset,
+		Balances: clienttest.PaymentChannelBalances{
+			InitBalsAliceBob: []*big.Int{asset.CKByteToShannon(big.NewFloat(100)), asset.CKByteToShannon(big.NewFloat(100))},
+			BalsUpdated:      []*big.Int{asset.CKByteToShannon(big.NewFloat(70)), asset.CKByteToShannon(big.NewFloat(130))},
+			FinalBals:        []*big.Int{asset.CKByteToShannon(big.NewFloat(70)), asset.CKByteToShannon(big.NewFloat(130))},
+		},
+		BalanceDelta:       big.NewInt(int64(3 * transaction.DefaultFeeShannon)), // Max Fee: (Open + Dispute + Close) * 1 CKB
+		Rng:                rng,
+		WaitWatcherTimeout: 1 * time.Second,
+		IsUTXO:             true,
+	}
+}
+
+func MakeVirtualChannelSetup(t *testing.T, rng *rand.Rand, isTestnet bool) clienttest.VirtualChannelSetup {
+	t.Helper()
+	name := [3]string{"Alice", "Bob", "Ingrid"}
+	var setup *test.Setup
+	if isTestnet {
+		setup = test.NewTestnetVirtualChannelSetup(t, rng)
+	} else {
+		setup = test.NewDevnetVirtualChannelSetup(t, rng)
+	}
+
+	roleSetup := MakeRoleSetups(rng, setup, name[:], isTestnet)
+
+	return clienttest.VirtualChannelSetup{
+		Clients:           [3]clienttest.RoleSetup(roleSetup),
+		ChallengeDuration: roleSetup[0].ChallengeDuration,
+		Asset:             setup.Asset,
+		Balances: clienttest.VirtualChannelBalances{
+			InitBalsAliceIngrid: []*big.Int{asset.CKByteToShannon(big.NewFloat(100)), asset.CKByteToShannon(big.NewFloat(100))},
+			InitBalsBobIngrid:   []*big.Int{asset.CKByteToShannon(big.NewFloat(100)), asset.CKByteToShannon(big.NewFloat(100))},
+			InitBalsAliceBob:    []*big.Int{asset.CKByteToShannon(big.NewFloat(50)), asset.CKByteToShannon(big.NewFloat(50))},
+			VirtualBalsUpdated:  []*big.Int{asset.CKByteToShannon(big.NewFloat(20)), asset.CKByteToShannon(big.NewFloat(80))},
+			FinalBalsAlice:      []*big.Int{asset.CKByteToShannon(big.NewFloat(70)), asset.CKByteToShannon(big.NewFloat(130))},
+			FinalBalsBob:        []*big.Int{asset.CKByteToShannon(big.NewFloat(130)), asset.CKByteToShannon(big.NewFloat(70))},
+		},
+		BalanceDelta:       big.NewInt(int64(6 * transaction.DefaultFeeShannon)), // Max Fee (Ingrid): (Open + Fund + 2 * Dispute + 2 * Close) * 1 CKB
+		Rng:                rng,
+		WaitWatcherTimeout: 1 * time.Second,
+		IsUTXO:             true,
+	}
 }

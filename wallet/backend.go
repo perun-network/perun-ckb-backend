@@ -1,11 +1,9 @@
 package wallet
 
 import (
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
-	"log"
 
 	"github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
 	"golang.org/x/crypto/blake2b"
@@ -51,7 +49,6 @@ func (b backend) VerifySignature(msg []byte, sig wallet.Sig, a wallet.Address) (
 	if err != nil {
 		return false, fmt.Errorf("removing padding: %w", err)
 	}
-	log.Println("signature without padding:", hex.EncodeToString(sigWithoutPadding))
 	signature, err := ecdsa.ParseDERSignature(sigWithoutPadding)
 	if err != nil {
 		return false, fmt.Errorf("parsing DER signature: %w", err)

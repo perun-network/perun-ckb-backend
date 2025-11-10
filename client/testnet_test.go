@@ -1,5 +1,5 @@
-//go:build !testnet
-// +build !testnet
+//go:build testnet
+// +build testnet
 
 package client_test
 
@@ -7,24 +7,25 @@ import (
 	"context"
 	"math/big"
 	"testing"
+	"time"
 
 	"perun.network/go-perun/client"
+	clienttest "perun.network/go-perun/client/test"
 	"perun.network/go-perun/log"
 	"perun.network/go-perun/wire"
 	"perun.network/perun-ckb-backend/channel/asset"
 	btest "perun.network/perun-ckb-backend/channel/test"
 	ctest "perun.network/perun-ckb-backend/client/test"
 	"polycry.pt/poly-go/sync"
+	"polycry.pt/poly-go/test"
 	pkgtest "polycry.pt/poly-go/test"
-
-	clienttest "perun.network/go-perun/client/test"
 )
 
 // TestPaymentHappy tests the happy path of the payment channel.
 // It creates a payment channel between Alice and Bob, and then performs a series of payments.
 // The test checks if the final balances are as expected and if the channel state is updated correctly.
 // The test also checks if the payment channel is closed correctly.
-func TestPaymentHappy(t *testing.T) {
+func TestTestnetPaymentHappy(t *testing.T) {
 	log.Info("Starting happy test")
 	rng := pkgtest.Prng(t)
 
@@ -34,8 +35,8 @@ func TestPaymentHappy(t *testing.T) {
 		role [2]clienttest.Executer
 	)
 
-	s := btest.NewDevnetLedgerChannelSetup(t, rng)
-	setup := ctest.MakeRoleSetups(rng, s, name[:], false)
+	s := btest.NewTestnetLedgerChannelSetup(t, rng)
+	setup := ctest.MakeRoleSetups(rng, s, name[:], true)
 
 	role[A] = clienttest.NewAlice(t, setup[A])
 	role[B] = clienttest.NewBob(t, setup[B])
@@ -52,7 +53,7 @@ func TestPaymentHappy(t *testing.T) {
 			client.WithoutApp(),
 		),
 		NumPayments: [2]int{2, 2},
-		TxAmounts:   [2]*big.Int{asset.CKByteToShannon(big.NewFloat(5)), asset.CKByteToShannon(big.NewFloat(5))},
+		TxAmounts:   [2]*big.Int{asset.CKByteToShannon(big.NewFloat(1)), asset.CKByteToShannon(big.NewFloat(1))},
 	}
 
 	var wg sync.WaitGroup
@@ -70,18 +71,36 @@ func TestPaymentHappy(t *testing.T) {
 	log.Info("Happy test done")
 }
 
-// TestPaymentDispute tests the payment dispute scenario.
-// It creates a payment channel between Alice and Bob, and then disputes the
-// channel state. The test checks if the dispute is resolved correctly and the final balances
-// are as expected.
-func TestPaymentDispute(t *testing.T) {
+func TestTestnetPaymentDispute(t *testing.T) {
 	log.Info("Starting payment dispute test")
 	rng := pkgtest.Prng(t)
 
-	ctx, cancel := context.WithTimeout(context.Background(), testDuration)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 
-	setup := ctest.MakePaymentChannelSetup(t, rng, false)
+	setup := ctest.MakePaymentChannelSetup(t, rng, true)
 	clienttest.TestPaymentChannelDispute(ctx, t, setup)
 	log.Info("Payment dispute test done")
+}
+
+func TestTestnetVirtualOptimistic(t *testing.T) {
+	log.Info("Starting virtual channel happy test")
+	rng := test.Prng(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	setup := ctest.MakeVirtualChannelSetup(t, rng, true)
+	clienttest.TestVirtualChannelOptimistic(ctx, t, setup)
+	log.Info("Virtual channel happy test done")
+}
+
+func TestTestnetVirtualDispute(t *testing.T) {
+	log.Info("Starting virtual channel dispute test")
+	rng := test.Prng(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+
+	setup := ctest.MakeVirtualChannelSetup(t, rng, true)
+	clienttest.TestVirtualChannelDispute(ctx, t, setup)
+	log.Info("Virtual channel dispute test done")
 }
