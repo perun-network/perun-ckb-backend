@@ -324,7 +324,7 @@ func (c Client) createOrGetChannelToken(ctx context.Context, iter collector.Cell
 		txInput := iter.Next()
 
 		// Resolve the full cell to check the lock script
-		liveCell, err := retryRPC(ctx, 3, 2*time.Second, func() (*types.CellWithStatus, error) {
+		liveCell, err := retryRPC(ctx, 3, 10*time.Second, func() (*types.CellWithStatus, error) {
 			return c.client.GetLiveCell(ctx, txInput.OutPoint, false)
 		})
 
@@ -356,7 +356,7 @@ func (c Client) Fund(ctx context.Context, pcts *types.Script, state *channel.Sta
 	if err != nil {
 		return fmt.Errorf("getting channel live cell: %w", err)
 	}
-	header, err := retryRPC(ctx, 3, 2*time.Second, func() (*types.Header, error) {
+	header, err := retryRPC(ctx, 3, 10*time.Second, func() (*types.Header, error) {
 		return c.client.GetTipHeader(ctx)
 	})
 	if err != nil {
@@ -389,7 +389,7 @@ func (c Client) Dispute(ctx context.Context, id channel.ID, state *channel.State
 	if err != nil {
 		return fmt.Errorf("getting channel live cell: %w", err)
 	}
-	header, err := retryRPC(ctx, 3, 2*time.Second, func() (*types.Header, error) {
+	header, err := retryRPC(ctx, 3, 10*time.Second, func() (*types.Header, error) {
 		return c.client.GetTipHeader(ctx)
 	})
 	if err != nil {
@@ -434,7 +434,7 @@ func (c Client) Dispute(ctx context.Context, id channel.ID, state *channel.State
 func (c Client) DisputeVC(ctx context.Context, vcID, parentID channel.ID, vcState, parentState *channel.State, vcParams, parentParams *channel.Params, vcSigs, parentSigs []wallet.Sig, indexMap []channel.Index) error {
 	var di *transaction.VcDisputeInfo
 
-	header, err := retryRPC(ctx, 3, 2*time.Second, func() (*types.Header, error) {
+	header, err := retryRPC(ctx, 3, 10*time.Second, func() (*types.Header, error) {
 		return c.client.GetTipHeader(ctx)
 	})
 	if err != nil {
@@ -654,7 +654,7 @@ func (c Client) Close(ctx context.Context, id channel.ID, state *channel.State, 
 	if err != nil {
 		return fmt.Errorf("retrieving assets locked in channel: %w", err)
 	}
-	header, err := retryRPC(ctx, 3, 2*time.Second, func() (*types.Header, error) {
+	header, err := retryRPC(ctx, 3, 10*time.Second, func() (*types.Header, error) {
 		return c.client.GetTipHeader(ctx)
 	})
 	if err != nil {
@@ -714,7 +714,7 @@ func (c Client) getAssets(ctx context.Context, pcts *types.Script) (*indexer.Liv
 		Filter:           nil,
 		WithData:         true,
 	}
-	cells, err := retryRPC(ctx, 3, 2*time.Second, func() (*indexer.LiveCells, error) {
+	cells, err := retryRPC(ctx, 3, 10*time.Second, func() (*indexer.LiveCells, error) {
 		return c.client.GetCells(ctx, searchKey, indexer.SearchOrderDesc, math.MaxUint32, "")
 	})
 	return cells, err
@@ -731,14 +731,14 @@ func (c Client) ForceClose(ctx context.Context, id channel.ID, state *channel.St
 	if err != nil {
 		return fmt.Errorf("retrieving assets locked in channel: %w", err)
 	}
-	header, err := retryRPC(ctx, 3, 2*time.Second, func() (*types.Header, error) {
+	header, err := retryRPC(ctx, 3, 10*time.Second, func() (*types.Header, error) {
 		return c.client.GetTipHeader(ctx)
 	})
 	if err != nil {
 		return fmt.Errorf("getting tip header: %w", err)
 	}
 
-	oldTx, err := retryRPC(ctx, 3, 2*time.Second, func() (*types.TransactionWithStatus, error) {
+	oldTx, err := retryRPC(ctx, 3, 10*time.Second, func() (*types.TransactionWithStatus, error) {
 		return c.client.GetTransaction(ctx, channelCell.OutPoint.TxHash)
 	})
 	if err != nil {
@@ -822,13 +822,13 @@ func (c Client) ForceCloseWithVC(ctx context.Context, id channel.ID, vcid channe
 
 	vcDispute := encoding.PackVCDispute(vcSigA, vcSigB, sigA, sigB)
 
-	header, err := retryRPC(ctx, 3, 2*time.Second, func() (*types.Header, error) {
+	header, err := retryRPC(ctx, 3, 10*time.Second, func() (*types.Header, error) {
 		return c.client.GetTipHeader(ctx)
 	})
 	if err != nil {
 		return fmt.Errorf("getting tip header: %w", err)
 	}
-	oldTx, err := retryRPC(ctx, 3, 2*time.Second, func() (*types.TransactionWithStatus, error) {
+	oldTx, err := retryRPC(ctx, 3, 10*time.Second, func() (*types.TransactionWithStatus, error) {
 		return c.client.GetTransaction(ctx, channelCell.OutPoint.TxHash)
 	})
 	if err != nil {
@@ -891,7 +891,7 @@ func (c Client) Abort(ctx context.Context, script *types.Script, params *channel
 	if err != nil {
 		return fmt.Errorf("retrieving assets locked in channel: %w", err)
 	}
-	header, err := retryRPC(ctx, 3, 2*time.Second, func() (*types.Header, error) {
+	header, err := retryRPC(ctx, 3, 10*time.Second, func() (*types.Header, error) {
 		return c.client.GetTipHeader(ctx)
 	})
 
@@ -939,7 +939,7 @@ const defaultPollingInterval = 2 * time.Second
 // sendAndAwait sends the given transaction and waits for it to be committed
 // on-chain.
 func (c Client) sendAndAwait(ctx context.Context, tx *types.Transaction) error {
-	txHash, err := retryRPC(ctx, 3, 3*time.Second, func() (*types.Hash, error) {
+	txHash, err := retryRPC(ctx, 3, 10*time.Second, func() (*types.Hash, error) {
 		return c.client.SendTransaction(ctx, tx)
 	})
 	if err != nil {
@@ -947,7 +947,7 @@ func (c Client) sendAndAwait(ctx context.Context, tx *types.Transaction) error {
 	}
 
 	// Wait for the transaction to be committed on-chain.
-	txWithStatus, err := retryRPC(ctx, 3, 3*time.Second, func() (*types.TransactionWithStatus, error) {
+	txWithStatus, err := retryRPC(ctx, 3, 10*time.Second, func() (*types.TransactionWithStatus, error) {
 		return c.client.GetTransaction(ctx, *txHash)
 	})
 	if err != nil {
@@ -963,7 +963,7 @@ func (c Client) sendAndAwait(ctx context.Context, tx *types.Transaction) error {
 		case <-ctx.Done():
 			return fmt.Errorf("context done: %w", ctx.Err())
 		case <-ticker.C:
-			txWithStatus, err = retryRPC(ctx, 3, 3*time.Second, func() (*types.TransactionWithStatus, error) {
+			txWithStatus, err = retryRPC(ctx, 3, 10*time.Second, func() (*types.TransactionWithStatus, error) {
 				return c.client.GetTransaction(ctx, *txHash)
 			})
 			if err != nil {
@@ -1034,7 +1034,7 @@ func (c Client) getAllChannelLiveCells(ctx context.Context) (*indexer.LiveCells,
 		Filter:           nil,
 		WithData:         true,
 	}
-	cells, err := retryRPC(ctx, 3, 3*time.Second, func() (*indexer.LiveCells, error) {
+	cells, err := retryRPC(ctx, 3, 10*time.Second, func() (*indexer.LiveCells, error) {
 		return c.client.GetCells(ctx, searchKey, indexer.SearchOrderDesc, math.MaxUint32, "")
 	})
 	return cells, err
@@ -1053,7 +1053,7 @@ func (c Client) getAllVirtualChannelLiveCells(ctx context.Context) (*indexer.Liv
 		Filter:           nil,
 		WithData:         true,
 	}
-	cells, err := retryRPC(ctx, 3, 3*time.Second, func() (*indexer.LiveCells, error) {
+	cells, err := retryRPC(ctx, 3, 10*time.Second, func() (*indexer.LiveCells, error) {
 		return c.client.GetCells(ctx, searchKey, indexer.SearchOrderDesc, math.MaxUint32, "")
 	})
 	return cells, err
@@ -1067,7 +1067,7 @@ func (c Client) getExactChannelLiveCell(ctx context.Context, pcts *types.Script)
 		Filter:           nil,
 		WithData:         true,
 	}
-	cells, err := retryRPC(ctx, 3, 3*time.Second, func() (*indexer.LiveCells, error) {
+	cells, err := retryRPC(ctx, 3, 10*time.Second, func() (*indexer.LiveCells, error) {
 		return c.client.GetCells(ctx, searchKey, indexer.SearchOrderDesc, math.MaxUint32, "")
 	})
 	if err != nil {
@@ -1091,7 +1091,7 @@ func (c Client) getExactVirtualChannelLiveCell(ctx context.Context, vcts *types.
 		Filter:           nil,
 		WithData:         true,
 	}
-	cells, err := retryRPC(ctx, 3, 3*time.Second, func() (*indexer.LiveCells, error) {
+	cells, err := retryRPC(ctx, 3, 10*time.Second, func() (*indexer.LiveCells, error) {
 		return c.client.GetCells(ctx, searchKey, indexer.SearchOrderDesc, math.MaxUint32, "")
 	})
 	log.Println("getExactVirtualChannelLiveCell: GetCells")
@@ -1129,7 +1129,7 @@ func (c Client) isValidVirtualChannelLiveCell(cell *indexer.LiveCell) bool {
 }
 
 func (c Client) GetBlockTime(ctx context.Context, blockNumber BlockNumber) (time.Time, error) {
-	block, err := retryRPC(ctx, 3, 2*time.Second, func() (*types.Block, error) {
+	block, err := retryRPC(ctx, 3, 10*time.Second, func() (*types.Block, error) {
 		return c.client.GetBlockByNumber(ctx, blockNumber)
 	})
 	if err != nil {
