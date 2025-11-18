@@ -675,13 +675,13 @@ func (ptb *PerunTransactionBuilder) scriptGroupsForHash(assetHash types.Hash) (*
 func (ptb *PerunTransactionBuilder) completeCKBCapacity(requiredFunding, alreadyProvidedFunding *AssetInformation) error {
 	alreadyProvidedCKBAmount := alreadyProvidedFunding.assetAmounts[zeroHash]
 	requiredCKBAmount := requiredFunding.assetAmounts[zeroHash]
-	if alreadyProvidedCKBAmount >= requiredCKBAmount {
+	if alreadyProvidedCKBAmount >= (requiredCKBAmount + ptb.ckbChangeCellCapacity()) {
 		// We provided more funding than required AND we can accommodate a CKB
 		// change cell, set the difference as change.
 		return ptb.addOrUpdateChangeCell(zeroHash, alreadyProvidedCKBAmount-requiredCKBAmount)
 	}
 
-	if alreadyProvidedCKBAmount < requiredCKBAmount {
+	if alreadyProvidedCKBAmount < (requiredCKBAmount + ptb.ckbChangeCellCapacity()) {
 		// We are missing CKB, complete funding by adding inputs from the CKB
 		// iterator.
 		return ptb.addInputsAndChangeForCKB(alreadyProvidedCKBAmount, requiredCKBAmount, requiredFunding, alreadyProvidedFunding)
