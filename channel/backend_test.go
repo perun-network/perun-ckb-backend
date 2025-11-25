@@ -1,7 +1,6 @@
 package channel_test
 
 import (
-	"log"
 	"math/big"
 	"math/rand"
 	"testing"
@@ -21,7 +20,6 @@ func setup(rng *rand.Rand) *gptest.Setup {
 		if err != nil {
 			panic(err)
 		}
-		log.Println("Generated random address:", acc.Address().String())
 		return map[gpwallet.BackendID]gpwallet.Address{channel.CKBBackendID: acc.Address()}
 	}
 	newParamsAndState := func(opts ...gptest.RandomOpt) (*gpchannel.Params, *gpchannel.State) {
@@ -48,11 +46,6 @@ func setup(rng *rand.Rand) *gptest.Setup {
 	p1, s1 := newParamsAndState()
 	p2, s2 := newParamsAndState(gptest.WithIsFinal(!s1.IsFinal))
 
-	log.Println("Setup params and states for backend test:")
-	log.Printf("Params1: %+v\n", p1)
-	log.Printf("State1: %+v\n", s1.Data)
-	log.Printf("Params2: %+v\n", p2)
-	log.Printf("State2: %+v\n", s2.Allocation)
 	return &gptest.Setup{
 		Params:        p1,
 		Params2:       p2,

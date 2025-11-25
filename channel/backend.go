@@ -2,7 +2,6 @@ package channel
 
 import (
 	"fmt"
-	"log"
 	"math"
 	"math/big"
 
@@ -46,8 +45,7 @@ func (b backend) Sign(account wallet.Account, state *channel.State) (wallet.Sig,
 	}
 	appData, ok := state.Data.(*TempChannelID)
 	if !ok {
-		log.Println("appData is of type ", fmt.Sprintf("%T", state.Data))
-		return nil, fmt.Errorf("unable to convert state.Data to *TempChannelID")
+		return account.SignData(s.AsSlice())
 	}
 	if len(appData) != TempChannelIDLength {
 		return nil, fmt.Errorf("appData(tempChannelID) length is not 32 bytes, got %d", len(appData))
@@ -70,7 +68,7 @@ func (b backend) Verify(addr wallet.Address, state *channel.State, sig wallet.Si
 	appData, ok := state.Data.(*TempChannelID)
 	if !ok {
 		// Not the expected type; verification cannot succeed but it is not an encoding error.
-		return false, nil
+		return wallet.VerifySignature(s.AsSlice(), sig, addr)
 	}
 	if len(appData) != TempChannelIDLength {
 		// Wrong length; treat as a non-matching signature rather than hard error per test expectations.

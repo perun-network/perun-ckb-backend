@@ -72,7 +72,7 @@ func TestScriptHandler(t *testing.T) {
 			test.WithNumParts(2),
 			test.WithNumAssets(1),
 			test.WithNumLocked(0),
-			test.WithBalancesInRange(big.NewInt(0).Mul(big.NewInt(100), big.NewInt(100_000_000)), big.NewInt(0).Mul(big.NewInt(10_000), big.NewInt(100_000_000))),
+			test.WithBalancesInRange(big.NewInt(100).Mul(big.NewInt(100), big.NewInt(100_000_000)), big.NewInt(100).Mul(big.NewInt(10_000), big.NewInt(100_000_000))),
 			test.WithAppData(channel.NewDefaultTempApp().NewData()),
 			test.WithBackend(channel.CKBBackendID),
 			test.WithBackendIDs([]gpwallet.BackendID{channel.CKBBackendID}),
@@ -133,7 +133,7 @@ func TestScriptHandler(t *testing.T) {
 			test.WithNumParts(2),
 			test.WithAssets(asset.NewCKBytesAsset(), asset.NewSUDTAsset(asset.NewSUDT(*sudtTypeScript, maxSUDTCellCapacity))),
 			test.WithNumLocked(0),
-			test.WithBalancesInRange(big.NewInt(0).Mul(big.NewInt(100), big.NewInt(100_000_000)), big.NewInt(0).Mul(big.NewInt(10_000), big.NewInt(100_000_000))),
+			test.WithBalancesInRange(big.NewInt(1).Mul(big.NewInt(100), big.NewInt(100_000_000)), big.NewInt(1).Mul(big.NewInt(10_000), big.NewInt(100_000_000))),
 			test.WithBackend(channel.CKBBackendID),
 			test.WithBackendIDs([]gpwallet.BackendID{channel.CKBBackendID}),
 		)
