@@ -75,6 +75,14 @@ func (a Asset) Equal(other pchannel.Asset) bool {
 	return a.SUDT.Equal(*o.SUDT)
 }
 
+func (a Asset) Address() []byte {
+	if a.IsCKBytes {
+		return nil
+	}
+	enc, _ := a.SUDT.Encode()
+	return enc
+}
+
 // IsInvalid returns true if the asset is invalid.
 func (a Asset) IsInvalid() bool {
 	return (!a.IsCKBytes) && (a.SUDT == nil)
@@ -85,7 +93,7 @@ func NewInvalidAsset() *Asset {
 }
 
 func NewCKBytesAsset() *Asset {
-	return &Asset{IsCKBytes: true}
+	return &Asset{IsCKBytes: true, SUDT: nil}
 }
 
 func NewSUDTAsset(sudt *SUDT) *Asset {

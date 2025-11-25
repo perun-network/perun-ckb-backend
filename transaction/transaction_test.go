@@ -12,7 +12,9 @@ import (
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types/numeric"
 	"github.com/stretchr/testify/require"
 	"perun.network/go-perun/channel/test"
+	gpwallet "perun.network/go-perun/wallet"
 	btest "perun.network/perun-ckb-backend/backend/test"
+	"perun.network/perun-ckb-backend/channel"
 	"perun.network/perun-ckb-backend/channel/asset"
 	molecule2 "perun.network/perun-ckb-backend/encoding/molecule"
 	"perun.network/perun-ckb-backend/transaction"
@@ -66,17 +68,24 @@ func TestScriptHandler(t *testing.T) {
 		b.Register(mockHandler)
 		// Open
 		state := test.NewRandomState(rng,
-			test.WithoutApp(),
+			test.WithApp(channel.NewDefaultTempApp()),
 			test.WithNumParts(2),
 			test.WithNumAssets(1),
 			test.WithNumLocked(0),
 			test.WithBalancesInRange(big.NewInt(0).Mul(big.NewInt(100), big.NewInt(100_000_000)), big.NewInt(0).Mul(big.NewInt(10_000), big.NewInt(100_000_000))),
+			test.WithAppData(channel.NewDefaultTempApp().NewData()),
+			test.WithBackend(channel.CKBBackendID),
+			test.WithBackendIDs([]gpwallet.BackendID{channel.CKBBackendID}),
 		)
 		params := test.NewRandomParams(rng,
 			test.WithNumParts(2),
 			test.WithLedgerChannel(true),
 			test.WithVirtualChannel(false),
-			test.WithoutApp())
+			test.WithApp(channel.NewDefaultTempApp()),
+			test.WithAppData(channel.NewDefaultTempApp().NewData()),
+			test.WithBackend(channel.CKBBackendID),
+			test.WithBackendIDs([]gpwallet.BackendID{channel.CKBBackendID}),
+		)
 		oi := transaction.NewOpenInfo([32]byte{}, btest.NewRandomToken(rng,
 			btest.WithOutpoint(*channelTokenOutpoint)),
 			params,
@@ -125,12 +134,18 @@ func TestScriptHandler(t *testing.T) {
 			test.WithAssets(asset.NewCKBytesAsset(), asset.NewSUDTAsset(asset.NewSUDT(*sudtTypeScript, maxSUDTCellCapacity))),
 			test.WithNumLocked(0),
 			test.WithBalancesInRange(big.NewInt(0).Mul(big.NewInt(100), big.NewInt(100_000_000)), big.NewInt(0).Mul(big.NewInt(10_000), big.NewInt(100_000_000))),
+			test.WithBackend(channel.CKBBackendID),
+			test.WithBackendIDs([]gpwallet.BackendID{channel.CKBBackendID}),
 		)
 		params := test.NewRandomParams(rng,
 			test.WithNumParts(2),
 			test.WithLedgerChannel(true),
 			test.WithVirtualChannel(false),
-			test.WithoutApp())
+			test.WithApp(channel.NewDefaultTempApp()),
+			test.WithAppData(channel.NewDefaultTempApp().NewData()),
+			test.WithBackend(channel.CKBBackendID),
+			test.WithBackendIDs([]gpwallet.BackendID{channel.CKBBackendID}),
+		)
 		oi := transaction.NewOpenInfo([32]byte{}, btest.NewRandomToken(rng,
 			btest.WithOutpoint(*channelTokenOutpoint)),
 			params,
@@ -182,6 +197,8 @@ func TestScriptHandler(t *testing.T) {
 		state := test.NewRandomState(rng,
 			test.WithoutApp(),
 			test.WithNumParts(2),
+			test.WithBackend(channel.CKBBackendID),
+			test.WithBackendIDs([]gpwallet.BackendID{channel.CKBBackendID}),
 			test.WithAssets(asset.NewCKBytesAsset(), asset.NewSUDTAsset(asset.NewSUDT(*sudtTypeScript, maxSUDTCellCapacity))),
 			test.WithNumLocked(0),
 			test.WithBalances([]*big.Int{big.NewInt(0).SetUint64(ckbInFundingCells), big.NewInt(100)},
@@ -191,6 +208,8 @@ func TestScriptHandler(t *testing.T) {
 			test.WithNumParts(2),
 			test.WithLedgerChannel(true),
 			test.WithVirtualChannel(false),
+			test.WithBackend(channel.CKBBackendID),
+			test.WithBackendIDs([]gpwallet.BackendID{channel.CKBBackendID}),
 			test.WithoutApp())
 		oi := transaction.NewOpenInfo([32]byte{}, btest.NewRandomToken(rng,
 			btest.WithOutpoint(*channelTokenOutpoint)),

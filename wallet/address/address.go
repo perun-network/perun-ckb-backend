@@ -3,6 +3,7 @@ package address
 import (
 	"encoding/hex"
 	"errors"
+
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/address"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/systemscript"
@@ -14,6 +15,7 @@ import (
 const (
 	UncompressedPublicKeyLength = 65
 	CompressedPublicKeyLength   = 33
+	CKBBackendID                = 3
 )
 
 // Participant uniquely identifies a participant in a channel, encompassing all necessary on-chain information.
@@ -27,6 +29,10 @@ type Participant struct {
 	// UnlockScriptHash is the script-hash of the unlock script of this participant. The participant uses it to authorize
 	// itself to interact with a channel through an on-chain transaction.
 	UnlockScript *types.Script
+}
+
+func (p Participant) BackendID() wallet.BackendID {
+	return CKBBackendID
 }
 
 // NewDefaultParticipant creates a new participant with the script hash of the secp256k1_blake160_sighash_all script for

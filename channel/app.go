@@ -119,7 +119,11 @@ func (t *TempApp) Def() channel.AppID {
 }
 
 func (t *TempApp) NewData() channel.Data {
-	return &TempChannelID{}
+	tempChannelID, err := NewRandomTempChannelID()
+	if err != nil {
+		panic("failed to create new TempChannelID: " + err.Error())
+	}
+	return &tempChannelID
 }
 
 func (t *TempApp) ValidTransition(parameters *channel.Params, from, to *channel.State, actor channel.Index) error {

@@ -7,6 +7,9 @@ import (
 	wtest "perun.network/perun-ckb-backend/wallet/test"
 )
 
+// CKBBackendID is the ID of the CKB backend.
+const CKBBackendID = 3
+
 func init() {
-	test.SetRandomizer(&wtest.Randomizer{})
+	test.SetRandomizer(&wtest.Randomizer{}, CKBBackendID)
 }

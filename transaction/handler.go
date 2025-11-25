@@ -3,6 +3,7 @@ package transaction
 import (
 	"errors"
 	"fmt"
+
 	"github.com/Pilatuz/bigz/uint128"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/collector"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/transaction"
@@ -173,7 +174,7 @@ func (psh *PerunScriptHandler) buildCloseTransaction(builder collector.Transacti
 
 	// Add the payment output for each participant.
 	for i, addr := range closeInfo.Params.Parts {
-		payoutScript := address.AsParticipant(addr).PaymentScript
+		payoutScript := address.AsParticipant(addr[address.CKBBackendID]).PaymentScript
 		paymentMinCapacity := payoutScript.OccupiedCapacity()
 		// payout ckbytes
 		balance, err := GetCKByteBalance(i, closeInfo.State)
@@ -222,7 +223,7 @@ func (psh *PerunScriptHandler) buildAbortTransaction(builder collector.Transacti
 	}
 	// To abort we only need to pay out the party with index 0.
 	addr := abortInfo.Params.Parts[partyIdx]
-	payoutScript := address.AsParticipant(addr).PaymentScript
+	payoutScript := address.AsParticipant(addr[address.CKBBackendID]).PaymentScript
 	paymentMinCapacity := payoutScript.OccupiedCapacity()
 	// payout ckbytes
 	balance, err := GetCKByteBalance(partyIdx, abortInfo.InitialState)
@@ -268,7 +269,7 @@ func (psh *PerunScriptHandler) buildForceCloseTransaction(builder collector.Tran
 
 	// Add the payment output for each participant.
 	for i, addr := range forceCloseInfo.Params.Parts {
-		payoutScript := address.AsParticipant(addr).PaymentScript
+		payoutScript := address.AsParticipant(addr[address.CKBBackendID]).PaymentScript
 		paymentMinCapacity := payoutScript.OccupiedCapacity()
 		// payout ckbytes
 		balance, err := GetCKByteBalance(i, forceCloseInfo.State)

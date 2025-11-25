@@ -1,8 +1,11 @@
 package channel_test
 
 import (
+	"log"
 	"math/big"
 	"math/rand"
+	"testing"
+
 	gpchannel "perun.network/go-perun/channel"
 	gptest "perun.network/go-perun/channel/test"
 	gpwallet "perun.network/go-perun/wallet"
@@ -10,29 +13,30 @@ import (
 	"perun.network/perun-ckb-backend/channel/asset"
 	"perun.network/perun-ckb-backend/wallet"
 	pkgtest "polycry.pt/poly-go/test"
-	"testing"
 )
 
 func setup(rng *rand.Rand) *gptest.Setup {
-	getRandomAddress := func() gpwallet.Address {
+	getRandomAddress := func() map[gpwallet.BackendID]gpwallet.Address {
 		acc, err := wallet.NewAccount()
 		if err != nil {
 			panic(err)
 		}
-		return acc.Address()
+		log.Println("Generated random address:", acc.Address().String())
+		return map[gpwallet.BackendID]gpwallet.Address{channel.CKBBackendID: acc.Address()}
 	}
 	newParamsAndState := func(opts ...gptest.RandomOpt) (*gpchannel.Params, *gpchannel.State) {
 		return gptest.NewRandomParamsAndState(
 			rng,
 			gptest.WithoutApp().
-				Append(gptest.WithParts(getRandomAddress(), getRandomAddress())).
+				Append(gptest.WithParts([]map[gpwallet.BackendID]gpwallet.Address{getRandomAddress(), getRandomAddress()})).
 				Append(gptest.WithLedgerChannel(true)).
 				Append(gptest.WithVirtualChannel(false)).
+				Append(gptest.WithApp(channel.NewDefaultTempApp())).
+				Append(gptest.WithAppData(channel.NewDefaultTempApp().NewData())).
 				Append(gptest.WithAssets(asset.NewCKBytesAsset())).
-				Append(gptest.WithBalancesInRange(
-					new(big.Int).SetUint64(0),
-					channel.MaxBalance,
-				)).
+				Append(gptest.WithBackend(channel.CKBBackendID)).
+				Append(gptest.WithBackendIDs([]gpwallet.BackendID{channel.CKBBackendID})).
+				Append(gptest.WithBalancesInRange(big.NewInt(0).Mul(big.NewInt(100), big.NewInt(100_000_000)), big.NewInt(0).Mul(big.NewInt(10_000), big.NewInt(100_000_000)))).
 				Append(opts...),
 		)
 	}
@@ -43,6 +47,12 @@ func setup(rng *rand.Rand) *gptest.Setup {
 
 	p1, s1 := newParamsAndState()
 	p2, s2 := newParamsAndState(gptest.WithIsFinal(!s1.IsFinal))
+
+	log.Println("Setup params and states for backend test:")
+	log.Printf("Params1: %+v\n", p1)
+	log.Printf("State1: %+v\n", s1.Data)
+	log.Printf("Params2: %+v\n", p2)
+	log.Printf("State2: %+v\n", s2.Allocation)
 	return &gptest.Setup{
 		Params:        p1,
 		Params2:       p2,
