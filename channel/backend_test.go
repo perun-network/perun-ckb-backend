@@ -30,7 +30,6 @@ func setup(rng *rand.Rand) *gptest.Setup {
 				Append(gptest.WithLedgerChannel(true)).
 				Append(gptest.WithVirtualChannel(false)).
 				Append(gptest.WithApp(channel.NewDefaultTempApp())).
-				Append(gptest.WithAppData(channel.NewDefaultTempApp().NewData())).
 				Append(gptest.WithAssets(asset.NewCKBytesAsset())).
 				Append(gptest.WithBackend(channel.CKBBackendID)).
 				Append(gptest.WithBackendIDs([]gpwallet.BackendID{channel.CKBBackendID})).

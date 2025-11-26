@@ -14,6 +14,7 @@ require (
 
 require (
 	github.com/Pilatuz/bigz v1.2.2
+	github.com/pkg/errors v0.9.1
 	github.com/stretchr/testify v1.11.1
 	polycry.pt/poly-go v0.0.0-20220301085937-fb9d71b45a37
 )
@@ -29,7 +30,6 @@ require (
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/holiman/uint256 v1.3.2 // indirect
 	github.com/minio/blake2b-simd v0.0.0-20160723061019-3f5f724cb5b1 // indirect
-	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/shirou/gopsutil v3.21.11+incompatible // indirect
 	github.com/stretchr/objx v0.5.3 // indirect

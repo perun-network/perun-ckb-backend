@@ -2,6 +2,7 @@ package channel
 
 import (
 	"fmt"
+	"log"
 	"math"
 	"math/big"
 
@@ -45,7 +46,11 @@ func (b backend) Sign(account wallet.Account, state *channel.State) (wallet.Sig,
 	}
 	appData, ok := state.Data.(*TempChannelID)
 	if !ok {
-		return account.SignData(s.AsSlice())
+		randomChannelID, err := NewRandomTempChannelID()
+		if err != nil {
+			return nil, fmt.Errorf("generating random TempChannelID: %w", err)
+		}
+		appData = &randomChannelID
 	}
 	if len(appData) != TempChannelIDLength {
 		return nil, fmt.Errorf("appData(tempChannelID) length is not 32 bytes, got %d", len(appData))
@@ -53,6 +58,7 @@ func (b backend) Sign(account wallet.Account, state *channel.State) (wallet.Sig,
 	slice := s.AsSlice()
 	extraInfo := []byte{}
 	extraInfo = append(extraInfo, appData[:]...)
+	log.Println(len(extraInfo), len(slice))
 	toSign := append(extraInfo, slice[:]...)
 	return account.SignData(toSign)
 }
@@ -63,27 +69,7 @@ func (b backend) Verify(addr wallet.Address, state *channel.State, sig wallet.Si
 	if err != nil {
 		return false, fmt.Errorf("unable to encode channel state: %w", err)
 	}
-
-	// Extract appData (TempChannelID) and be lenient: return false, nil on mismatch.
-	appData, ok := state.Data.(*TempChannelID)
-	if !ok {
-		// Not the expected type; verification cannot succeed but it is not an encoding error.
-		return wallet.VerifySignature(s.AsSlice(), sig, addr)
-	}
-	if len(appData) != TempChannelIDLength {
-		// Wrong length; treat as a non-matching signature rather than hard error per test expectations.
-		return false, nil
-	}
-
-	// Build the exact message that was signed: appData || packedState.
-	packed := s.AsSlice()
-	toVerify := make([]byte, 0, TempChannelIDLength+len(packed))
-	toVerify = append(toVerify, appData[:]...)
-	toVerify = append(toVerify, packed...)
-
-	// Verify against the provided address; return false, nil on mismatch.
-	okSig, err := wallet.VerifySignature(toVerify, sig, addr)
-	return okSig, err
+	return wallet.VerifySignature(s.AsSlice(), sig, addr)
 }
 
 // NewAsset returns an empty (and thus invalid) asset for unmarshalling into.

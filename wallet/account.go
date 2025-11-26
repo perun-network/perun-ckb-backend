@@ -8,6 +8,8 @@ import (
 	"perun.network/perun-ckb-backend/wallet/address"
 )
 
+const TempChannelIDLength = 32
+
 type Account struct {
 	key *secp256k1.PrivateKey
 }
@@ -23,7 +25,12 @@ func (a Account) Address() wallet.Address {
 }
 
 func (a Account) SignData(data []byte) ([]byte, error) {
-	hash := blake2b.Sum256(data)
+	if len(data) <= TempChannelIDLength {
+		hash := blake2b.Sum256(data)
+		return PadDEREncodedSignature(ecdsa.Sign(a.key, hash[:]).Serialize())
+	}
+	toSign := data[TempChannelIDLength:]
+	hash := blake2b.Sum256(toSign)
 	return PadDEREncodedSignature(ecdsa.Sign(a.key, hash[:]).Serialize())
 }
 

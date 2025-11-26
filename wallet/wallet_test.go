@@ -1,11 +1,12 @@
 package wallet_test
 
 import (
+	"testing"
+
 	"github.com/stretchr/testify/require"
 	gptest "perun.network/go-perun/wallet/test"
 	"perun.network/perun-ckb-backend/wallet"
 	"perun.network/perun-ckb-backend/wallet/address"
-	"testing"
 )
 
 func TestEphemeralWallet(t *testing.T) {
