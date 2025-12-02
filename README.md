@@ -15,6 +15,15 @@ This repository contains the Nervos/CKB backend for the [go-perun](https://githu
 
 Learn how to use go-perun backends in the documentation of the go-perun core library. It supposed to work in tandem with the [perun-ckb-contract](https://github.com/perun-network/perun-ckb-contract)
 
+This backend supports the following features on CKB:
+* Open and close payment channels on CKB.
+* Support for SUDT tokens in payment channels.
+* Off-chain state updates and signatures.
+* On-chain dispute resolution.
+* Automated tests using a local CKB devnet.
+
+<b><span style="color:#1E90FF">This can be used in combination with other go-perun backends like [perun-eth-backend](https://github.com/perun-network/perun-eth-backend) to create cross-chain payment channels.</span></b>
+
 ## Project structure
 * `backend/`: Backend interface implementations.
 * `channel/`: Channel interface implementations.
@@ -49,19 +58,33 @@ git clone https://github.com/perun-network/perun-ckb-backend
 cd perun-ckb-backend
 ```
 
-1. Initialize the submodule.
+2. Initialize the submodule.
 ```sh
 git submodule update --init --recursive
 ```
 
-1. Start the devnet on a separate terminal and wait for 30 seconds for the devnet to start.
+3. Prerequisites: Download ckb-cli and offckb:
+```sh
+npm install -g @offckb/cli
+
+curl -LO https://github.com/nervosnetwork/ckb-cli/releases/download/v1.13.0/ckb-cli_v1.13.0_x86_64-unknown-linux-gnu.tar.gz
+tar -xzf ckb-cli_v1.13.0_x86_64-unknown-linux-gnu.tar.gz
+sudo cp ckb-cli_v1.13.0_x86_64-unknown-linux-gnu/ckb-cli /usr/local/bin/
+
+curl -LO https://github.com/nervosnetwork/ckb/releases/download/v0.201.0/ckb_v0.201.0_x86_64-unknown-linux-gnu.tar.gz
+tar -xzf ckb_v0.201.0_x86_64-unknown-linux-gnu.tar.gz
+sudo cp ckb_v0.201.0_x86_64-unknown-linux-gnu/ckb /usr/local/bin/
+```
+
+
+4. Start the devnet on a separate terminal and wait for 30 seconds for the devnet to start.
 ```sh
 cd devnet
 
 make dev
 ```
 
-4. Run the tests. This step needs a working [Go distribution](https://golang.org), see [go.mod](go.mod) for the required version.
+5. Run the tests. This step needs a working [Go distribution](https://golang.org), see [go.mod](go.mod) for the required version.
 
 ```sh
 go test ./...

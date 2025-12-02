@@ -37,7 +37,6 @@ func TestMarshallingSUDT(t *testing.T) {
 	randomScript := btest.NewRandomScript(rng)
 	sudt := asset.NewSUDT(*randomScript, 1000)
 	assetIn := asset.NewSUDTAsset(sudt)
-	assetIn.SUDT.TypeScript.Args = []byte{}
 
 	bytes, err := assetIn.MarshalBinary()
 	require.NoError(t, err)

@@ -178,8 +178,8 @@ func (a *Asset) UnmarshalBinary(data []byte) error {
 		}
 		a.IsCKBytes = false
 		a.SUDT = s
-		if a.SUDT.TypeScript.Args == nil {
-			a.SUDT.TypeScript.Args = []byte{}
+		if a.SUDT.TypeScript.Args != nil && len(a.SUDT.TypeScript.Args) == 0 {
+			a.SUDT.TypeScript.Args = nil
 		}
 		return nil
 	default:

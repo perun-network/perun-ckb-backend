@@ -35,6 +35,10 @@ import (
 	clienttest "perun.network/go-perun/client/test"
 )
 
+const (
+	testDuration = 120 * time.Second
+)
+
 // TestCrossPaymentHappy tests the happy path of the payment channel.
 // It creates a payment channel between Alice and Bob, and then performs a series of payments.
 // The test checks if the final balances are as expected and if the channel state is updated correctly.

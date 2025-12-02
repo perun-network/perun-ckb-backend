@@ -42,13 +42,13 @@ func TestMultiPaymentHappy(t *testing.T) {
 		role [2]clienttest.Executer
 	)
 
-	s := btest.NewCrossSetup(t, rng, false)
+	s := btest.NewCrossSetup(t, rng, true)
 	setup := ctest.MakeRoleSetupsCross(rng, s, name[:])
 
 	role[A] = clienttest.NewAlice(t, setup[A])
 	role[B] = clienttest.NewBob(t, setup[B])
-	balAlice := setup[A].BalanceReader.Balance(s.Asset)
-	balBob := setup[B].BalanceReader.Balance(s.Asset)
+	balAlice := setup[A].BalanceReader.Balance(s.CkbAsset)
+	balBob := setup[B].BalanceReader.Balance(s.CkbAsset)
 
 	logrus.Printf("Initial Balances - Alice: %s, Bob: %s", balAlice.String(), balBob.String())
 	balAlice = setup[A].BalanceReader.Balance(s.SudtAsset)
@@ -61,7 +61,7 @@ func TestMultiPaymentHappy(t *testing.T) {
 	execConfig := &clienttest.AliceBobExecConfig{
 		BaseExecConfig: clienttest.MakeBaseExecConfig(
 			[2]map[wallet.BackendID]wire.Address{{3: setup[A].Identity[3].Address()}, {3: setup[B].Identity[3].Address()}},
-			[]channel.Asset{s.Asset, s.SudtAsset},
+			[]channel.Asset{s.CkbAsset, s.SudtAsset},
 			[]wallet.BackendID{3, 3},
 			[][2]*big.Int{
 				{asset.CKByteToShannon(big.NewFloat(80)), asset.CKByteToShannon(big.NewFloat(100))},
@@ -84,8 +84,8 @@ func TestMultiPaymentHappy(t *testing.T) {
 	}
 
 	wg.Wait()
-	balAlice = setup[A].BalanceReader.Balance(s.Asset)
-	balBob = setup[B].BalanceReader.Balance(s.Asset)
+	balAlice = setup[A].BalanceReader.Balance(s.CkbAsset)
+	balBob = setup[B].BalanceReader.Balance(s.CkbAsset)
 	logrus.Printf("Initial Balances - Alice: %s, Bob: %s", balAlice.String(), balBob.String())
 	balAlice = setup[A].BalanceReader.Balance(s.SudtAsset)
 	balBob = setup[B].BalanceReader.Balance(s.SudtAsset)
@@ -113,14 +113,14 @@ func TestMultiPaymentDispute(t *testing.T) {
 func makeMultiPaymentChannelSetup(t *testing.T, rng *rand.Rand) clienttest.PaymentChannelSetup {
 	t.Helper()
 	name := [2]string{"Alice", "Bob"}
-	setup := btest.NewVirtualChannelSetup(t, rng)
+	setup := btest.NewVirtualChannelSetup(t, rng, true)
 
-	roleSetup := ctest.MakeRoleSetups(rng, setup, name[:])
+	roleSetup := ctest.MakeRoleSetupsCross(rng, setup, name[:])
 
 	return clienttest.PaymentChannelSetup{
 		Clients:           [2]clienttest.RoleSetup(roleSetup),
 		ChallengeDuration: roleSetup[0].ChallengeDuration,
-		Asset:             setup.Asset,
+		Asset:             setup.CkbAsset,
 		Balances: clienttest.PaymentChannelBalances{
 			InitBalsAliceBob: []*big.Int{asset.CKByteToShannon(big.NewFloat(100)), asset.CKByteToShannon(big.NewFloat(100))},
 			BalsUpdated:      []*big.Int{asset.CKByteToShannon(big.NewFloat(70)), asset.CKByteToShannon(big.NewFloat(130))},

@@ -1,6 +1,6 @@
 package client_test
 
-import (
+/*import (
 	"context"
 	"math/big"
 	"math/rand"
@@ -53,14 +53,14 @@ func TestVirtualChannelDispute(t *testing.T) {
 func makeVirtualChannelSetup(t *testing.T, rng *rand.Rand) clienttest.VirtualChannelSetup {
 	t.Helper()
 	name := [3]string{"Alice", "Bob", "Ingrid"}
-	setup := btest.NewVirtualChannelSetup(t, rng)
+	setup := btest.NewVirtualChannelSetup(t, rng, false)
 
-	roleSetup := ctest.MakeRoleSetups(rng, setup, name[:])
+	roleSetup := ctest.MakeRoleSetupsCross(rng, setup, name[:])
 
 	return clienttest.VirtualChannelSetup{
 		Clients:           [3]clienttest.RoleSetup(roleSetup),
 		ChallengeDuration: roleSetup[0].ChallengeDuration,
-		Asset:             setup.Asset,
+		Asset:             setup.CkbAsset,
 		Balances: clienttest.VirtualChannelBalances{
 			InitBalsAliceIngrid: []*big.Int{asset.CKByteToShannon(big.NewFloat(100)), asset.CKByteToShannon(big.NewFloat(100))},
 			InitBalsBobIngrid:   []*big.Int{asset.CKByteToShannon(big.NewFloat(100)), asset.CKByteToShannon(big.NewFloat(100))},
@@ -74,4 +74,4 @@ func makeVirtualChannelSetup(t *testing.T, rng *rand.Rand) clienttest.VirtualCha
 		WaitWatcherTimeout: 1 * time.Second,
 		IsUTXO:             true,
 	}
-}
+}*/

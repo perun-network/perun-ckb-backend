@@ -52,7 +52,7 @@ type SetupCross struct {
 	t            *testing.T
 	Rng          *rand.Rand
 	Deployment   backend.Deployment
-	Asset        *asset.Asset
+	Asset        *asset.NervosAsset
 	SUDTInfo     SUDTInfo
 	CkbAsset     *asset.NervosAsset
 	SudtAsset    *asset.NervosAsset
@@ -107,6 +107,7 @@ func NewCrossSetup(t *testing.T, rng *rand.Rand, omni bool) *SetupCross {
 
 	ckbAsset := asset.NewCKBytesNervosAsset()
 	setup.CkbAsset = ckbAsset
+	setup.Asset = ckbAsset
 
 	var ethAddrArray [20]byte
 	newEthAddrBytes := common.BytesToAddress(ethAddrArray[:])
@@ -239,8 +240,8 @@ func NewSetup(t *testing.T, rng *rand.Rand, omni bool) *Setup {
 	return setup
 }
 
-func NewVirtualChannelSetup(t *testing.T, rng *rand.Rand) *Setup {
-	setup := &Setup{}
+func NewVirtualChannelSetup(t *testing.T, rng *rand.Rand, omni bool) *SetupCross {
+	setup := &SetupCross{}
 	setup.t = t
 	setup.Rng = rng
 
@@ -252,11 +253,13 @@ func NewVirtualChannelSetup(t *testing.T, rng *rand.Rand) *Setup {
 	setup.Deployment = d
 	setup.SUDTInfo = sudtInfo
 
-	setup.Asset = asset.NewCKBytesAsset()
+	ckbAsset := asset.NewCKBytesNervosAsset()
+	setup.CkbAsset = ckbAsset
+	setup.Asset = ckbAsset
 
 	wallets := make([]*ckbwallettest.TestEphemeralWallet, 3)
 	setup.EphemeralWallets = wallets
-
+	parts := make([]*address.Participant, 3)
 	keyAlice, err := GetKey(devNetDir + "/accounts/alice.pk")
 	require.NoError(t, err, "error getting alice's private key")
 
@@ -265,11 +268,39 @@ func NewVirtualChannelSetup(t *testing.T, rng *rand.Rand) *Setup {
 
 	keyIngrid, err := GetKey(devNetDir + "/accounts/ingrid.pk")
 	require.NoError(t, err, "error getting ingrid's private key")
-
-	aliceAccount := wallet.NewAccountFromPrivateKey(keyAlice, d.OmniLockScript.CodeHash, true)
-	bobAccount := wallet.NewAccountFromPrivateKey(keyBob, d.OmniLockScript.CodeHash, true)
-	ingridAccount := wallet.NewAccountFromPrivateKey(keyIngrid, d.OmniLockScript.CodeHash, true)
-
+	var evmAddresses [][20]byte
+	var aliceAccount, bobAccount, ingridAccount *wallet.Account
+	if omni {
+		evmAddresses = make([][20]byte, 3)
+		parts[0], evmAddresses[0], _ = address.NewEthereumParticipantFromPublicKey(keyAlice.PubKey(), d.OmniLockScript.CodeHash)
+		parts[1], evmAddresses[1], _ = address.NewEthereumParticipantFromPublicKey(keyBob.PubKey(), d.OmniLockScript.CodeHash)
+		parts[2], evmAddresses[2], _ = address.NewEthereumParticipantFromPublicKey(keyIngrid.PubKey(), d.OmniLockScript.CodeHash)
+		add0, _ := parts[0].ToCKBAddress(network).EncodeFullBech32m()
+		log.Println("Alice's CKB address: ", add0)
+		add1, _ := parts[1].ToCKBAddress(network).EncodeFullBech32m()
+		log.Println("Bob's CKB address: ", add1)
+		add2, _ := parts[2].ToCKBAddress(network).EncodeFullBech32m()
+		log.Println("Ingrid's CKB address: ", add2)
+		setup.Participants = parts
+		aliceAccount = wallet.NewAccountFromPrivateKey(keyAlice, d.OmniLockScript.CodeHash, false)
+		bobAccount = wallet.NewAccountFromPrivateKey(keyBob, d.OmniLockScript.CodeHash, false)
+		ingridAccount = wallet.NewAccountFromPrivateKey(keyIngrid, d.OmniLockScript.CodeHash, false)
+	} else {
+		parts[0], _ = address.NewDefaultParticipant(keyAlice.PubKey())
+		parts[1], _ = address.NewDefaultParticipant(keyBob.PubKey())
+		parts[2], _ = address.NewDefaultParticipant(keyIngrid.PubKey())
+		add0, _ := parts[0].ToCKBAddress(network).EncodeFullBech32m()
+		log.Println("Alice's CKB address: ", add0)
+		add1, _ := parts[1].ToCKBAddress(network).EncodeFullBech32m()
+		log.Println("Bob's CKB address: ", add1)
+		add2, _ := parts[2].ToCKBAddress(network).EncodeFullBech32m()
+		log.Println("Ingrid's CKB address: ", add2)
+		setup.Participants = parts
+		aliceAccount = wallet.NewAccountFromPrivateKey(keyAlice, types.Hash{}, true)
+		bobAccount = wallet.NewAccountFromPrivateKey(keyBob, types.Hash{}, true)
+		ingridAccount = wallet.NewAccountFromPrivateKey(keyIngrid, types.Hash{}, true)
+	}
+	setup.Participants = parts
 	wallets[0] = ckbwallettest.NewTestEphemeralWallet(aliceAccount)
 	err = wallets[0].AddAccount(aliceAccount)
 	require.NoError(t, err, "error adding alice's account")
@@ -285,7 +316,7 @@ func NewVirtualChannelSetup(t *testing.T, rng *rand.Rand) *Setup {
 	setup.WalletAccs = []*wallet.Account{aliceAccount, bobAccount, ingridAccount}
 	setup.AccKeys = []secp256k1.PrivateKey{*keyAlice, *keyBob, *keyIngrid}
 
-	funders, adjs := createFundersAndAdjudicators(t, setup.WalletAccs, setup.AccKeys, d, RpcNodeURL, false, [][20]byte{})
+	funders, adjs := createFundersAndAdjudicators(t, setup.WalletAccs, setup.AccKeys, d, RpcNodeURL, omni, evmAddresses)
 	setup.Funders = funders
 	setup.Adjs = adjs
 

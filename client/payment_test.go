@@ -92,9 +92,9 @@ func TestPaymentDispute(t *testing.T) {
 func makePaymentChannelSetup(t *testing.T, rng *rand.Rand) clienttest.PaymentChannelSetup {
 	t.Helper()
 	name := [2]string{"Alice", "Bob"}
-	setup := btest.NewVirtualChannelSetup(t, rng)
+	setup := btest.NewVirtualChannelSetup(t, rng, true)
 
-	roleSetup := ctest.MakeRoleSetups(rng, setup, name[:])
+	roleSetup := ctest.MakeRoleSetupsCross(rng, setup, name[:])
 
 	return clienttest.PaymentChannelSetup{
 		Clients:           [2]clienttest.RoleSetup(roleSetup),
