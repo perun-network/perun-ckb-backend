@@ -1,3 +1,16 @@
+// Copyright 2025 PolyCrypt GmbH
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//	http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 package test
 
 import (
@@ -10,8 +23,6 @@ import (
 )
 
 func TestMarsahllingCKByte(t *testing.T) {
-	// rng := pkgtest.Prng(t)
-	// randomizer := &assetTest.Randomizer{}
 	assetIn := asset.NewCKBytesAsset()
 	bytes, err := assetIn.MarshalBinary()
 	require.NoError(t, err)
@@ -35,4 +46,54 @@ func TestMarshallingSUDT(t *testing.T) {
 	err = assetOut.UnmarshalBinary(bytes)
 	require.NoError(t, err)
 	require.Equal(t, assetIn, &assetOut)
+}
+
+func TestMarshallingNervosAsset(t *testing.T) {
+	t.Run("CKBytes", func(t *testing.T) {
+		// CKByte asset with a fixed contract LID for reproducibility
+		contractLid := asset.MakeContractID("03") // example hex string
+		ccid := asset.MakeCCID(contractLid)
+		nervosCKB := asset.NewNervosAsset(*asset.NewCKBytesAsset(), ccid)
+
+		bytes, err := nervosCKB.MarshalBinary()
+		require.NoError(t, err)
+
+		var nervosOut asset.NervosAsset
+		err = nervosOut.UnmarshalBinary(bytes)
+		require.NoError(t, err)
+
+		require.Equal(t, nervosCKB, nervosOut)
+	})
+
+	t.Run("CKBytesDirect", func(t *testing.T) {
+		nervosCKB := asset.NewCKBytesNervosAsset()
+
+		bytes, err := nervosCKB.MarshalBinary()
+		require.NoError(t, err)
+
+		var nervosOut asset.NervosAsset
+		err = nervosOut.UnmarshalBinary(bytes)
+		require.NoError(t, err)
+
+		require.Equal(t, *nervosCKB, nervosOut)
+	})
+
+	t.Run("SUDT", func(t *testing.T) {
+		rng := pkgtest.Prng(t)
+		randomScript := btest.NewRandomScript(rng)
+		sudt := asset.NewSUDT(*randomScript, 42)
+		assetIn := asset.NewSUDTAsset(sudt)
+		contractLid := asset.MakeContractID("03")
+		ccid := asset.MakeCCID(contractLid)
+		nervosSUDT := asset.NewNervosAsset(*assetIn, ccid)
+
+		bytes, err := nervosSUDT.MarshalBinary()
+		require.NoError(t, err)
+
+		var nervosOut asset.NervosAsset
+		err = nervosOut.UnmarshalBinary(bytes)
+		require.NoError(t, err)
+
+		require.Equal(t, nervosSUDT, nervosOut)
+	})
 }

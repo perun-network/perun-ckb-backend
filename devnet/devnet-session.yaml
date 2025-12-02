@@ -24,5 +24,3 @@ windows:
                             - echo "Waiting 10 seconds before listing SUDT account balances"
                             - sleep 10.0
                             - ./sudt_helper.sh balances
-                            - sleep 2.0
-                            - go run ../cmd/fund_sudt.go

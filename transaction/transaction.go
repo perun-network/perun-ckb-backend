@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"log"
 	"math/big"
 
 	"github.com/nervosnetwork/ckb-sdk-go/v2/address"
@@ -98,6 +99,7 @@ func NewPerunTransactionBuilderWithDeployment(
 	changeAddress address.Address,
 	omni bool,
 ) (*PerunTransactionBuilder, error) {
+	log.Println("Creating PerunTransactionBuilder with omni?", omni)
 	psh := NewPerunScriptHandlerWithDeployment(deployment)
 	var simpleBuilder *builder.SimpleTransactionBuilder
 	if omni {
@@ -603,7 +605,7 @@ func (ptb *PerunTransactionBuilder) addOrUpdateCKBChangeCell(amount uint64) erro
 	}
 	ptb.Outputs = append(ptb.Outputs, outputCell)
 	ptb.OutputsData = append(ptb.OutputsData, []byte{})
-
+	log.Println("ckbChangeCellIndex: ", len(ptb.Outputs)-1)
 	ptb.ckbChangeCellIndex = len(ptb.Outputs) - 1
 
 	lockScriptGroup, _ := ptb.scriptGroupsForHash(zeroHash)
@@ -679,7 +681,7 @@ func (ptb *PerunTransactionBuilder) completeCKBCapacity(requiredFunding, already
 		return ptb.addOrUpdateChangeCell(zeroHash, alreadyProvidedCKBAmount-requiredCKBAmount)
 	}
 
-	if alreadyProvidedCKBAmount < requiredCKBAmount {
+	if alreadyProvidedCKBAmount < (requiredCKBAmount + ptb.ckbChangeCellCapacity()) {
 		// We are missing CKB, complete funding by adding inputs from the CKB
 		// iterator.
 		return ptb.addInputsAndChangeForCKB(alreadyProvidedCKBAmount, requiredCKBAmount, requiredFunding, alreadyProvidedFunding)

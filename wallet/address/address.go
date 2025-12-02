@@ -83,6 +83,34 @@ func NewEthereumParticipantFromPublicKey(key *secp256k1.PublicKey, omniCodeHash 
 	}, ethAddr, nil
 }
 
+func NewCrossChainParticipantFromPublicKeys(CKBL1Key *secp256k1.PublicKey, EthL1Key *secp256k1.PublicKey, omniCodeHash types.Hash) (*Participant, [20]byte, error) {
+	var ethAddr [20]byte
+	if omniCodeHash == (types.Hash{}) {
+		return nil, ethAddr, fmt.Errorf("omni-lock code hash must be provided")
+	}
+
+	ecdsaEthPubKey := EthL1Key.ToECDSA()
+	pubBytesEth := crypto.FromECDSAPub(ecdsaEthPubKey)[1:]
+
+	// Keccak256 hash of pubkey, then take last 20 bytes (Ethereum address)
+	ethAddr = [20]byte(crypto.Keccak256(pubBytesEth)[12:])
+
+	args := append([]byte{0x12}, ethAddr[:]...)
+	args = append(args, 0x00)
+
+	script := &types.Script{
+		CodeHash: omniCodeHash,
+		HashType: types.HashTypeType, // Omni-lock is typically deployed with `type`
+		Args:     args,
+	}
+
+	return &Participant{
+		PubKey:        CKBL1Key,
+		PaymentScript: script,
+		UnlockScript:  script, // same unless separated
+	}, ethAddr, nil
+}
+
 func NewParticipant(pubKey *secp256k1.PublicKey, paymentScript, unlockScript *types.Script) *Participant {
 	return &Participant{
 		PubKey:        pubKey,
@@ -93,17 +121,17 @@ func NewParticipant(pubKey *secp256k1.PublicKey, paymentScript, unlockScript *ty
 
 // MarshalBinary encodes the participant into a binary representation as a molecule.OffChainParticipant.
 func (p Participant) MarshalBinary() ([]byte, error) {
-	offChainParticipant, err := p.PackOffChainParticipant()
+	offChainParticipant, err := p.PackOnChainParticipant()
 	return offChainParticipant.AsSlice(), err
 }
 
 // UnmarshalBinary decodes the participant from a molecule.OffChainParticipant.
 func (p *Participant) UnmarshalBinary(data []byte) error {
-	offChainParticipant, err := molecule.OffChainParticipantFromSlice(data, false)
+	onChainParticipant, err := molecule.ParticipantFromSlice(data, true)
 	if err != nil {
 		return err
 	}
-	return p.UnpackOffChainParticipant(offChainParticipant)
+	return p.UnpackOnChainParticipant(onChainParticipant)
 }
 
 func (p Participant) String() string {

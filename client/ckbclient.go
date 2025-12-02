@@ -47,17 +47,17 @@ type CKBClient interface {
 
 	// Dispute registers a dispute for the channel with the given channel ID on chain.
 	// It should register the given state with the given signatures as witness.
-	// Note: The given signatures are padded (see encoding.NewDEREncodedSignatureFromPadded).
+	// Note: The given signatures are padded (see encoding.NewMoleculeSignature).
 	Dispute(ctx context.Context, id channel.ID, state *channel.State, sigs []wallet.Sig, params *channel.Params) error
 
 	// DisputeVC registers a dispute for a channel and its virtual channel with the given channel ID on chain.
 	// It should register the given state with the given signatures as witness.
-	// Note: The given signatures are padded (see encoding.NewDEREncodedSignatureFromPadded).
+	// Note: The given signatures are padded (see encoding.NewMoleculeSignature).
 	DisputeVC(ctx context.Context, vcID, parentID channel.ID, vcState, parentState *channel.State, vcParams, parentParams *channel.Params, sigs, parentSigs []wallet.Sig, indexMap []channel.Index) error
 
 	// Close closes the channel with the given channel ID on chain.
 	// The implementation can assume that the given state is final.
-	// Note: The given signatures are padded (see encoding.NewDEREncodedSignatureFromPadded).
+	// Note: The given signatures are padded (see encoding.NewMoleculeSignature).
 	Close(ctx context.Context, id channel.ID, state *channel.State, sigs []wallet.Sig, params *channel.Params) error
 
 	// ForceClose closes the channel with the given channel ID on chain.
@@ -127,7 +127,29 @@ func (f *FilteredCellIterator) Next() *types.TransactionInput {
 	return f.nextInput
 }
 
-// TODO: Require sudt handlers!
+func retryRPC[T any](ctx context.Context, n int, delay time.Duration, fn func() (T, error)) (T, error) {
+	var zero T
+	var err error
+	for i := 0; i < n; i++ {
+		var result T
+		result, err = fn()
+		if err == nil {
+			return result, nil
+		}
+
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return zero, fmt.Errorf("RPC canceled or deadline exceeded: %w", err)
+		}
+
+		log.Printf("RPC attempt %d/%d failed: %v", i+1, n, err)
+		select {
+		case <-ctx.Done():
+			return zero, ctx.Err()
+		case <-time.After(delay):
+		}
+	}
+	return zero, fmt.Errorf("RPC failed after %d attempts: %w", n, err)
+}
 
 type Client struct {
 	client rpc.Client
@@ -302,7 +324,10 @@ func (c Client) createOrGetChannelToken(ctx context.Context, iter collector.Cell
 		txInput := iter.Next()
 
 		// Resolve the full cell to check the lock script
-		liveCell, err := c.client.GetLiveCell(ctx, txInput.OutPoint, false)
+		liveCell, err := retryRPC(ctx, 3, 10*time.Second, func() (*types.CellWithStatus, error) {
+			return c.client.GetLiveCell(ctx, txInput.OutPoint, false)
+		})
+
 		if err != nil || liveCell == nil || liveCell.Cell == nil {
 			log.Println("Skipping cell due to error or nil:", err, liveCell)
 			continue
@@ -331,7 +356,9 @@ func (c Client) Fund(ctx context.Context, pcts *types.Script, state *channel.Sta
 	if err != nil {
 		return fmt.Errorf("getting channel live cell: %w", err)
 	}
-	header, err := c.client.GetTipHeader(ctx)
+	header, err := retryRPC(ctx, 3, 10*time.Second, func() (*types.Header, error) {
+		return c.client.GetTipHeader(ctx)
+	})
 	if err != nil {
 		return fmt.Errorf("getting tip header: %w", err)
 	}
@@ -362,7 +389,9 @@ func (c Client) Dispute(ctx context.Context, id channel.ID, state *channel.State
 	if err != nil {
 		return fmt.Errorf("getting channel live cell: %w", err)
 	}
-	header, err := c.client.GetTipHeader(ctx)
+	header, err := retryRPC(ctx, 3, 10*time.Second, func() (*types.Header, error) {
+		return c.client.GetTipHeader(ctx)
+	})
 	if err != nil {
 		return fmt.Errorf("getting tip header: %w", err)
 	}
@@ -371,12 +400,12 @@ func (c Client) Dispute(ctx context.Context, id channel.ID, state *channel.State
 		return fmt.Errorf("expected 2 signatures, got %d", len(sigs))
 	}
 
-	sigA, err := encoding.NewDEREncodedSignatureFromPadded(sigs[0])
+	sigA, err := encoding.NewMoleculeSignature(sigs[0])
 	if err != nil {
 		return fmt.Errorf("encoding signature A: %w", err)
 	}
 
-	sigB, err := encoding.NewDEREncodedSignatureFromPadded(sigs[1])
+	sigB, err := encoding.NewMoleculeSignature(sigs[1])
 	if err != nil {
 		return fmt.Errorf("encoding signature B: %w", err)
 	}
@@ -405,7 +434,9 @@ func (c Client) Dispute(ctx context.Context, id channel.ID, state *channel.State
 func (c Client) DisputeVC(ctx context.Context, vcID, parentID channel.ID, vcState, parentState *channel.State, vcParams, parentParams *channel.Params, vcSigs, parentSigs []wallet.Sig, indexMap []channel.Index) error {
 	var di *transaction.VcDisputeInfo
 
-	header, err := c.client.GetTipHeader(ctx)
+	header, err := retryRPC(ctx, 3, 10*time.Second, func() (*types.Header, error) {
+		return c.client.GetTipHeader(ctx)
+	})
 	if err != nil {
 		return fmt.Errorf("getting tip header: %w", err)
 	}
@@ -413,12 +444,12 @@ func (c Client) DisputeVC(ctx context.Context, vcID, parentID channel.ID, vcStat
 	if len(vcSigs) != 2 {
 		return fmt.Errorf("expected 2 signatures, got %d", len(vcSigs))
 	}
-	sigA, err := encoding.NewDEREncodedSignatureFromPadded(vcSigs[0])
+	sigA, err := encoding.NewMoleculeSignature(vcSigs[0])
 	if err != nil {
 		return fmt.Errorf("encoding signature A: %w", err)
 	}
 
-	sigB, err := encoding.NewDEREncodedSignatureFromPadded(vcSigs[1])
+	sigB, err := encoding.NewMoleculeSignature(vcSigs[1])
 	if err != nil {
 		return fmt.Errorf("encoding signature B: %w", err)
 	}
@@ -426,12 +457,12 @@ func (c Client) DisputeVC(ctx context.Context, vcID, parentID channel.ID, vcStat
 	if len(parentSigs) != 2 {
 		return fmt.Errorf("expected 2 parent signatures, got %d", len(parentSigs))
 	}
-	parentSigA, err := encoding.NewDEREncodedSignatureFromPadded(parentSigs[0])
+	parentSigA, err := encoding.NewMoleculeSignature(parentSigs[0])
 	if err != nil {
 		return fmt.Errorf("encoding signature A: %w", err)
 	}
 
-	parentSigB, err := encoding.NewDEREncodedSignatureFromPadded(parentSigs[1])
+	parentSigB, err := encoding.NewMoleculeSignature(parentSigs[1])
 	if err != nil {
 		return fmt.Errorf("encoding signature B: %w", err)
 	}
@@ -623,7 +654,9 @@ func (c Client) Close(ctx context.Context, id channel.ID, state *channel.State, 
 	if err != nil {
 		return fmt.Errorf("retrieving assets locked in channel: %w", err)
 	}
-	header, err := c.client.GetTipHeader(ctx)
+	header, err := retryRPC(ctx, 3, 10*time.Second, func() (*types.Header, error) {
+		return c.client.GetTipHeader(ctx)
+	})
 	if err != nil {
 		return fmt.Errorf("getting tip header: %w", err)
 	}
@@ -681,7 +714,10 @@ func (c Client) getAssets(ctx context.Context, pcts *types.Script) (*indexer.Liv
 		Filter:           nil,
 		WithData:         true,
 	}
-	return c.client.GetCells(ctx, searchKey, indexer.SearchOrderDesc, math.MaxUint32, "")
+	cells, err := retryRPC(ctx, 3, 10*time.Second, func() (*indexer.LiveCells, error) {
+		return c.client.GetCells(ctx, searchKey, indexer.SearchOrderDesc, math.MaxUint32, "")
+	})
+	return cells, err
 }
 
 func (c Client) ForceClose(ctx context.Context, id channel.ID, state *channel.State, params *channel.Params) error {
@@ -695,12 +731,16 @@ func (c Client) ForceClose(ctx context.Context, id channel.ID, state *channel.St
 	if err != nil {
 		return fmt.Errorf("retrieving assets locked in channel: %w", err)
 	}
-	header, err := c.client.GetTipHeader(ctx)
+	header, err := retryRPC(ctx, 3, 10*time.Second, func() (*types.Header, error) {
+		return c.client.GetTipHeader(ctx)
+	})
 	if err != nil {
 		return fmt.Errorf("getting tip header: %w", err)
 	}
 
-	oldTx, err := c.client.GetTransaction(ctx, channelCell.OutPoint.TxHash)
+	oldTx, err := retryRPC(ctx, 3, 10*time.Second, func() (*types.TransactionWithStatus, error) {
+		return c.client.GetTransaction(ctx, channelCell.OutPoint.TxHash)
+	})
 	if err != nil {
 		return fmt.Errorf("getting old transaction: %w", err)
 	}
@@ -760,33 +800,37 @@ func (c Client) ForceCloseWithVC(ctx context.Context, id channel.ID, vcid channe
 		return fmt.Errorf("retrieving assets locked in channel: %w", err)
 	}
 
-	sigA, err := encoding.NewDEREncodedSignatureFromPadded(sigs[0])
+	sigA, err := encoding.NewMoleculeSignature(sigs[0])
 	if err != nil {
 		return fmt.Errorf("encoding signature A: %w", err)
 	}
 
-	sigB, err := encoding.NewDEREncodedSignatureFromPadded(sigs[1])
+	sigB, err := encoding.NewMoleculeSignature(sigs[1])
 	if err != nil {
 		return fmt.Errorf("encoding signature B: %w", err)
 	}
 
-	vcSigA, err := encoding.NewDEREncodedSignatureFromPadded(vcSigs[0])
+	vcSigA, err := encoding.NewMoleculeSignature(vcSigs[0])
 	if err != nil {
 		return fmt.Errorf("encoding signature A: %w", err)
 	}
 
-	vcSigB, err := encoding.NewDEREncodedSignatureFromPadded(vcSigs[1])
+	vcSigB, err := encoding.NewMoleculeSignature(vcSigs[1])
 	if err != nil {
 		return fmt.Errorf("encoding signature B: %w", err)
 	}
 
 	vcDispute := encoding.PackVCDispute(vcSigA, vcSigB, sigA, sigB)
 
-	header, err := c.client.GetTipHeader(ctx)
+	header, err := retryRPC(ctx, 3, 10*time.Second, func() (*types.Header, error) {
+		return c.client.GetTipHeader(ctx)
+	})
 	if err != nil {
 		return fmt.Errorf("getting tip header: %w", err)
 	}
-	oldTx, err := c.client.GetTransaction(ctx, channelCell.OutPoint.TxHash)
+	oldTx, err := retryRPC(ctx, 3, 10*time.Second, func() (*types.TransactionWithStatus, error) {
+		return c.client.GetTransaction(ctx, channelCell.OutPoint.TxHash)
+	})
 	if err != nil {
 		return fmt.Errorf("getting old transaction: %w", err)
 	}
@@ -847,7 +891,10 @@ func (c Client) Abort(ctx context.Context, script *types.Script, params *channel
 	if err != nil {
 		return fmt.Errorf("retrieving assets locked in channel: %w", err)
 	}
-	header, err := c.client.GetTipHeader(ctx)
+	header, err := retryRPC(ctx, 3, 10*time.Second, func() (*types.Header, error) {
+		return c.client.GetTipHeader(ctx)
+	})
+
 	if err != nil {
 		return fmt.Errorf("getting tip header: %w", err)
 	}
@@ -892,13 +939,17 @@ const defaultPollingInterval = 2 * time.Second
 // sendAndAwait sends the given transaction and waits for it to be committed
 // on-chain.
 func (c Client) sendAndAwait(ctx context.Context, tx *types.Transaction) error {
-	txHash, err := c.client.SendTransaction(ctx, tx)
+	txHash, err := retryRPC(ctx, 3, 10*time.Second, func() (*types.Hash, error) {
+		return c.client.SendTransaction(ctx, tx)
+	})
 	if err != nil {
 		return fmt.Errorf("sending transaction: %w", err)
 	}
 
 	// Wait for the transaction to be committed on-chain.
-	txWithStatus, err := c.client.GetTransaction(ctx, *txHash)
+	txWithStatus, err := retryRPC(ctx, 3, 10*time.Second, func() (*types.TransactionWithStatus, error) {
+		return c.client.GetTransaction(ctx, *txHash)
+	})
 	if err != nil {
 		return fmt.Errorf("initially polling transaction: %w", err)
 	}
@@ -912,7 +963,9 @@ func (c Client) sendAndAwait(ctx context.Context, tx *types.Transaction) error {
 		case <-ctx.Done():
 			return fmt.Errorf("context done: %w", ctx.Err())
 		case <-ticker.C:
-			txWithStatus, err = c.client.GetTransaction(ctx, *txHash)
+			txWithStatus, err = retryRPC(ctx, 3, 10*time.Second, func() (*types.TransactionWithStatus, error) {
+				return c.client.GetTransaction(ctx, *txHash)
+			})
 			if err != nil {
 				return fmt.Errorf("polling transaction: %w", err)
 			}
@@ -981,7 +1034,10 @@ func (c Client) getAllChannelLiveCells(ctx context.Context) (*indexer.LiveCells,
 		Filter:           nil,
 		WithData:         true,
 	}
-	return c.client.GetCells(ctx, searchKey, indexer.SearchOrderDesc, math.MaxUint32, "")
+	cells, err := retryRPC(ctx, 3, 10*time.Second, func() (*indexer.LiveCells, error) {
+		return c.client.GetCells(ctx, searchKey, indexer.SearchOrderDesc, math.MaxUint32, "")
+	})
+	return cells, err
 }
 
 func (c Client) getAllVirtualChannelLiveCells(ctx context.Context) (*indexer.LiveCells, error) {
@@ -997,7 +1053,10 @@ func (c Client) getAllVirtualChannelLiveCells(ctx context.Context) (*indexer.Liv
 		Filter:           nil,
 		WithData:         true,
 	}
-	return c.client.GetCells(ctx, searchKey, indexer.SearchOrderDesc, math.MaxUint32, "")
+	cells, err := retryRPC(ctx, 3, 10*time.Second, func() (*indexer.LiveCells, error) {
+		return c.client.GetCells(ctx, searchKey, indexer.SearchOrderDesc, math.MaxUint32, "")
+	})
+	return cells, err
 }
 
 func (c Client) getExactChannelLiveCell(ctx context.Context, pcts *types.Script) (*indexer.LiveCell, error) {
@@ -1008,7 +1067,9 @@ func (c Client) getExactChannelLiveCell(ctx context.Context, pcts *types.Script)
 		Filter:           nil,
 		WithData:         true,
 	}
-	cells, err := c.client.GetCells(ctx, searchKey, indexer.SearchOrderDesc, math.MaxUint32, "")
+	cells, err := retryRPC(ctx, 3, 10*time.Second, func() (*indexer.LiveCells, error) {
+		return c.client.GetCells(ctx, searchKey, indexer.SearchOrderDesc, math.MaxUint32, "")
+	})
 	if err != nil {
 		log.Println("getExactChannelLiveCell: GetCells error: ", err)
 		return nil, err
@@ -1030,7 +1091,9 @@ func (c Client) getExactVirtualChannelLiveCell(ctx context.Context, vcts *types.
 		Filter:           nil,
 		WithData:         true,
 	}
-	cells, err := c.client.GetCells(ctx, searchKey, indexer.SearchOrderDesc, math.MaxUint32, "")
+	cells, err := retryRPC(ctx, 3, 10*time.Second, func() (*indexer.LiveCells, error) {
+		return c.client.GetCells(ctx, searchKey, indexer.SearchOrderDesc, math.MaxUint32, "")
+	})
 	log.Println("getExactVirtualChannelLiveCell: GetCells")
 	if err != nil {
 		log.Println("getExactVirtualChannelLiveCell: GetCells error: ", err)
@@ -1066,7 +1129,9 @@ func (c Client) isValidVirtualChannelLiveCell(cell *indexer.LiveCell) bool {
 }
 
 func (c Client) GetBlockTime(ctx context.Context, blockNumber BlockNumber) (time.Time, error) {
-	block, err := c.client.GetBlockByNumber(ctx, blockNumber)
+	block, err := retryRPC(ctx, 3, 10*time.Second, func() (*types.Block, error) {
+		return c.client.GetBlockByNumber(ctx, blockNumber)
+	})
 	if err != nil {
 		return time.Time{}, err
 	}
@@ -1180,14 +1245,14 @@ func updateState(state *channel.State, newState *molecule.ChannelState) (*channe
 		return state, errors.New("asset not found")
 	}
 	state.Balances[assetIdx] = []channel.Bal{
-		0: big.NewInt(int64(molecule2.UnpackUint64(newState.Balances().Ckbytes().Nth0()))),
-		1: big.NewInt(int64(molecule2.UnpackUint64(newState.Balances().Ckbytes().Nth1()))),
+		0: big.NewInt(int64(molecule2.UnpackUint64(newState.Balances().Assets().Get(uint(assetIdx)).Ckb().Nth0()))),
+		1: big.NewInt(int64(molecule2.UnpackUint64(newState.Balances().Assets().Get(uint(assetIdx)).Ckb().Nth1()))),
 	}
 
 	for sudtIndex, pAsset := range state.Assets {
-		a, err := asset.IsCompatibleAsset(pAsset)
-		if err != nil {
-			return nil, err
+		a, ckb := asset.IsCompatibleAsset(pAsset)
+		if ckb != true {
+			continue
 		}
 		if a.IsInvalid() {
 			return nil, errors.New("invalid asset")
@@ -1200,7 +1265,7 @@ func updateState(state *channel.State, newState *molecule.ChannelState) (*channe
 				return nil, err
 			}
 
-			newSudtDistribution := newState.Balances().Sudts().Get(0).Distribution()
+			newSudtDistribution := newState.Balances().Assets().Get(uint(sudtIndex)).Sudt().Distribution()
 			balA := newSudtDistribution.Nth0()
 			balB := newSudtDistribution.Nth1()
 			state.Balances[sudtIndex] = []channel.Bal{

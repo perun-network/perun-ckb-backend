@@ -1,10 +1,10 @@
-// Copyright 2020 - See NOTICE file for copyright holders.
+// Copyright 2025 PolyCrypt GmbH
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -17,13 +17,14 @@ package test
 import (
 	"errors"
 	"fmt"
+	"github.com/decred/dcrd/dcrec/secp256k1/v4"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/stretchr/testify/require"
 	"log"
+	"math/big"
 	"math/rand"
 	"os"
 	"testing"
-
-	"github.com/decred/dcrd/dcrec/secp256k1/v4"
-	"github.com/stretchr/testify/require"
 
 	"github.com/nervosnetwork/ckb-sdk-go/v2/rpc"
 	ckbsigner "github.com/nervosnetwork/ckb-sdk-go/v2/transaction/signer"
@@ -47,13 +48,15 @@ const (
 	sudtMaxCapacity = 200_00_000_000
 )
 
-type Setup struct {
+type SetupCross struct {
 	t            *testing.T
 	Rng          *rand.Rand
 	Deployment   backend.Deployment
-	SUDTInfo     SUDTInfo
 	Asset        *asset.Asset
-	SudtAsset    *asset.Asset
+	SUDTInfo     SUDTInfo
+	CkbAsset     *asset.NervosAsset
+	SudtAsset    *asset.NervosAsset
+	EthAsset     *asset.EthAsset
 	Participants []*address.Participant
 
 	WalletAccs       []*wallet.Account
@@ -62,6 +65,108 @@ type Setup struct {
 
 	Funders []channel.Funder
 	Adjs    []channel.Adjudicator
+}
+type Setup struct {
+	t            *testing.T
+	Rng          *rand.Rand
+	Deployment   backend.Deployment
+	Asset        *asset.Asset
+	SUDTInfo     SUDTInfo
+	CkbAsset     *asset.Asset
+	SudtAsset    *asset.Asset
+	EthAsset     *asset.EthAsset
+	Participants []*address.Participant
+
+	WalletAccs       []*wallet.Account
+	AccKeys          []secp256k1.PrivateKey
+	EphemeralWallets []*ckbwallettest.TestEphemeralWallet
+
+	Funders []channel.Funder
+	Adjs    []channel.Adjudicator
+}
+
+func NewCrossSetup(t *testing.T, rng *rand.Rand, omni bool) *SetupCross {
+	setup := &SetupCross{}
+	setup.t = t
+	setup.Rng = rng
+
+	sudtOwnerLockArg, err := ParseSUDTOwnerLockArg(devNetDir + "/accounts/sudt-owner-lock-hash.txt")
+	require.NoError(t, err, "error getting SUDT owner lock arg")
+
+	d, sudtInfo, err := GetDeployment(devNetDir+"/contract/migrations/dev/", devNetDir+"/contract/migrations_vc/dev/", devNetDir+"/system_scripts", sudtOwnerLockArg)
+	require.NoError(t, err, "error getting deployment")
+	setup.Deployment = d
+	setup.SUDTInfo = sudtInfo
+
+	sudt := asset.NewSUDT(*sudtInfo.Script, sudtMaxCapacity)
+	sudtAsset := asset.NewSUDTAsset(sudt)
+	ledgerID := asset.MakeContractID("03") // Set this appropriately
+	ccid := asset.MakeCCID(ledgerID)
+	nervosSUDTAsset := asset.NewNervosAsset(*sudtAsset, ccid)
+	setup.SudtAsset = &nervosSUDTAsset
+
+	ckbAsset := asset.NewCKBytesNervosAsset()
+	setup.CkbAsset = ckbAsset
+
+	var ethAddrArray [20]byte
+	newEthAddrBytes := common.BytesToAddress(ethAddrArray[:])
+	newEthAddr := address.EthAddress(newEthAddrBytes)
+
+	chainID := new(big.Int)
+	chainID.SetUint64(uint64(1))
+	ethAsset := asset.MakeEthAsset(chainID, &newEthAddr)
+	setup.EthAsset = &ethAsset
+
+	wallets := make([]*ckbwallettest.TestEphemeralWallet, 2)
+	setup.EphemeralWallets = wallets
+
+	parts := make([]*address.Participant, 2)
+	keyAlice, err := GetKey(devNetDir + "/accounts/alice.pk")
+	require.NoError(t, err, "error getting alice's private key")
+
+	keyBob, err := GetKey(devNetDir + "/accounts/bob.pk")
+	require.NoError(t, err, "error getting bob's private key")
+	var evmAddresses [][20]byte
+	var aliceAccount, bobAccount *wallet.Account
+	if omni {
+		evmAddresses = make([][20]byte, 2)
+		parts[0], evmAddresses[0], _ = address.NewEthereumParticipantFromPublicKey(keyAlice.PubKey(), d.OmniLockScript.CodeHash)
+		parts[1], evmAddresses[1], _ = address.NewEthereumParticipantFromPublicKey(keyBob.PubKey(), d.OmniLockScript.CodeHash)
+		add0, _ := parts[0].ToCKBAddress(network).EncodeFullBech32m()
+		log.Println("Alice's CKB address: ", add0)
+		add1, _ := parts[1].ToCKBAddress(network).EncodeFullBech32m()
+		log.Println("Bob's CKB address: ", add1)
+		setup.Participants = parts
+		aliceAccount = wallet.NewAccountFromPrivateKey(keyAlice, d.OmniLockScript.CodeHash, false)
+		bobAccount = wallet.NewAccountFromPrivateKey(keyBob, d.OmniLockScript.CodeHash, false)
+	} else {
+		parts[0], _ = address.NewDefaultParticipant(keyAlice.PubKey())
+		parts[1], _ = address.NewDefaultParticipant(keyBob.PubKey())
+		add0, _ := parts[0].ToCKBAddress(network).EncodeFullBech32m()
+		log.Println("Alice's CKB address: ", add0)
+		add1, _ := parts[1].ToCKBAddress(network).EncodeFullBech32m()
+		log.Println("Bob's CKB address: ", add1)
+		setup.Participants = parts
+		aliceAccount = wallet.NewAccountFromPrivateKey(keyAlice, types.Hash{}, true)
+		bobAccount = wallet.NewAccountFromPrivateKey(keyBob, types.Hash{}, true)
+	}
+
+	wallets[0] = ckbwallettest.NewTestEphemeralWallet(aliceAccount)
+	err = wallets[0].AddAccount(aliceAccount)
+	require.NoError(t, err, "error adding alice's account")
+
+	wallets[1] = ckbwallettest.NewTestEphemeralWallet(bobAccount)
+	err = wallets[1].AddAccount(bobAccount)
+	require.NoError(t, err, "error adding bob's account")
+
+	setup.WalletAccs = []*wallet.Account{aliceAccount, bobAccount}
+	setup.AccKeys = []secp256k1.PrivateKey{*keyAlice, *keyBob}
+
+	funders, adjs := createFundersAndAdjudicators(t, setup.WalletAccs, setup.AccKeys, d, RpcNodeURL, omni, evmAddresses)
+	setup.Funders = funders
+	setup.Adjs = adjs
+
+	return setup
 }
 
 func NewSetup(t *testing.T, rng *rand.Rand, omni bool) *Setup {

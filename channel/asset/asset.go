@@ -1,26 +1,40 @@
+// Copyright 2025 PolyCrypt GmbH
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//	http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 package asset
 
 import (
-	"bytes"
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"math/big"
-	"perun.network/go-perun/wire/perunio"
-
 	"github.com/Pilatuz/bigz/uint128"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types/molecule"
+	"math/big"
 	pchannel "perun.network/go-perun/channel"
 	"perun.network/go-perun/channel/multi"
 	molecule2 "perun.network/perun-ckb-backend/encoding/molecule"
 )
+
+var _ multi.Asset = (*NervosAsset)(nil)
 
 var (
 	CKByteMagic  byte = 0x00
 	SUDTMagic    byte = 0x01
 	CKBBackendID      = 3
 )
+
+const EthBackendID = 1
 
 type (
 	Asset struct {
@@ -45,18 +59,19 @@ type (
 
 // MarshalBinary marshals the NervosAsset into its binary representation.
 func (C NervosAsset) MarshalBinary() ([]byte, error) {
-	var buf bytes.Buffer
-	err := perunio.Encode(&buf, C.id.ledgerID, C.id.backendID, C.Asset)
-	if err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
+	return C.Asset.MarshalBinary()
 }
 
 // UnmarshalBinary unmarshals the NervosAsset from its binary representation.
 func (C *NervosAsset) UnmarshalBinary(data []byte) error {
-	buf := bytes.NewBuffer(data)
-	return perunio.Decode(buf, &C.id.ledgerID, &C.id.backendID, &C.Asset)
+	var innerAsset Asset
+	err := innerAsset.UnmarshalBinary(data)
+	if err != nil {
+		return err
+	}
+	C.Asset = innerAsset
+	C.id = MakeCCID(ContractLID{"03"})
+	return nil
 }
 
 // Equal returns true if the CKBAssets are the same.
@@ -94,7 +109,6 @@ func (id *ContractLID) UnmarshalBinary(data []byte) error {
 	return nil
 }
 
-// MarshalBinary marshals the contractID into its binary representation.
 func (id ContractLID) MarshalBinary() ([]byte, error) {
 	if id.string == "" {
 		return nil, errors.New("nil ContractID")
@@ -164,6 +178,9 @@ func (a *Asset) UnmarshalBinary(data []byte) error {
 		}
 		a.IsCKBytes = false
 		a.SUDT = s
+		if a.SUDT.TypeScript.Args == nil {
+			a.SUDT.TypeScript.Args = []byte{}
+		}
 		return nil
 	default:
 		return errors.New("asset invalid: unknown asset type")
@@ -211,7 +228,7 @@ func NewCKBytesAsset() *Asset {
 
 func NewCKBytesNervosAsset() *NervosAsset {
 	a := Asset{IsCKBytes: true}
-	return &NervosAsset{Asset: a, id: CCID{uint32(CKBBackendID), ContractLID{"3"}}}
+	return &NervosAsset{Asset: a, id: CCID{uint32(CKBBackendID), ContractLID{"03"}}}
 }
 
 func NewSUDTAsset(sudt *SUDT) *Asset {
@@ -219,17 +236,17 @@ func NewSUDTAsset(sudt *SUDT) *Asset {
 }
 
 // IsCompatibleAsset returns the Asset if the asset is compatible with the CKB backend.
-func IsCompatibleAsset(asset pchannel.Asset) (*Asset, error) {
+func IsCompatibleAsset(asset pchannel.Asset) (*Asset, bool) {
 	a, ok := asset.(*NervosAsset)
 	if !ok {
 		b, ok := asset.(*Asset)
 		if !ok {
-			return nil, errors.New("asset is not of type Asset")
+			return nil, false
 		} else {
-			return b, nil
+			return b, true
 		}
 	}
-	return &a.Asset, nil
+	return &a.Asset, true
 }
 
 // SUDT is the asset type for SUDT tokens.
