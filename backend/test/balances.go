@@ -14,6 +14,7 @@ func NewRandomBalances(rng *rand.Rand) *molecule.Balances {
 	if err != nil {
 		panic(err)
 	}
-	b := molecule.NewBalancesBuilder().Assets(molecule.NewAllocationBuilder().Push(molecule.NewAnyBalancesBuilder().Ckb(dist).Build()).Build()).Build()
+	dist_union := molecule.AnyBalancesUnionFromCKByteDistribution(dist)
+	b := molecule.NewBalancesBuilder().Assets(molecule.NewAllocationBuilder().Push(molecule.NewAnyBalancesBuilder().Set(dist_union).Build()).Build()).Build()
 	return &b
 }

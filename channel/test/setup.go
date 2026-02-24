@@ -42,10 +42,9 @@ import (
 )
 
 const (
-	RpcNodeURL      = "http://localhost:8114"
-	network         = types.NetworkTest
-	devNetDir       = "../devnet"
-	sudtMaxCapacity = 200_00_000_000
+	RpcNodeURL = "http://localhost:8114"
+	network    = types.NetworkTest
+	devNetDir  = "../devnet"
 )
 
 type SetupCross struct {
@@ -93,10 +92,10 @@ func NewCrossSetup(t *testing.T, rng *rand.Rand, omni bool) *SetupCross {
 	sudtOwnerLockArg, err := ParseSUDTOwnerLockArg(devNetDir + "/accounts/sudt-owner-lock-hash.txt")
 	require.NoError(t, err, "error getting SUDT owner lock arg")
 
-	d, sudtInfo, err := GetDeployment(devNetDir+"/contract/migrations/dev/", devNetDir+"/contract/migrations_vc/dev/", devNetDir+"/system_scripts", sudtOwnerLockArg)
+	d, sudtInfo, err := GetDeployment(devNetDir+"/contract/migrations_0/dev/", devNetDir+"/contract/migrations_1/dev/", devNetDir+"/contract/migrations_vc/dev/", devNetDir+"/system_scripts", sudtOwnerLockArg)
 	require.NoError(t, err, "error getting deployment")
 	setup.Deployment = d
-	setup.SUDTInfo = sudtInfo
+	setup.SUDTInfo = *sudtInfo
 
 	sudt := asset.NewSUDT(*sudtInfo.Script, sudtMaxCapacity)
 	sudtAsset := asset.NewSUDTAsset(sudt)
@@ -178,10 +177,10 @@ func NewSetup(t *testing.T, rng *rand.Rand, omni bool) *Setup {
 	sudtOwnerLockArg, err := ParseSUDTOwnerLockArg(devNetDir + "/accounts/sudt-owner-lock-hash.txt")
 	require.NoError(t, err, "error getting SUDT owner lock arg")
 
-	d, sudtInfo, err := GetDeployment(devNetDir+"/contract/migrations/dev/", devNetDir+"/contract/migrations_vc/dev/", devNetDir+"/system_scripts", sudtOwnerLockArg)
+	d, sudtInfo, err := GetDeployment(devNetDir+"/contract/migrations_0/dev/", devNetDir+"/contract/migrations_1/dev/", devNetDir+"/contract/migrations_vc/dev/", devNetDir+"/system_scripts", sudtOwnerLockArg)
 	require.NoError(t, err, "error getting deployment")
 	setup.Deployment = d
-	setup.SUDTInfo = sudtInfo
+	setup.SUDTInfo = *sudtInfo
 
 	setup.Asset = asset.NewCKBytesAsset()
 	setup.SudtAsset = &asset.Asset{
@@ -248,10 +247,10 @@ func NewVirtualChannelSetup(t *testing.T, rng *rand.Rand, omni bool) *SetupCross
 	sudtOwnerLockArg, err := ParseSUDTOwnerLockArg(devNetDir + "/accounts/sudt-owner-lock-hash.txt")
 	require.NoError(t, err, "error getting SUDT owner lock arg")
 
-	d, sudtInfo, err := GetDeployment(devNetDir+"/contract/migrations/dev/", devNetDir+"/contract/migrations_vc/dev/", devNetDir+"/system_scripts", sudtOwnerLockArg)
+	d, sudtInfo, err := GetDeployment(devNetDir+"/contract/migrations_0/dev/", devNetDir+"/contract/migrations_1/dev/", devNetDir+"/contract/migrations_vc/dev/", devNetDir+"/system_scripts", sudtOwnerLockArg)
 	require.NoError(t, err, "error getting deployment")
 	setup.Deployment = d
-	setup.SUDTInfo = sudtInfo
+	setup.SUDTInfo = *sudtInfo
 
 	ckbAsset := asset.NewCKBytesNervosAsset()
 	setup.CkbAsset = ckbAsset

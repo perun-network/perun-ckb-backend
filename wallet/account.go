@@ -7,6 +7,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types"
 	"github.com/pkg/errors"
+	"log"
 	"math/big"
 	"perun.network/go-perun/wallet"
 	"perun.network/perun-ckb-backend/wallet/address"
@@ -45,6 +46,7 @@ func (a Account) Address() wallet.Address {
 // }
 
 func (a Account) SignData(data []byte) ([]byte, error) {
+	log.Println("Signing data: ", a.key.PubKey())
 	hash := crypto.Keccak256(data)
 	prefix := []byte("\x19Ethereum Signed Message:\n32")
 	phash := crypto.Keccak256(prefix, hash)

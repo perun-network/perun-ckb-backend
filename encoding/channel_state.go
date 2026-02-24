@@ -44,8 +44,9 @@ func PackBalances(state *pchannel.State) (molecule.Balances, error) {
 			if err != nil {
 				return molecule.Balances{}, err
 			}
+			d_union := molecule.AnyBalancesUnionFromETHBalances(d)
 			ab := molecule.NewAnyBalancesBuilder()
-			ab.Eth(d)
+			ab.Set(d_union)
 			allocBuilder.Push(ab.Build())
 		} else {
 			if a.IsInvalid() {
@@ -60,11 +61,12 @@ func PackBalances(state *pchannel.State) (molecule.Balances, error) {
 				if err != nil {
 					return molecule.Balances{}, err
 				}
+				d_union := molecule.AnyBalancesUnionFromCKByteDistribution(d)
 				ab := molecule.NewAnyBalancesBuilder()
-				ab.Ckb(d)
+				ab.Set(d_union)
 				allocBuilder.Push(ab.Build())
 			} else {
-				b, err := PackSUDTBalances(a,
+				d, err := PackSUDTBalances(a,
 					[2]*big.Int{
 						state.Balance(0, a),
 						state.Balance(1, a),
@@ -72,8 +74,9 @@ func PackBalances(state *pchannel.State) (molecule.Balances, error) {
 				if err != nil {
 					return molecule.Balances{}, err
 				}
+				d_union := molecule.AnyBalancesUnionFromSUDTBalances(d)
 				ab := molecule.NewAnyBalancesBuilder()
-				ab.Sudt(b)
+				ab.Set(d_union)
 				allocBuilder.Push(ab.Build())
 			}
 		}

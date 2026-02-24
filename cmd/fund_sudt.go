@@ -93,7 +93,7 @@ func main() {
 	if err != nil {
 		log.Fatal("getting sudt owner args: ", err)
 	}
-	d, sudtInfo, err := test.GetDeployment("contract/migrations/dev/", "contract/migrations_vc/dev/", "system_scripts", sudtOwnerLockArg)
+	d, sudtInfo, err := test.GetDeployment("contract/migrations_0/dev/", "contract/migrations_1/dev/", "contract/migrations_vc/dev/", "system_scripts", sudtOwnerLockArg)
 	if err != nil {
 		log.Fatal("getting deployment: ", err)
 	}

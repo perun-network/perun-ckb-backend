@@ -15,7 +15,7 @@ mkdir -p $ACCOUNTS_DIR
 rm -rf ~/.ckb-cli ~/.ckb/keystore/
 
 if [ -d $ACCOUNTS_DIR ]; then
-  rm -rf $ACCOUNTS_DIR/miner.pk $ACCOUNTS_DIR/miner.txt $ACCOUNTS_DIR/genesis-1.pk $ACCOUNTS_DIR/genesis-1.txt $ACCOUNTS_DIR/genesis-2.pk $ACCOUNTS_DIR/genesis-2.txt $ACCOUNTS_DIR/sudt-owner-lock-hash.txt
+  rm -rf $ACCOUNTS_DIR/miner.pk $ACCOUNTS_DIR/miner.txt $ACCOUNTS_DIR/genesis-1.pk $ACCOUNTS_DIR/genesis-1.txt $ACCOUNTS_DIR/genesis-2.pk $ACCOUNTS_DIR/genesis-2.txt $ACCOUNTS_DIR/sudt-owner-lock-hash1.txt $ACCOUNTS_DIR/sudt-owner-lock-hash2.txt
 fi
 
 if [ -d "data" ]; then
@@ -95,7 +95,7 @@ rm -rf accounts.txt
 ckb init --chain dev --ba-arg $MINER_LOCK_ARG --ba-message "0x" --force
 
 # Make the scripts owned by the miner.
-sed -i "s/args =.*$/args = \"$MINER_LOCK_ARG\"/" $PERUN_CONTRACTS_DIR/deployment/dev/deployment.toml
+sed -i "s/args =.*$/args = \"$MINER_LOCK_ARG\"/" $PERUN_CONTRACTS_DIR/deployment/dev/deployment_0.toml
 # Use the debug versions of the contract.
 # sed -i "s/release/debug/" $PERUN_CONTRACTS_DIR/deployment/dev/deployment.toml
 

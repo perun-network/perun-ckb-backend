@@ -14,13 +14,19 @@ import (
 	"perun.network/perun-ckb-backend/backend"
 )
 
-const PFLSMinCapacity = 4100000032
+const (
+	PFLSMinCapacity = 4100000032
+	sudtMaxCapacity = 200_00_000_000
+)
 
+// SUDTInfo contains the script and cell dep of an SUDT.
 type SUDTInfo struct {
-	Script  *types.Script
-	CellDep *types.CellDep
+	Script      *types.Script  `json:"script"`
+	CellDep     *types.CellDep `json:"cell_dep"`
+	MaxCapacity int64          `json:"max_capacity"` //capacity needed for typescript(sudt) + lockscript(participant's) + outputs data
 }
 
+// Migration contains the cell recipes and dep group recipes of a nervos_deployment.
 type Migration struct {
 	CellRecipes []struct {
 		Name             string      `json:"name"`
@@ -45,42 +51,51 @@ func parseDepType(depTypeRaw string) types.DepType {
 	}
 }
 
-func (m Migration) MakeDeployment(systemScripts SystemScripts, sudtOwnerLockArg string, vcm Migration) (backend.Deployment, SUDTInfo, error) {
+// MakeDeployment creates a deployment from the migration and system scripts.
+func (m Migration) MakeDeployment(systemScripts SystemScripts, sudtOwnerLockArg string, vcm Migration) (backend.Deployment, *SUDTInfo, error) {
+	log.Println("Lock Hashes: ", sudtOwnerLockArg)
 	sudtInfo, err := m.GetSUDT()
 	if err != nil {
-		return backend.Deployment{}, SUDTInfo{}, err
+		return backend.Deployment{}, nil, err
 	}
-	pcts := m.CellRecipes[1]
+	pcts := m.CellRecipes[3]
 	if pcts.Name != "pcts" {
-		return backend.Deployment{}, SUDTInfo{}, fmt.Errorf("second cell recipe must be pcts")
+		return backend.Deployment{}, nil, fmt.Errorf("second cell recipe must be pcts")
 	}
-	pcls := m.CellRecipes[2]
+	pcls := m.CellRecipes[1]
 	if pcls.Name != "pcls" {
-		return backend.Deployment{}, SUDTInfo{}, fmt.Errorf("third cell recipe must be pcls")
+		return backend.Deployment{}, nil, fmt.Errorf("third cell recipe must be pcls")
 	}
-	pfls := m.CellRecipes[3]
+	pfls := m.CellRecipes[2]
 	if pfls.Name != "pfls" {
-		return backend.Deployment{}, SUDTInfo{}, fmt.Errorf("fourth cell recipe must be pfls")
+		return backend.Deployment{}, nil, fmt.Errorf("fourth cell recipe must be pfls")
 	}
 
 	// Virtual channel scripts.
 	vcts := vcm.CellRecipes[0]
 	if vcts.Name != "vcts" {
-		return backend.Deployment{}, SUDTInfo{}, fmt.Errorf("fifth cell recipe must be vcts")
+		return backend.Deployment{}, nil, fmt.Errorf("fifth cell recipe must be vcts")
 	}
 	vcls := vcm.CellRecipes[1]
 	if vcls.Name != "vcls" {
-		return backend.Deployment{}, SUDTInfo{}, fmt.Errorf("sixth cell recipe must be vcls")
+		return backend.Deployment{}, nil, fmt.Errorf("sixth cell recipe must be vcls")
 	}
 	// NOTE: The SUDT lock-arg always contains a newline character at the end.
 	hexString := strings.ReplaceAll(sudtOwnerLockArg[2:], "\n", "")
 	hexString = strings.ReplaceAll(hexString, "\r", "")
 	hexString = strings.ReplaceAll(hexString, " ", "")
-	sudtInfo.Script.Args, err = hex.DecodeString(hexString)
-	if err != nil {
-		return backend.Deployment{}, SUDTInfo{}, fmt.Errorf("invalid sudt owner lock arg: %v", err)
+	byteString, err := hex.DecodeString(hexString)
+	sUDTInfo := &SUDTInfo{
+		Script: &types.Script{
+			CodeHash: sudtInfo.Script.CodeHash,
+			HashType: sudtInfo.Script.HashType,
+			Args:     byteString,
+		},
+		CellDep:     sudtInfo.CellDep,
+		MaxCapacity: sudtInfo.MaxCapacity,
 	}
 
+	log.Println("Using SUDT owner lock args:", sUDTInfo.Script.Args, "for SUDT:", sUDTInfo.Script.Hash())
 	return backend.Deployment{
 		Network: types.NetworkTest,
 		PCTSDep: types.CellDep{
@@ -163,14 +178,15 @@ func (m Migration) MakeDeployment(systemScripts SystemScripts, sudtOwnerLockArg 
 			},
 		},
 		SUDTDeps: map[types.Hash]types.CellDep{
-			sudtInfo.Script.Hash(): *sudtInfo.CellDep,
+			sUDTInfo.Script.Hash(): *sUDTInfo.CellDep,
 		},
 		SUDTs: map[types.Hash]types.Script{
-			sudtInfo.Script.Hash(): *sudtInfo.Script,
+			sUDTInfo.Script.Hash(): *sUDTInfo.Script,
 		},
-	}, *sudtInfo, nil
+	}, sUDTInfo, nil
 }
 
+// GetSUDT returns the SUDT info from the migration.
 func (m Migration) GetSUDT() (*SUDTInfo, error) {
 	sudt := m.CellRecipes[0]
 	if sudt.Name != "sudt" {
@@ -190,37 +206,54 @@ func (m Migration) GetSUDT() (*SUDTInfo, error) {
 		DepType: types.DepTypeCode,
 	}
 	return &SUDTInfo{
-		Script:  &sudtScript,
-		CellDep: &sudtCellDep,
+		Script:      &sudtScript,
+		CellDep:     &sudtCellDep,
+		MaxCapacity: sudtMaxCapacity,
 	}, nil
 }
 
-func GetDeployment(migrationDir, migrationDirVC, systemScriptsDir, sudtOwnerLockArg string) (backend.Deployment, SUDTInfo, error) {
-	dir, err := os.ReadDir(migrationDir)
+// GetDeployment reads the migration file and returns a nervos_deployment.
+func GetDeployment(migrationDir0, migrationDir1, migrationDirVC, systemScriptsDir string, sudtOwnerLockArg string) (backend.Deployment, *SUDTInfo, error) {
+	dir0, err := os.ReadDir(migrationDir0)
 	if err != nil {
-		return backend.Deployment{}, SUDTInfo{}, err
+		return backend.Deployment{}, nil, err
 	}
-	if len(dir) != 1 {
-		return backend.Deployment{}, SUDTInfo{}, fmt.Errorf("migration dir must contain exactly one file")
+	if len(dir0) != 1 {
+		return backend.Deployment{}, nil, fmt.Errorf("migration dir must contain exactly one file")
 	}
-
+	dir1, err := os.ReadDir(migrationDir1)
+	if err != nil {
+		return backend.Deployment{}, nil, err
+	}
+	if len(dir1) != 1 {
+		return backend.Deployment{}, nil, fmt.Errorf("migration dir must contain exactly one file")
+	}
 	vc_dir, err := os.ReadDir(migrationDirVC)
 	if err != nil {
-		return backend.Deployment{}, SUDTInfo{}, err
+		return backend.Deployment{}, nil, err
 	}
 	if len(vc_dir) != 1 {
-		return backend.Deployment{}, SUDTInfo{}, fmt.Errorf("vc migration dir must contain exactly one file")
+		return backend.Deployment{}, nil, fmt.Errorf("migration dir must contain exactly one file")
 	}
-
-	migrationName := dir[0].Name()
-	migrationFile, err := os.Open(path.Join(migrationDir, migrationName))
+	migrationName0 := dir0[0].Name()
+	migrationFile0, err := os.Open(path.Join(migrationDir0, migrationName0))
 	defer func() {
-		if err := migrationFile.Close(); err != nil {
+		if err := migrationFile0.Close(); err != nil {
 			log.Fatalf("failed to close migration file: %v\n", err)
 		}
 	}()
 	if err != nil {
-		return backend.Deployment{}, SUDTInfo{}, err
+		return backend.Deployment{}, nil, err
+	}
+	migrationName1 := dir1[0].Name()
+	migrationFile1, err := os.Open(path.Join(migrationDir1, migrationName1))
+	defer func() {
+		if err := migrationFile1.Close(); err != nil {
+			log.Fatalf("failed to close migration file: %v\n", err)
+		}
+	}()
+	if err != nil {
+		return backend.Deployment{}, nil, err
 	}
 
 	vcMigrationName := vc_dir[0].Name()
@@ -231,37 +264,49 @@ func GetDeployment(migrationDir, migrationDirVC, systemScriptsDir, sudtOwnerLock
 		}
 	}()
 	if err != nil {
-		return backend.Deployment{}, SUDTInfo{}, err
+		return backend.Deployment{}, nil, err
 	}
 
 	// Read and unmarshall migration file
-	migrationData, err := io.ReadAll(migrationFile)
+	migrationData0, err := io.ReadAll(migrationFile0)
 	if err != nil {
-		return backend.Deployment{}, SUDTInfo{}, err
+		return backend.Deployment{}, nil, err
 	}
-	var migration Migration
-	err = json.Unmarshal(migrationData, &migration)
+	var migration0 Migration
+	err = json.Unmarshal(migrationData0, &migration0)
 	if err != nil {
-		return backend.Deployment{}, SUDTInfo{}, err
+		return backend.Deployment{}, nil, err
+	}
+	migrationData1, err := io.ReadAll(migrationFile1)
+	if err != nil {
+		return backend.Deployment{}, nil, err
+	}
+	var migration1 Migration
+	err = json.Unmarshal(migrationData1, &migration1)
+	if err != nil {
+		return backend.Deployment{}, nil, err
 	}
 
 	// Read and unmarshall vc migration file
 	vcMigrationData, err := io.ReadAll(vcMigrationFile)
 	if err != nil {
-		return backend.Deployment{}, SUDTInfo{}, err
+		return backend.Deployment{}, nil, err
 	}
 	var vcMigration Migration
 	err = json.Unmarshal(vcMigrationData, &vcMigration)
 	if err != nil {
-		return backend.Deployment{}, SUDTInfo{}, err
+		return backend.Deployment{}, nil, err
 	}
-
+	migration := migration0
+	migration.CellRecipes = append(migration.CellRecipes, migration1.CellRecipes[:]...)
+	migration.DepGroupRecipes = append(migration.DepGroupRecipes, migration1.DepGroupRecipes[:]...)
 	// Read system scripts
 	ss, err := GetSystemScripts(systemScriptsDir)
 	if err != nil {
-		return backend.Deployment{}, SUDTInfo{}, err
+		return backend.Deployment{}, nil, err
 	}
-	fmt.Printf("Migration: %v\n", migration)
+	fmt.Printf("Migration0: %v\n", migration0)
+	fmt.Printf("Migration1: %v\n", migration1)
 	fmt.Printf("VC Migration: %v\n", vcMigration)
 	return migration.MakeDeployment(ss, sudtOwnerLockArg, vcMigration)
 }

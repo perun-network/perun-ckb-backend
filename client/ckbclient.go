@@ -1245,8 +1245,8 @@ func updateState(state *channel.State, newState *molecule.ChannelState) (*channe
 		return state, errors.New("asset not found")
 	}
 	state.Balances[assetIdx] = []channel.Bal{
-		0: big.NewInt(int64(molecule2.UnpackUint64(newState.Balances().Assets().Get(uint(assetIdx)).Ckb().Nth0()))),
-		1: big.NewInt(int64(molecule2.UnpackUint64(newState.Balances().Assets().Get(uint(assetIdx)).Ckb().Nth1()))),
+		0: big.NewInt(int64(molecule2.UnpackUint64(newState.Balances().Assets().Get(uint(assetIdx)).ToUnion().IntoCKByteDistribution().Nth0()))),
+		1: big.NewInt(int64(molecule2.UnpackUint64(newState.Balances().Assets().Get(uint(assetIdx)).ToUnion().IntoCKByteDistribution().Nth1()))),
 	}
 
 	for sudtIndex, pAsset := range state.Assets {
@@ -1265,7 +1265,7 @@ func updateState(state *channel.State, newState *molecule.ChannelState) (*channe
 				return nil, err
 			}
 
-			newSudtDistribution := newState.Balances().Assets().Get(uint(sudtIndex)).Sudt().Distribution()
+			newSudtDistribution := newState.Balances().Assets().Get(uint(sudtIndex)).ToUnion().IntoSUDTBalances().Distribution()
 			balA := newSudtDistribution.Nth0()
 			balB := newSudtDistribution.Nth1()
 			state.Balances[sudtIndex] = []channel.Bal{
