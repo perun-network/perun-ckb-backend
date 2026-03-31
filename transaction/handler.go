@@ -21,6 +21,14 @@ import (
 // PerunScriptHandler is responsible for building transactions utilizing Perun
 // scripts. It is specialized to create transactions using a predeployed set
 // of Perun scripts.
+func participantFromMap(parts map[wallet.BackendID]wallet.Address) (*address.Participant, error) {
+	addr, ok := parts[address.BackendIDValue]
+	if !ok {
+		return nil, errors.New("ckb participant address missing from participant map")
+	}
+	return address.IsParticipant(addr)
+}
+
 type PerunScriptHandler struct {
 	pctsDep types.CellDep
 	pclsDep types.CellDep
@@ -187,7 +195,11 @@ func (psh *PerunScriptHandler) buildCloseTransaction(builder collector.Transacti
 
 	// Add the payment output for each participant.
 	for i, addr := range closeInfo.Params.Parts {
-		payoutScript := address.AsParticipant(addr).PaymentScript
+		participant, err := participantFromMap(addr)
+		if err != nil {
+			return false, err
+		}
+		payoutScript := participant.PaymentScript
 		paymentMinCapacity := payoutScript.OccupiedCapacity()
 		// payout ckbytes
 		balance, err := GetCKByteBalance(i, closeInfo.State)
@@ -236,7 +248,11 @@ func (psh *PerunScriptHandler) buildAbortTransaction(builder collector.Transacti
 	}
 	// To abort we only need to pay out the party with index 0.
 	addr := abortInfo.Params.Parts[partyIdx]
-	payoutScript := address.AsParticipant(addr).PaymentScript
+	participant, err := participantFromMap(addr)
+	if err != nil {
+		return false, err
+	}
+	payoutScript := participant.PaymentScript
 	paymentMinCapacity := payoutScript.OccupiedCapacity()
 	// payout ckbytes
 	balance, err := GetCKByteBalance(partyIdx, abortInfo.InitialState)
@@ -282,7 +298,11 @@ func (psh *PerunScriptHandler) buildForceCloseTransaction(builder collector.Tran
 
 	// Add the payment output for each participant.
 	for i, addr := range forceCloseInfo.Params.Parts {
-		payoutScript := address.AsParticipant(addr).PaymentScript
+		participant, err := participantFromMap(addr)
+		if err != nil {
+			return false, err
+		}
+		payoutScript := participant.PaymentScript
 		paymentMinCapacity := payoutScript.OccupiedCapacity()
 		// payout ckbytes
 		balance, err := GetCKByteBalance(i, forceCloseInfo.State)
@@ -585,7 +605,11 @@ func (psh *PerunScriptHandler) buildFirstForceCloseWithVCTransaction(builder col
 	// Outputs
 	// Add the payment output for each participant.
 	for i, addr := range forceCloseWithVCInfo.Params.Parts {
-		payoutScript := address.AsParticipant(addr).PaymentScript
+		participant, err := participantFromMap(addr)
+		if err != nil {
+			return false, err
+		}
+		payoutScript := participant.PaymentScript
 		paymentMinCapacity := payoutScript.OccupiedCapacity()
 		// payout ckbytes
 		balance, err := GetCKByteBalance(i, forceCloseWithVCInfo.State)
@@ -684,7 +708,11 @@ func (psh *PerunScriptHandler) buildSecondForceCloseWithVCTransaction(builder co
 	// Outputs
 	// Add the payment output for each participant.
 	for i, addr := range forceCloseWithVCInfo.Params.Parts {
-		payoutScript := address.AsParticipant(addr).PaymentScript
+		participant, err := participantFromMap(addr)
+		if err != nil {
+			return false, err
+		}
+		payoutScript := participant.PaymentScript
 		paymentMinCapacity := payoutScript.OccupiedCapacity()
 		// payout ckbytes
 		balance, err := GetCKByteBalance(i, forceCloseWithVCInfo.State)

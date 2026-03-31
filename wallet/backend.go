@@ -17,7 +17,7 @@ type backend struct {
 var Backend = backend{}
 
 func init() {
-	wallet.SetBackend(Backend)
+	wallet.SetBackend(Backend, int(address.BackendIDValue))
 }
 
 // NewAddress returns an empty address.Participant to marshal into.

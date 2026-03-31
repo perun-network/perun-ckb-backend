@@ -12,6 +12,7 @@ import (
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types/molecule"
 	"perun.network/go-perun/channel"
+	channelwallet "perun.network/go-perun/wallet"
 	"perun.network/perun-ckb-backend/backend"
 	"perun.network/perun-ckb-backend/client"
 	"perun.network/perun-ckb-backend/encoding"
@@ -21,6 +22,14 @@ import (
 
 const DefaultPollingInterval = time.Duration(5) * time.Second
 const DefaultMaxIterationsUntilAbort = 12
+
+func participantFromMap(parts map[channelwallet.BackendID]channelwallet.Address) (*address.Participant, error) {
+	addr, ok := parts[address.BackendIDValue]
+	if !ok {
+		return nil, errors.New("ckb participant address missing from participant map")
+	}
+	return address.IsParticipant(addr)
+}
 
 type Funder struct {
 	client                  client.CKBClient
@@ -94,11 +103,11 @@ func (f Funder) Fund(ctx context.Context, req channel.FundingReq) error {
 	// TODO: Verify channel fundable, such as:
 	// - no ckbytes allocation in initial state in (0, pflsMinCapacity)
 	// - ...
-	_, err := address.IsParticipant(req.Params.Parts[0])
+	_, err := participantFromMap(req.Params.Parts[0])
 	if err != nil {
 		return fmt.Errorf("party a: %w", err)
 	}
-	_, err = address.IsParticipant(req.Params.Parts[1])
+	_, err = participantFromMap(req.Params.Parts[1])
 	if err != nil {
 		return fmt.Errorf("party b: %w", err)
 	}

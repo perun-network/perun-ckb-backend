@@ -10,26 +10,27 @@ import (
 	"perun.network/go-perun/wallet"
 	"perun.network/perun-ckb-backend/channel/asset"
 	"perun.network/perun-ckb-backend/encoding"
+	"perun.network/perun-ckb-backend/wallet/address"
 )
 
 func init() {
-	channel.SetBackend(Backend)
+	channel.SetBackend(Backend, int(address.BackendIDValue))
 }
 
 type backend struct{}
 
-func (b backend) NewAppID() channel.AppID {
-	panic("no app channels")
+func (b backend) NewAppID() (channel.AppID, error) {
+	return nil, fmt.Errorf("no app channels")
 }
 
 var Backend = backend{}
 
-func (b backend) CalcID(params *channel.Params) channel.ID {
+func (b backend) CalcID(params *channel.Params) (channel.ID, error) {
 	cp, err := encoding.PackChannelParameters(params)
 	if err != nil {
-		panic(err)
+		return channel.ID{}, err
 	}
-	return blake2b.Sum256(cp.AsSlice())
+	return blake2b.Sum256(cp.AsSlice()), nil
 }
 
 func (b backend) CalcVCID(params *channel.Params) channel.ID {

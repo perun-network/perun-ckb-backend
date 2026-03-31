@@ -57,6 +57,14 @@ func (a *Asset) UnmarshalBinary(data []byte) error {
 	}
 }
 
+func (a Asset) Address() []byte {
+	data, err := a.MarshalBinary()
+	if err != nil {
+		return nil
+	}
+	return data
+}
+
 func (a Asset) Equal(other pchannel.Asset) bool {
 	o, ok := other.(*Asset)
 	if !ok {

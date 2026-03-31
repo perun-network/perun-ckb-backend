@@ -15,6 +15,8 @@ import (
 const (
 	UncompressedPublicKeyLength = 65
 	CompressedPublicKeyLength   = 33
+	// BackendIDValue is the backend ID used to register the CKB wallet/channel backend.
+	BackendIDValue = wallet.BackendID(2)
 )
 
 // Participant uniquely identifies a participant in a channel, encompassing all necessary on-chain information.
@@ -72,6 +74,10 @@ func (p *Participant) UnmarshalBinary(data []byte) error {
 
 func (p Participant) String() string {
 	return hex.EncodeToString(p.PubKey.SerializeCompressed())
+}
+
+func (p Participant) BackendID() wallet.BackendID {
+	return BackendIDValue
 }
 
 // Equal returns true, iff the given address is a participant with the same public key, payment script and unlock script.

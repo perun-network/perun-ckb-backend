@@ -52,7 +52,11 @@ func PackChannelParameters(params *channel.Params) (molecule.ChannelParameters, 
 }
 
 // PackAddressToOnChainParticipant converts a perun ckb address to a molecule Participant.
-func PackAddressToOnChainParticipant(addr gpwallet.Address) (molecule.Participant, error) {
+func PackAddressToOnChainParticipant(part map[gpwallet.BackendID]gpwallet.Address) (molecule.Participant, error) {
+	addr, ok := part[address.BackendIDValue]
+	if !ok {
+		return molecule.Participant{}, errors.New("ckb participant address missing from participant map")
+	}
 	a, ok := addr.(*address.Participant)
 	if !ok {
 		return molecule.Participant{}, errors.New("address is not of type wallet.Participant")

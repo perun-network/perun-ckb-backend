@@ -130,7 +130,10 @@ func (c Client) Start(ctx context.Context, params *channel.Params, state *channe
 	if err != nil {
 		return nil, fmt.Errorf("creating channel token: %w", err)
 	}
-	cid := ckbchannel.Backend.CalcID(params)
+	cid, err := ckbchannel.Backend.CalcID(params)
+	if err != nil {
+		return nil, fmt.Errorf("calculating channel id: %w", err)
+	}
 	oi := transaction.NewOpenInfo(cid, channelToken, params, state)
 
 	zeroHash := types.Hash{}
