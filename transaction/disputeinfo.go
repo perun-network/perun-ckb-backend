@@ -1,6 +1,8 @@
 package transaction
 
 import (
+	"fmt"
+
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types/molecule"
 	"perun.network/go-perun/channel"
@@ -40,13 +42,13 @@ func NewDisputeInfo(
 	}
 }
 
-func (di *DisputeInfo) update() *DisputeInfo {
+func (di *DisputeInfo) update() (*DisputeInfo, error) {
 	builder := di.Status.AsBuilder()
 	newState, err := encoding.PackChannelState(di.NewState)
 	if err != nil {
-		panic(err)
+		return nil, fmt.Errorf("packing channel state for dispute: %w", err)
 	}
 	newStatus := builder.State(newState).Disputed(encoding.True).Build()
 	di.Status = newStatus
-	return di
+	return di, nil
 }

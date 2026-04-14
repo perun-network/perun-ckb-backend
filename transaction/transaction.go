@@ -277,7 +277,7 @@ func (ptb *PerunTransactionBuilder) HandleCKBFee() error {
 	ckbChangeCell := ptb.Outputs[ptb.ckbChangeCellIndex]
 	if ckbChangeCell.Capacity <= ptb.feeShannon {
 		// TODO: Handle proper change cell deletion/update.
-		panic(fmt.Sprintf("insufficient CKB change cell capacity: %d < %d", ckbChangeCell.Capacity, ptb.feeShannon))
+		return fmt.Errorf("insufficient CKB change cell capacity: %d < %d", ckbChangeCell.Capacity, ptb.feeShannon)
 	}
 
 	return nil
@@ -850,10 +850,7 @@ func CalculateCellCapacity(cell types.CellOutput) uint64 {
 	if cell.Type == nil {
 		return cell.OccupiedCapacity([]byte{})
 	} else {
-		uint128, err := molecule2.PackUint128(big.NewInt(0))
-		if err != nil {
-			panic("packing 0 as uint128")
-		}
+		uint128, _ := molecule2.PackUint128(big.NewInt(0)) // packing 0 cannot fail
 		return cell.OccupiedCapacity(uint128.AsSlice())
 	}
 }

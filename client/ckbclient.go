@@ -210,7 +210,11 @@ func (c Client) Start(ctx context.Context, params *channel.Params, state *channe
 		return nil, fmt.Errorf("submitting transaction: %w", err)
 	}
 
-	return oi.GetPCTS(), nil
+	pcts, err := oi.GetPCTS()
+	if err != nil {
+		return nil, fmt.Errorf("getting PCTS: %w", err)
+	}
+	return pcts, nil
 }
 
 // newPerunScriptHandler creates a new PerunScriptHandler. The iterator used to

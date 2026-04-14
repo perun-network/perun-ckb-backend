@@ -1,6 +1,8 @@
 package transaction
 
 import (
+	"fmt"
+
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types/molecule"
 	"perun.network/go-perun/channel"
@@ -31,9 +33,12 @@ func NewOpenInfo(channelID channel.ID, channelToken backend.Token, params *chann
 	}
 }
 
-func (oi *OpenInfo) MkInitialChannelCell(channelLockScript, channelTypeScript types.Script) (types.CellOutput, []byte) {
+func (oi *OpenInfo) MkInitialChannelCell(channelLockScript, channelTypeScript types.Script) (types.CellOutput, []byte, error) {
 	oi.pcts = &channelTypeScript
-	channelStatus := mkInitialChannelStatus(oi.State)
+	channelStatus, err := mkInitialChannelStatus(oi.State)
+	if err != nil {
+		return types.CellOutput{}, nil, err
+	}
 	channelOutput := types.CellOutput{
 		Capacity: 0,
 		Lock:     &channelLockScript,
@@ -41,13 +46,13 @@ func (oi *OpenInfo) MkInitialChannelCell(channelLockScript, channelTypeScript ty
 	}
 	capacity := channelOutput.OccupiedCapacity(channelStatus.AsSlice())
 	channelOutput.Capacity = capacity
-	return channelOutput, channelStatus.AsSlice()
+	return channelOutput, channelStatus.AsSlice(), nil
 }
 
-func mkInitialChannelStatus(state *channel.State) molecule.ChannelStatus {
+func mkInitialChannelStatus(state *channel.State) (molecule.ChannelStatus, error) {
 	packedState, err := encoding.PackChannelState(state)
 	if err != nil {
-		panic(err)
+		return molecule.ChannelStatus{}, fmt.Errorf("packing channel state: %w", err)
 	}
 	return molecule.NewChannelStatusBuilder().
 		State(packedState).
@@ -55,14 +60,14 @@ func mkInitialChannelStatus(state *channel.State) molecule.ChannelStatus {
 		Disputed(encoding.False).
 		VcDisputed(encoding.False).
 		VctsHash(molecule.Byte32Default()).
-		Build()
+		Build(), nil
 }
 
-func (oi OpenInfo) GetPCTS() *types.Script {
+func (oi OpenInfo) GetPCTS() (*types.Script, error) {
 	if oi.pcts == nil {
-		panic("PCTS not set on OpenInfo")
+		return nil, fmt.Errorf("PCTS not set on OpenInfo")
 	}
-	return oi.pcts
+	return oi.pcts, nil
 }
 
 func initialFundedStatus(state *channel.State) molecule.Bool {
