@@ -531,7 +531,7 @@ func (ptb *PerunTransactionBuilder) balanceTransaction() error {
 			// We need more inputs to fund the required amount for the given UDT.
 			// This might require a change cell for the UDT modifying the
 			// required amount of CKB capacity.
-			fmt.Println("Adding inputs for UDT", assetHash, "required amount:", requiredAmount, "already provided amount:", alreadyProvidedAmount)
+			log.Println("Adding inputs for UDT", assetHash, "required amount:", requiredAmount, "already provided amount:", alreadyProvidedAmount)
 			if err := ptb.addInputsAndChangeForFunding(assetHash, requiredAmount-alreadyProvidedAmount, requiredFunding, alreadyProvidedFunding); err != nil {
 				return fmt.Errorf("adding inputs and change for UDT %x funding: %w", assetHash, err)
 			}
@@ -742,7 +742,7 @@ func (ptb *PerunTransactionBuilder) addInputsAndChangeForFunding(assetHash types
 	fundedAmount := alreadyProvidedFunding.Clone()
 	fundedAssetValue := fundedAmount.AssetAmount(assetHash)
 	if fundedAssetValue < requestedAmount {
-		fmt.Println("not enough funds for asset", assetHash, "funded amount:", fundedAssetValue, "requested amount:", requestedAmount)
+		log.Println("not enough funds for asset", assetHash, "funded amount:", fundedAssetValue, "requested amount:", requestedAmount)
 		return fmt.Errorf("not enough funds for asset: %#x", assetHash.Bytes())
 	}
 

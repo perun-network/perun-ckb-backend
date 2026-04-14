@@ -110,6 +110,9 @@ func (f *FilteredCellIterator) HasNext() bool {
 	}
 	for f.base.HasNext() {
 		candidate := f.base.Next()
+		if candidate == nil {
+			continue
+		}
 		if f.filter(candidate.Output) {
 			f.nextInput = candidate
 			f.loaded = true
@@ -1166,7 +1169,7 @@ func (c Client) getChannelLiveCellWithCache(ctx context.Context, id channel.ID) 
 	}
 	errCache := c.cache.Set(id, cell.Output.Type)
 	if errCache != nil {
-		return c.getChannelLiveCellWithCache(ctx, id)
+		log.Printf("warning: failed to cache channel cell: %v", errCache)
 	}
 	return cell, status, err
 }
@@ -1201,7 +1204,7 @@ func (c Client) getVirtualChannelLiveCellWithCache(ctx context.Context, id chann
 	}
 	errCache := c.vccache.Set(id, cell.Output.Type)
 	if errCache != nil {
-		return c.getVirtualChannelLiveCellWithCache(ctx, id)
+		log.Printf("warning: failed to cache virtual channel cell: %v", errCache)
 	}
 	return []*indexer.LiveCell{cell}, []*molecule.VirtualChannelStatus{status}, err
 }
