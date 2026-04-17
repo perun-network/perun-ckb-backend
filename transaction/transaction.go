@@ -271,7 +271,9 @@ func (ptb *PerunTransactionBuilder) Build(contexts ...interface{}) (*ckbtransact
 
 func (ptb *PerunTransactionBuilder) HandleCKBFee() error {
 	if ptb.ckbChangeCellIndex == -1 {
-		return fmt.Errorf("no CKB change cell found")
+		// No change cell needed: inputs already balance outputs+fee exactly.
+		// completeCKBCapacity skips creating a change cell in that case.
+		return nil
 	}
 
 	ckbChangeCell := ptb.Outputs[ptb.ckbChangeCellIndex]

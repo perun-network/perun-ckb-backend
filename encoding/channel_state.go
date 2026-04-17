@@ -108,12 +108,18 @@ func PackBalances(state *pchannel.State) (molecule.Balances, error) {
 }
 
 // PackSubAlloc converts a perun suballocation to a molecule SubAlloc.
+// Uses the sub-allocation's own balances (subAlloc.Bals), NOT the top-level
+// channel balances; otherwise the locked/sub-allocation section does not
+// commit to the actual locked balances.
 func PackSubAlloc(subAlloc *pchannel.SubAlloc, state *pchannel.State) (molecule.SubAlloc, error) {
 	subAllocBuilder := molecule.NewSubAllocBuilder()
 	subAllocBuilder.Id(*molecule2.PackByte32(subAlloc.ID))
 	sudtAllocBuilder := molecule.NewSUDTAllocationBuilder()
 	subBalancesBuilder := molecule.NewSubBalancesBuilder()
-	for _, pAsset := range state.Assets {
+	if len(subAlloc.Bals) != len(state.Assets) {
+		return molecule.SubAlloc{}, fmt.Errorf("suballoc has %d balance rows but state has %d assets", len(subAlloc.Bals), len(state.Assets))
+	}
+	for i, pAsset := range state.Assets {
 		a, ckb := asset.IsCompatibleAsset(pAsset)
 		if ckb != true {
 			return molecule.SubAlloc{}, errors.New("locked eth assets are not supported")
@@ -121,22 +127,21 @@ func PackSubAlloc(subAlloc *pchannel.SubAlloc, state *pchannel.State) (molecule.
 		if a.IsInvalid() {
 			return molecule.SubAlloc{}, errors.New("invalid asset")
 		}
+		// SubAlloc.Bals is a single-dimensional slice indexed by asset, holding
+		// the total amount locked for that asset across all participants. Since
+		// we cannot recover per-participant distribution from that, we encode
+		// the locked total as party 0's balance and 0 for party 1. This matches
+		// what the contract expects when verifying locked funds equality.
+		lockedTotal := new(big.Int).Set(subAlloc.Bals[i])
+		zero := new(big.Int)
 		if a.IsCKBytes {
-			d, err := PackCKByteDistribution(
-				[2]*big.Int{
-					state.Balance(0, a),
-					state.Balance(1, a),
-				})
+			d, err := PackCKByteDistribution([2]*big.Int{lockedTotal, zero})
 			if err != nil {
 				return molecule.SubAlloc{}, err
 			}
 			subBalancesBuilder.Ckbytes(d)
 		} else {
-			b, err := PackSUDTBalances(a,
-				[2]*big.Int{
-					state.Balance(0, a),
-					state.Balance(1, a),
-				})
+			b, err := PackSUDTBalances(a, [2]*big.Int{lockedTotal, zero})
 			if err != nil {
 				return molecule.SubAlloc{}, err
 			}
