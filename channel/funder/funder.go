@@ -49,7 +49,14 @@ polling:
 	for i := 0; i < f.MaxIterationsUntilAbort; i++ {
 		select {
 		case <-ctx.Done():
-			return f.client.Abort(ctx, script, req.Params, req.State)
+			// Use a fresh bounded context for cleanup: the outer ctx is already
+			// cancelled and would cause Abort to fail immediately.
+			abortCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			if err := f.client.Abort(abortCtx, script, req.Params, req.State); err != nil {
+				return fmt.Errorf("abort after cancellation: %w (original cause: %w)", err, ctx.Err())
+			}
+			return ctx.Err()
 		case <-time.After(f.PollingInterval):
 			_, cs, err := f.client.GetChannelWithExactPCTS(ctx, script)
 			if err != nil {

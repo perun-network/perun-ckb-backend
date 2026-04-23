@@ -271,13 +271,15 @@ func (ptb *PerunTransactionBuilder) Build(contexts ...interface{}) (*ckbtransact
 
 func (ptb *PerunTransactionBuilder) HandleCKBFee() error {
 	if ptb.ckbChangeCellIndex == -1 {
-		return fmt.Errorf("no CKB change cell found")
+		// No change cell needed: inputs already balance outputs+fee exactly.
+		// completeCKBCapacity skips creating a change cell in that case.
+		return nil
 	}
 
 	ckbChangeCell := ptb.Outputs[ptb.ckbChangeCellIndex]
 	if ckbChangeCell.Capacity <= ptb.feeShannon {
 		// TODO: Handle proper change cell deletion/update.
-		panic(fmt.Sprintf("insufficient CKB change cell capacity: %d < %d", ckbChangeCell.Capacity, ptb.feeShannon))
+		return fmt.Errorf("insufficient CKB change cell capacity: %d < %d", ckbChangeCell.Capacity, ptb.feeShannon)
 	}
 
 	return nil
@@ -531,7 +533,7 @@ func (ptb *PerunTransactionBuilder) balanceTransaction() error {
 			// We need more inputs to fund the required amount for the given UDT.
 			// This might require a change cell for the UDT modifying the
 			// required amount of CKB capacity.
-			fmt.Println("Adding inputs for UDT", assetHash, "required amount:", requiredAmount, "already provided amount:", alreadyProvidedAmount)
+			log.Println("Adding inputs for UDT", assetHash, "required amount:", requiredAmount, "already provided amount:", alreadyProvidedAmount)
 			if err := ptb.addInputsAndChangeForFunding(assetHash, requiredAmount-alreadyProvidedAmount, requiredFunding, alreadyProvidedFunding); err != nil {
 				return fmt.Errorf("adding inputs and change for UDT %x funding: %w", assetHash, err)
 			}
@@ -742,7 +744,7 @@ func (ptb *PerunTransactionBuilder) addInputsAndChangeForFunding(assetHash types
 	fundedAmount := alreadyProvidedFunding.Clone()
 	fundedAssetValue := fundedAmount.AssetAmount(assetHash)
 	if fundedAssetValue < requestedAmount {
-		fmt.Println("not enough funds for asset", assetHash, "funded amount:", fundedAssetValue, "requested amount:", requestedAmount)
+		log.Println("not enough funds for asset", assetHash, "funded amount:", fundedAssetValue, "requested amount:", requestedAmount)
 		return fmt.Errorf("not enough funds for asset: %#x", assetHash.Bytes())
 	}
 
@@ -850,10 +852,7 @@ func CalculateCellCapacity(cell types.CellOutput) uint64 {
 	if cell.Type == nil {
 		return cell.OccupiedCapacity([]byte{})
 	} else {
-		uint128, err := molecule2.PackUint128(big.NewInt(0))
-		if err != nil {
-			panic("packing 0 as uint128")
-		}
+		uint128, _ := molecule2.PackUint128(big.NewInt(0)) // packing 0 cannot fail
 		return cell.OccupiedCapacity(uint128.AsSlice())
 	}
 }

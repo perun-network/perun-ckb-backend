@@ -110,6 +110,9 @@ func (f *FilteredCellIterator) HasNext() bool {
 	}
 	for f.base.HasNext() {
 		candidate := f.base.Next()
+		if candidate == nil {
+			continue
+		}
 		if f.filter(candidate.Output) {
 			f.nextInput = candidate
 			f.loaded = true
@@ -207,7 +210,11 @@ func (c Client) Start(ctx context.Context, params *channel.Params, state *channe
 		return nil, fmt.Errorf("submitting transaction: %w", err)
 	}
 
-	return oi.GetPCTS(), nil
+	pcts, err := oi.GetPCTS()
+	if err != nil {
+		return nil, fmt.Errorf("getting PCTS: %w", err)
+	}
+	return pcts, nil
 }
 
 // newPerunScriptHandler creates a new PerunScriptHandler. The iterator used to
@@ -527,7 +534,10 @@ func (c Client) DisputeVC(ctx context.Context, vcID, parentID channel.ID, vcStat
 		return fmt.Errorf("parent channel ID %s not found in params", parentID)
 	}
 
-	virtualChannelCells, vcStatuses, _ := c.getVirtualChannelLiveCellWithCache(ctx, vcID) // We dont care about the error here.
+	virtualChannelCells, vcStatuses, err := c.getVirtualChannelLiveCellWithCache(ctx, vcID)
+	if err != nil && err != ErrNoChannelLiveCell {
+		return fmt.Errorf("looking up virtual channel live cell: %w", err)
+	}
 
 	if virtualChannelCells == nil {
 		// First VC dispute.
@@ -541,11 +551,14 @@ func (c Client) DisputeVC(ctx context.Context, vcID, parentID channel.ID, vcStat
 			return fmt.Errorf("parent state version is not up to date")
 		}
 
+		// Construct the VC owner participant using the signer's ACTUAL lock
+		// script (not just the default sighash script derived from the pubkey).
+		// This ensures VC rent payouts go to the right script for omni-lock /
+		// EVMSigner participants, not to a default-sighash address they don't
+		// control.
 		signerPub := c.signer.PublicKey()
-		signerParticipant, err := ckbaddress.NewDefaultParticipant(signerPub)
-		if err != nil {
-			return fmt.Errorf("creating default participant: %w", err)
-		}
+		signerAddr := c.signer.Address()
+		signerParticipant := ckbaddress.NewParticipant(signerPub, signerAddr.Script, signerAddr.Script)
 
 		di = transaction.NewVCDisputeInfo(
 			parentCell.OutPoint,
@@ -1166,7 +1179,7 @@ func (c Client) getChannelLiveCellWithCache(ctx context.Context, id channel.ID) 
 	}
 	errCache := c.cache.Set(id, cell.Output.Type)
 	if errCache != nil {
-		return c.getChannelLiveCellWithCache(ctx, id)
+		log.Printf("warning: failed to cache channel cell: %v", errCache)
 	}
 	return cell, status, err
 }
@@ -1201,7 +1214,7 @@ func (c Client) getVirtualChannelLiveCellWithCache(ctx context.Context, id chann
 	}
 	errCache := c.vccache.Set(id, cell.Output.Type)
 	if errCache != nil {
-		return c.getVirtualChannelLiveCellWithCache(ctx, id)
+		log.Printf("warning: failed to cache virtual channel cell: %v", errCache)
 	}
 	return []*indexer.LiveCell{cell}, []*molecule.VirtualChannelStatus{status}, err
 }

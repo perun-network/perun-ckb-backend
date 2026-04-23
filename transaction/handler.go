@@ -147,7 +147,10 @@ func (psh *PerunScriptHandler) buildOpenTransaction(builder collector.Transactio
 	/// Create outputs containing channel cell and channel funds cell.
 
 	// Channel funds cell output.
-	channelTypeScript := psh.mkChannelTypeScript(openInfo.Params, openInfo.ChannelToken.Token)
+	channelTypeScript, err := psh.mkChannelTypeScript(openInfo.Params, openInfo.ChannelToken.Token)
+	if err != nil {
+		return false, fmt.Errorf("building channel type script: %w", err)
+	}
 	fundsLockScript := psh.mkFundsLockScript(channelTypeScript)
 	balance, err := GetCKByteBalance(partyIndex, openInfo.State)
 	if err != nil {
@@ -167,7 +170,10 @@ func (psh *PerunScriptHandler) buildOpenTransaction(builder collector.Transactio
 
 	// Channel cell output.
 	channelLockScript := psh.mkChannelLockScript()
-	channelCell, channelData := openInfo.MkInitialChannelCell(*channelLockScript, *channelTypeScript)
+	channelCell, channelData, err := openInfo.MkInitialChannelCell(*channelLockScript, *channelTypeScript)
+	if err != nil {
+		return false, fmt.Errorf("creating initial channel cell: %w", err)
+	}
 	builder.AddOutput(&channelCell, channelData)
 
 	return true, nil
@@ -225,7 +231,11 @@ func (psh *PerunScriptHandler) buildCloseTransaction(builder collector.Transacti
 			return false, err
 		}
 	}
-	err := builder.SetWitness(uint(idx), types.WitnessTypeInputType, psh.mkWitnessClose(closeInfo.State, closeInfo.PaddedSignatures))
+	witnessData, err := psh.mkWitnessClose(closeInfo.State, closeInfo.PaddedSignatures)
+	if err != nil {
+		return false, fmt.Errorf("building close witness: %w", err)
+	}
+	err = builder.SetWitness(uint(idx), types.WitnessTypeInputType, witnessData)
 	if err != nil {
 		return false, err
 	}
@@ -423,7 +433,9 @@ func (psh *PerunScriptHandler) buildDisputeTransaction(builder collector.Transac
 		Lock:     channelLockScript,
 		Type:     disputeInfo.PCTS,
 	}
-	disputeInfo.update()
+	if _, err := disputeInfo.update(); err != nil {
+		return false, fmt.Errorf("updating dispute info: %w", err)
+	}
 	channelCell.Capacity = channelCell.OccupiedCapacity(disputeInfo.Status.AsSlice())
 	builder.AddOutput(&channelCell, disputeInfo.Status.AsSlice())
 	return true, nil
@@ -462,9 +474,17 @@ func (psh *PerunScriptHandler) buildFirstVCDisputeTransaction(builder collector.
 	// VC Channel cell output.
 
 	vcLockScript := psh.mkVirtualChannelLockScript()
-	vcTypeScript := psh.mkVirtualChannelTypeScript(disputeInfo.Params, vcLockScript)
-	vcChannelCell, vcChannelData := disputeInfo.mkInitialVirtualChannelCell(*vcLockScript, *vcTypeScript)
-	disputeInfo.update(vcTypeScript)
+	vcTypeScript, err := psh.mkVirtualChannelTypeScript(disputeInfo.Params, vcLockScript)
+	if err != nil {
+		return false, fmt.Errorf("building vc type script: %w", err)
+	}
+	vcChannelCell, vcChannelData, err := disputeInfo.mkInitialVirtualChannelCell(*vcLockScript, *vcTypeScript)
+	if err != nil {
+		return false, fmt.Errorf("creating initial vc cell: %w", err)
+	}
+	if _, err := disputeInfo.update(vcTypeScript); err != nil {
+		return false, fmt.Errorf("updating vc dispute info: %w", err)
+	}
 	channelCell.Capacity = channelCell.OccupiedCapacity(disputeInfo.LCStatus.AsSlice())
 	log.Println("channelCell.Capacity", channelCell.Capacity)
 	builder.AddOutput(&vcChannelCell, vcChannelData)
@@ -519,7 +539,9 @@ func (psh *PerunScriptHandler) buildVCDisputeProgressTransaction(builder collect
 		Type:     disputeInfo.PCTS,
 	}
 	// Set disputed flag to true.
-	disputeInfo.update(disputeInfo.VCTS)
+	if _, err := disputeInfo.update(disputeInfo.VCTS); err != nil {
+		return false, fmt.Errorf("updating vc dispute info: %w", err)
+	}
 	channelCell.Capacity = channelCell.OccupiedCapacity(disputeInfo.LCStatus.AsSlice())
 	builder.AddOutput(&channelCell, disputeInfo.LCStatus.AsSlice())
 
@@ -530,7 +552,9 @@ func (psh *PerunScriptHandler) buildVCDisputeProgressTransaction(builder collect
 		Lock:     vcChannelLockscript,
 		Type:     disputeInfo.VCTS,
 	}
-	disputeInfo.updateVCStatus()
+	if _, err := disputeInfo.updateVCStatus(); err != nil {
+		return false, fmt.Errorf("updating vc status: %w", err)
+	}
 	vcCell.Capacity = vcCell.OccupiedCapacity(disputeInfo.VCStatus.AsSlice())
 	builder.AddOutput(&vcCell, disputeInfo.VCStatus.AsSlice())
 	return true, nil
@@ -814,22 +838,28 @@ func (psh PerunScriptHandler) mkVirtualChannelLockScript() *types.Script {
 	}
 }
 
-func (psh PerunScriptHandler) mkChannelTypeScript(params *channel.Params, token molecule.ChannelToken) *types.Script {
-	channelConstants := psh.mkChannelConstants(params, token)
+func (psh PerunScriptHandler) mkChannelTypeScript(params *channel.Params, token molecule.ChannelToken) (*types.Script, error) {
+	channelConstants, err := psh.mkChannelConstants(params, token)
+	if err != nil {
+		return nil, err
+	}
 	return &types.Script{
 		CodeHash: psh.pctsCodeHash,
 		HashType: psh.pctsHashType,
 		Args:     channelConstants.AsSlice(),
-	}
+	}, nil
 }
 
-func (psh PerunScriptHandler) mkVirtualChannelTypeScript(params *channel.Params, vcLockScript *types.Script) *types.Script {
-	vcChannelConstants := psh.mkVirtualChannelConstants(params, vcLockScript)
+func (psh PerunScriptHandler) mkVirtualChannelTypeScript(params *channel.Params, vcLockScript *types.Script) (*types.Script, error) {
+	vcChannelConstants, err := psh.mkVirtualChannelConstants(params, vcLockScript)
+	if err != nil {
+		return nil, err
+	}
 	return &types.Script{
 		CodeHash: psh.vctsCodeHash,
 		HashType: psh.vctsHashType,
 		Args:     vcChannelConstants.AsSlice(),
-	}
+	}, nil
 }
 
 func (psh PerunScriptHandler) mkFundsLockScript(pcts *types.Script) *types.Script {
@@ -840,10 +870,10 @@ func (psh PerunScriptHandler) mkFundsLockScript(pcts *types.Script) *types.Scrip
 	}
 }
 
-func (psh PerunScriptHandler) mkChannelConstants(params *channel.Params, token molecule.ChannelToken) molecule.ChannelConstants {
+func (psh PerunScriptHandler) mkChannelConstants(params *channel.Params, token molecule.ChannelToken) (molecule.ChannelConstants, error) {
 	chanParams, err := encoding.PackChannelParameters(params)
 	if err != nil {
-		panic(err)
+		return molecule.ChannelConstants{}, fmt.Errorf("packing channel parameters: %w", err)
 	}
 
 	pclsCode := psh.pclsCodeHash.Pack()
@@ -859,13 +889,13 @@ func (psh PerunScriptHandler) mkChannelConstants(params *channel.Params, token m
 		PflsHashType(*pflsHashType).
 		PflsMinCapacity(*types.PackUint64(psh.pflsMinCapacity)).
 		ThreadToken(token).
-		Build()
+		Build(), nil
 }
 
-func (psh PerunScriptHandler) mkVirtualChannelConstants(params *channel.Params, vcLockScript *types.Script) molecule.VCChannelConstants {
+func (psh PerunScriptHandler) mkVirtualChannelConstants(params *channel.Params, vcLockScript *types.Script) (molecule.VCChannelConstants, error) {
 	chanParams, err := encoding.PackChannelParameters(params)
 	if err != nil {
-		panic(err)
+		return molecule.VCChannelConstants{}, fmt.Errorf("packing vc channel parameters: %w", err)
 	}
 
 	vclsHashType := psh.vclsHashType.Pack()
@@ -874,7 +904,7 @@ func (psh PerunScriptHandler) mkVirtualChannelConstants(params *channel.Params, 
 		Params(chanParams).
 		VclsCodeHash(*molecule2.PackByte32(vcLockScript.Hash())).
 		VclsHashType(*vclsHashType).
-		Build()
+		Build(), nil
 }
 
 func (psh PerunScriptHandler) mkPaymentOutput(lock *types.Script, bal uint64) *types.CellOutput {
@@ -900,22 +930,22 @@ func (psh PerunScriptHandler) mkWitnessAbort() []byte {
 	return w.AsSlice()
 }
 
-func (psh PerunScriptHandler) mkWitnessClose(state *channel.State, paddedSigs []wallet.Sig) []byte {
+func (psh PerunScriptHandler) mkWitnessClose(state *channel.State, paddedSigs []wallet.Sig) ([]byte, error) {
 	ps, err := encoding.PackChannelState(state)
 	if err != nil {
-		panic(err)
+		return nil, fmt.Errorf("packing channel state: %w", err)
 	}
 	sigA, err := encoding.NewMoleculeSignature(paddedSigs[0])
 	if err != nil {
-		panic(err)
+		return nil, fmt.Errorf("packing sig A: %w", err)
 	}
 	sigB, err := encoding.NewMoleculeSignature(paddedSigs[1])
 	if err != nil {
-		panic(err)
+		return nil, fmt.Errorf("packing sig B: %w", err)
 	}
 	c := molecule.NewCloseBuilder().State(ps).SigA(*sigA).SigB(*sigB).Build()
 	witnessClose := molecule.NewChannelWitnessBuilder().Set(molecule.ChannelWitnessUnionFromClose(c)).Build()
-	return witnessClose.AsSlice()
+	return witnessClose.AsSlice(), nil
 }
 
 func (psh PerunScriptHandler) mkWitnessForceClose() []byte {

@@ -139,6 +139,7 @@ func ToEthParams(params *channel.Params) (ChannelParams, error) {
 	for i, p := range params.Parts {
 		var ccAddress []byte
 		var ethAddress common.Address
+		ethExplicit := false
 		if add, ok := p[EthBackendID]; ok {
 			ethAddress = common.Address{}
 			var err error
@@ -147,6 +148,7 @@ func ToEthParams(params *channel.Params) (ChannelParams, error) {
 				return ChannelParams{}, errors.WithMessage(err, "could not encode eth address")
 			}
 			ethAddress.SetBytes(ethBytes)
+			ethExplicit = true
 		}
 		if add, ok := p[CKBBackendID]; ok {
 			participant, ok := add.(*ckbaddress.Participant)
@@ -161,14 +163,20 @@ func ToEthParams(params *channel.Params) (ChannelParams, error) {
 			if err != nil {
 				return ChannelParams{}, errors.New("error marshalling participant: " + err.Error())
 			}
-			pubKey, err := ckbaddress.UnpackSEC1EncodedPubKey(onchainParticipant.PubKey())
-			if err != nil {
-				return ChannelParams{}, errors.New("error unpacking sec1 encoded pubkey: " + err.Error())
+			// Only derive the Ethereum address from the CKB pubkey if no
+			// explicit Ethereum address was provided. Otherwise the explicit
+			// address would be silently overwritten, breaking cross-chain
+			// channels with distinct CKB and Ethereum keys.
+			if !ethExplicit {
+				pubKey, err := ckbaddress.UnpackSEC1EncodedPubKey(onchainParticipant.PubKey())
+				if err != nil {
+					return ChannelParams{}, errors.New("error unpacking sec1 encoded pubkey: " + err.Error())
+				}
+				pubKeyUncompressed := pubKey.SerializeUncompressed()
+				pubKeyNoPrefix := pubKeyUncompressed[1:]
+				ethHash := crypto.Keccak256(pubKeyNoPrefix)
+				copy(ethAddress[:], ethHash[12:32])
 			}
-			pubKeyUncompressed := pubKey.SerializeUncompressed()
-			pubKeyNoPrefix := pubKeyUncompressed[1:]
-			ethHash := crypto.Keccak256(pubKeyNoPrefix)
-			copy(ethAddress[:], ethHash[12:32])
 		}
 		participants[i] = ChannelParticipant{
 			EthAddress: ethAddress,
