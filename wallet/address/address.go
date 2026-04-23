@@ -119,25 +119,19 @@ func NewParticipant(pubKey *secp256k1.PublicKey, paymentScript, unlockScript *ty
 	}
 }
 
-// MarshalBinary encodes the participant into a binary representation as a
-// molecule.OffChainParticipant so that custom payment/unlock scripts (e.g.
-// omni-lock) survive the round trip. The previous on-chain form only stored
-// the pubkey, silently downgrading custom scripts to the default sighash.
+// MarshalBinary encodes the participant into a binary representation as a molecule.OffChainParticipant.
 func (p Participant) MarshalBinary() ([]byte, error) {
-	offChainParticipant, err := p.PackOffChainParticipant()
-	if err != nil {
-		return nil, err
-	}
-	return offChainParticipant.AsSlice(), nil
+	offChainParticipant, err := p.PackOnChainParticipant()
+	return offChainParticipant.AsSlice(), err
 }
 
 // UnmarshalBinary decodes the participant from a molecule.OffChainParticipant.
 func (p *Participant) UnmarshalBinary(data []byte) error {
-	offChainParticipant, err := molecule.OffChainParticipantFromSlice(data, true)
+	onChainParticipant, err := molecule.ParticipantFromSlice(data, true)
 	if err != nil {
 		return err
 	}
-	return p.UnpackOffChainParticipant(offChainParticipant)
+	return p.UnpackOnChainParticipant(onChainParticipant)
 }
 
 func (p Participant) String() string {
