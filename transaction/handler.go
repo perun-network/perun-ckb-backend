@@ -570,13 +570,10 @@ func (psh *PerunScriptHandler) buildFirstForceCloseWithVCTransaction(builder col
 	}
 
 	// Virtual channel cell input.
-	vcInputIndex := builder.AddInput(&types.CellInput{
+_:
+	builder.AddInput(&types.CellInput{
 		PreviousOutput: &forceCloseWithVCInfo.VCCell,
 	})
-	err = builder.SetWitness(uint(vcInputIndex), types.WitnessTypeInputType, psh.mkWitnessVCDispute(forceCloseWithVCInfo.VCDispute))
-	if err != nil {
-		return false, err
-	}
 
 	for _, assetInput := range forceCloseWithVCInfo.AssetInputs {
 		builder.AddInput(&assetInput)
@@ -654,14 +651,9 @@ func (psh *PerunScriptHandler) buildSecondForceCloseWithVCTransaction(builder co
 	}
 
 	// Virtual channel cell input.
-	vcInputIndex := builder.AddInput(&types.CellInput{
+	_ = builder.AddInput(&types.CellInput{
 		PreviousOutput: &forceCloseWithVCInfo.VCCell,
 	})
-	err = builder.SetWitness(uint(vcInputIndex), types.WitnessTypeInputType, psh.mkWitnessVCDispute(forceCloseWithVCInfo.VCDispute))
-	if err != nil {
-		return false, err
-	}
-
 	for _, assetInput := range forceCloseWithVCInfo.AssetInputs {
 		builder.AddInput(&assetInput)
 	}
