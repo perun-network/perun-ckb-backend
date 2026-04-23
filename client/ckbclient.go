@@ -72,7 +72,7 @@ type CKBClient interface {
 	// The implementation can assume that the channel has already been disputed and that the challenge duration
 	// is expired in real-time, though it may be necessary to wait until a block is produced with a timestamp strictly
 	// later than the expiration of the challenge duration.
-	ForceCloseWithVC(ctx context.Context, id channel.ID, vcid channel.ID, state *channel.State, vcstate *channel.State, sigs []wallet.Sig, vcSigs []wallet.Sig, params *channel.Params, indexMap []channel.Index) error
+	ForceCloseWithVC(ctx context.Context, id channel.ID, vcid channel.ID, state *channel.State, vcstate *channel.State, sigs []wallet.Sig, params *channel.Params, indexMap []channel.Index) error
 
 	// GetChannelWithID returns an on-chain channel with the given channel ID.
 	// Note: Only the channel ID field in the state must be checked, as the pcts verifies the integrity of said
@@ -697,7 +697,7 @@ func (c Client) ForceClose(ctx context.Context, id channel.ID, state *channel.St
 	return c.submitTx(ctx, tx)
 }
 
-func (c Client) ForceCloseWithVC(ctx context.Context, id channel.ID, vcid channel.ID, state *channel.State, vcstate *channel.State, sigs []wallet.Sig, vcSigs []wallet.Sig, params *channel.Params, indexMap []channel.Index) error {
+func (c Client) ForceCloseWithVC(ctx context.Context, id channel.ID, vcid channel.ID, state *channel.State, vcstate *channel.State, sigs []wallet.Sig, params *channel.Params, indexMap []channel.Index) error {
 	virtualChannelCells, vcStatuses, err := c.getVirtualChannelLiveCellWithCache(ctx, vcid)
 	if err != nil {
 		return fmt.Errorf("getting virtual channel live cell: %w", err)
@@ -737,18 +737,6 @@ func (c Client) ForceCloseWithVC(ctx context.Context, id channel.ID, vcid channe
 		return fmt.Errorf("encoding signature B: %w", err)
 	}
 
-	vcSigA, err := encoding.NewDEREncodedSignatureFromPadded(vcSigs[0])
-	if err != nil {
-		return fmt.Errorf("encoding signature A: %w", err)
-	}
-
-	vcSigB, err := encoding.NewDEREncodedSignatureFromPadded(vcSigs[1])
-	if err != nil {
-		return fmt.Errorf("encoding signature B: %w", err)
-	}
-
-	vcDispute := encoding.PackVCDispute(vcSigA, vcSigB, sigA, sigB)
-
 	header, err := c.client.GetTipHeader(ctx)
 	if err != nil {
 		return fmt.Errorf("getting tip header: %w", err)
@@ -779,7 +767,6 @@ func (c Client) ForceCloseWithVC(ctx context.Context, id channel.ID, vcid channe
 		vcstate,
 		vcStatus,
 		*sigA, *sigB,
-		&vcDispute,
 		params,
 		[]types.Hash{header.Hash, *blockHash},
 		mkCellInputs(assets),
