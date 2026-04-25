@@ -6,16 +6,11 @@ package client_test
 import (
 	"context"
 	"testing"
-	"time"
 
 	clienttest "perun.network/go-perun/client/test"
 	"perun.network/go-perun/log"
 	ctest "perun.network/perun-ckb-backend/client/test"
 	"polycry.pt/poly-go/test"
-)
-
-const (
-	testDuration = 120 * time.Second
 )
 
 // TestVirtualChannelOptimistic tests the virtual channel optimistic scenario.

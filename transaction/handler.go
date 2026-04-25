@@ -3,6 +3,7 @@ package transaction
 import (
 	"errors"
 	"fmt"
+	"log"
 
 	"github.com/Pilatuz/bigz/uint128"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/collector"
@@ -44,6 +45,8 @@ type PerunScriptHandler struct {
 
 	defaultLockScript    types.Script
 	defaultLockScriptDep types.CellDep
+	omniLockScript       types.Script
+	omniLockScriptDep    []types.CellDep
 }
 
 var _ collector.ScriptHandler = (*PerunScriptHandler)(nil)

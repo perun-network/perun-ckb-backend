@@ -25,6 +25,9 @@ func (f *FilteredCellIterator) HasNext() bool {
 	}
 	for f.base.HasNext() {
 		candidate := f.base.Next()
+		if candidate == nil {
+			continue
+		}
 		if f.filter(candidate.Output) {
 			f.nextInput = candidate
 			f.loaded = true

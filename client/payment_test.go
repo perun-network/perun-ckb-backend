@@ -6,7 +6,6 @@ package client_test
 import (
 	"context"
 	"math/big"
-	"math/rand"
 	"perun.network/go-perun/channel"
 	"perun.network/go-perun/wallet"
 	"testing"
@@ -88,27 +87,4 @@ func TestPaymentDispute(t *testing.T) {
 	setup := ctest.MakePaymentChannelSetup(t, rng, false)
 	clienttest.TestPaymentChannelDispute(ctx, t, setup)
 	log.Info("Payment dispute test done")
-}
-
-func makePaymentChannelSetup(t *testing.T, rng *rand.Rand) clienttest.PaymentChannelSetup {
-	t.Helper()
-	name := [2]string{"Alice", "Bob"}
-	setup := btest.NewVirtualChannelSetup(t, rng, true)
-
-	roleSetup := ctest.MakeRoleSetupsCross(rng, setup, name[:])
-
-	return clienttest.PaymentChannelSetup{
-		Clients:           [2]clienttest.RoleSetup(roleSetup),
-		ChallengeDuration: roleSetup[0].ChallengeDuration,
-		Asset:             setup.Asset,
-		Balances: clienttest.PaymentChannelBalances{
-			InitBalsAliceBob: []*big.Int{asset.CKByteToShannon(big.NewFloat(100)), asset.CKByteToShannon(big.NewFloat(100))},
-			BalsUpdated:      []*big.Int{asset.CKByteToShannon(big.NewFloat(70)), asset.CKByteToShannon(big.NewFloat(130))},
-			FinalBals:        []*big.Int{asset.CKByteToShannon(big.NewFloat(70)), asset.CKByteToShannon(big.NewFloat(130))},
-		},
-		BalanceDelta:       big.NewInt(int64(3 * transaction.DefaultFeeShannon)), // Max Fee: (Open + Dispute + Close) * 1 CKB
-		Rng:                rng,
-		WaitWatcherTimeout: 1 * time.Second,
-		IsUTXO:             true,
-	}
 }

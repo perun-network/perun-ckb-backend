@@ -71,7 +71,7 @@ type Setup struct {
 	t            *testing.T
 	Rng          *rand.Rand
 	Deployment   backend.Deployment
-	Asset        *asset.Asset
+	Asset        *asset.NervosAsset
 	SUDTInfo     SUDTInfo
 	CkbAsset     *asset.Asset
 	SudtAsset    *asset.Asset
@@ -134,9 +134,9 @@ func NewCrossSetup(t *testing.T, rng *rand.Rand, omni bool) *SetupCross {
 		evmAddresses = make([][20]byte, 2)
 		parts[0], evmAddresses[0], _ = address.NewEthereumParticipantFromPublicKey(keyAlice.PubKey(), d.OmniLockScript.CodeHash)
 		parts[1], evmAddresses[1], _ = address.NewEthereumParticipantFromPublicKey(keyBob.PubKey(), d.OmniLockScript.CodeHash)
-		add0, _ := parts[0].ToCKBAddress(network).EncodeFullBech32m()
+		add0, _ := parts[0].ToCKBAddress(testNetwork).EncodeFullBech32m()
 		log.Println("Alice's CKB address: ", add0)
-		add1, _ := parts[1].ToCKBAddress(network).EncodeFullBech32m()
+		add1, _ := parts[1].ToCKBAddress(testNetwork).EncodeFullBech32m()
 		log.Println("Bob's CKB address: ", add1)
 		setup.Participants = parts
 		aliceAccount = wallet.NewAccountFromPrivateKey(keyAlice, d.OmniLockScript.CodeHash, false)
@@ -144,9 +144,9 @@ func NewCrossSetup(t *testing.T, rng *rand.Rand, omni bool) *SetupCross {
 	} else {
 		parts[0], _ = address.NewDefaultParticipant(keyAlice.PubKey())
 		parts[1], _ = address.NewDefaultParticipant(keyBob.PubKey())
-		add0, _ := parts[0].ToCKBAddress(network).EncodeFullBech32m()
+		add0, _ := parts[0].ToCKBAddress(testNetwork).EncodeFullBech32m()
 		log.Println("Alice's CKB address: ", add0)
-		add1, _ := parts[1].ToCKBAddress(network).EncodeFullBech32m()
+		add1, _ := parts[1].ToCKBAddress(testNetwork).EncodeFullBech32m()
 		log.Println("Bob's CKB address: ", add1)
 		setup.Participants = parts
 		aliceAccount = wallet.NewAccountFromPrivateKey(keyAlice, types.Hash{}, true)
@@ -164,7 +164,95 @@ func NewCrossSetup(t *testing.T, rng *rand.Rand, omni bool) *SetupCross {
 	setup.WalletAccs = []*wallet.Account{aliceAccount, bobAccount}
 	setup.AccKeys = []secp256k1.PrivateKey{*keyAlice, *keyBob}
 
-	funders, adjs := createFundersAndAdjudicators(t, setup.WalletAccs, setup.AccKeys, d, RpcNodeURL, omni, evmAddresses)
+	funders, adjs := createFundersAndAdjudicators(t, setup.WalletAccs, setup.AccKeys, d, DevnetRpcNodeURL, omni, evmAddresses)
+	setup.Funders = funders
+	setup.Adjs = adjs
+
+	return setup
+}
+
+func NewVirtualChannelSetup(t *testing.T, rng *rand.Rand, omni bool) *SetupCross {
+	setup := &SetupCross{}
+	setup.t = t
+	setup.Rng = rng
+
+	sudtOwnerLockArg, err := ParseSUDTOwnerLockArg(devNetDir + "/accounts/sudt-owner-lock-hash.txt")
+	require.NoError(t, err, "error getting SUDT owner lock arg")
+
+	d, sudtInfo, err := GetDeployment(devNetDir+"/contract/migrations_0/dev/", devNetDir+"/contract/migrations_1/dev/", devNetDir+"/contract/migrations_vc/dev/", devNetDir+"/system_scripts", sudtOwnerLockArg)
+	require.NoError(t, err, "error getting deployment")
+	setup.Deployment = d
+	setup.SUDTInfo = *sudtInfo
+
+	sudt := asset.NewSUDT(*sudtInfo.Script, sudtMaxCapacity)
+	sudtAsset := asset.NewSUDTAsset(sudt)
+	ledgerID := asset.MakeContractID("03")
+	ccid := asset.MakeCCID(ledgerID)
+	nervosSUDTAsset := asset.NewNervosAsset(*sudtAsset, ccid)
+	setup.SudtAsset = &nervosSUDTAsset
+
+	ckbAsset := asset.NewCKBytesNervosAsset()
+	setup.CkbAsset = ckbAsset
+	setup.Asset = ckbAsset
+
+	var ethAddrArray [20]byte
+	newEthAddrBytes := common.BytesToAddress(ethAddrArray[:])
+	newEthAddr := address.EthAddress(newEthAddrBytes)
+
+	chainID := new(big.Int)
+	chainID.SetUint64(uint64(1))
+	ethAsset := asset.MakeEthAsset(chainID, &newEthAddr)
+	setup.EthAsset = &ethAsset
+
+	wallets := make([]*ckbwallettest.TestEphemeralWallet, 3)
+	setup.EphemeralWallets = wallets
+
+	parts := make([]*address.Participant, 3)
+	keyAlice, err := GetKey(devNetDir + "/accounts/alice.pk")
+	require.NoError(t, err, "error getting alice's private key")
+
+	keyBob, err := GetKey(devNetDir + "/accounts/bob.pk")
+	require.NoError(t, err, "error getting bob's private key")
+
+	keyIngrid, err := GetKey(devNetDir + "/accounts/ingrid.pk")
+	require.NoError(t, err, "error getting ingrid's private key")
+
+	var evmAddresses [][20]byte
+	var aliceAccount, bobAccount, ingridAccount *wallet.Account
+	if omni {
+		evmAddresses = make([][20]byte, 3)
+		parts[0], evmAddresses[0], _ = address.NewEthereumParticipantFromPublicKey(keyAlice.PubKey(), d.OmniLockScript.CodeHash)
+		parts[1], evmAddresses[1], _ = address.NewEthereumParticipantFromPublicKey(keyBob.PubKey(), d.OmniLockScript.CodeHash)
+		parts[2], evmAddresses[2], _ = address.NewEthereumParticipantFromPublicKey(keyIngrid.PubKey(), d.OmniLockScript.CodeHash)
+		aliceAccount = wallet.NewAccountFromPrivateKey(keyAlice, d.OmniLockScript.CodeHash, false)
+		bobAccount = wallet.NewAccountFromPrivateKey(keyBob, d.OmniLockScript.CodeHash, false)
+		ingridAccount = wallet.NewAccountFromPrivateKey(keyIngrid, d.OmniLockScript.CodeHash, false)
+	} else {
+		parts[0], _ = address.NewDefaultParticipant(keyAlice.PubKey())
+		parts[1], _ = address.NewDefaultParticipant(keyBob.PubKey())
+		parts[2], _ = address.NewDefaultParticipant(keyIngrid.PubKey())
+		aliceAccount = wallet.NewAccountFromPrivateKey(keyAlice, types.Hash{}, true)
+		bobAccount = wallet.NewAccountFromPrivateKey(keyBob, types.Hash{}, true)
+		ingridAccount = wallet.NewAccountFromPrivateKey(keyIngrid, types.Hash{}, true)
+	}
+	setup.Participants = parts
+
+	wallets[0] = ckbwallettest.NewTestEphemeralWallet(aliceAccount)
+	err = wallets[0].AddAccount(aliceAccount)
+	require.NoError(t, err, "error adding alice's account")
+
+	wallets[1] = ckbwallettest.NewTestEphemeralWallet(bobAccount)
+	err = wallets[1].AddAccount(bobAccount)
+	require.NoError(t, err, "error adding bob's account")
+
+	wallets[2] = ckbwallettest.NewTestEphemeralWallet(ingridAccount)
+	err = wallets[2].AddAccount(ingridAccount)
+	require.NoError(t, err, "error adding ingrid's account")
+
+	setup.WalletAccs = []*wallet.Account{aliceAccount, bobAccount, ingridAccount}
+	setup.AccKeys = []secp256k1.PrivateKey{*keyAlice, *keyBob, *keyIngrid}
+
+	funders, adjs := createFundersAndAdjudicators(t, setup.WalletAccs, setup.AccKeys, d, DevnetRpcNodeURL, omni, evmAddresses)
 	setup.Funders = funders
 	setup.Adjs = adjs
 
@@ -179,12 +267,12 @@ func NewSetup(t *testing.T, rng *rand.Rand, omni bool) *Setup {
 	sudtOwnerLockArg, err := ParseSUDTOwnerLockArg(devNetDir + "/accounts/sudt-owner-lock-hash.txt")
 	require.NoError(t, err, "error getting SUDT owner lock arg")
 
-	d, sudtInfo, err := GetDeploymentDevnet(devNetDir+"/contract/migrations/dev/", devNetDir+"/contract/migrations_vc/dev/", devNetDir+"/system_scripts", sudtOwnerLockArg)
+	d, sudtInfo, err := GetDeployment(devNetDir+"/contract/migrations_0/dev/", devNetDir+"/contract/migrations_1/dev/", devNetDir+"/contract/migrations_vc/dev/", devNetDir+"/system_scripts", sudtOwnerLockArg)
 	require.NoError(t, err, "error getting deployment")
 	setup.Deployment = d
 	setup.SUDTInfo = *sudtInfo
 
-	setup.Asset = asset.NewCKBytesAsset()
+	setup.Asset = asset.NewCKBytesNervosAsset()
 	setup.SudtAsset = &asset.Asset{
 		IsCKBytes: false,
 		SUDT:      asset.NewSUDT(*sudtInfo.Script, uint64(sudtMaxCapacity)),
@@ -204,9 +292,9 @@ func NewSetup(t *testing.T, rng *rand.Rand, omni bool) *Setup {
 		evmAddresses = make([][20]byte, 2)
 		parts[0], evmAddresses[0], _ = address.NewEthereumParticipantFromPublicKey(keyAlice.PubKey(), d.OmniLockScript.CodeHash)
 		parts[1], evmAddresses[1], _ = address.NewEthereumParticipantFromPublicKey(keyBob.PubKey(), d.OmniLockScript.CodeHash)
-		add0, _ := parts[0].ToCKBAddress(network).EncodeFullBech32m()
+		add0, _ := parts[0].ToCKBAddress(testNetwork).EncodeFullBech32m()
 		log.Println("Alice's CKB address: ", add0)
-		add1, _ := parts[1].ToCKBAddress(network).EncodeFullBech32m()
+		add1, _ := parts[1].ToCKBAddress(testNetwork).EncodeFullBech32m()
 		log.Println("Bob's CKB address: ", add1)
 		setup.Participants = parts
 		aliceAccount = wallet.NewAccountFromPrivateKey(keyAlice, d.OmniLockScript.CodeHash, false)
@@ -214,9 +302,9 @@ func NewSetup(t *testing.T, rng *rand.Rand, omni bool) *Setup {
 	} else {
 		parts[0], _ = address.NewDefaultParticipant(keyAlice.PubKey())
 		parts[1], _ = address.NewDefaultParticipant(keyBob.PubKey())
-		add0, _ := parts[0].ToCKBAddress(network).EncodeFullBech32m()
+		add0, _ := parts[0].ToCKBAddress(testNetwork).EncodeFullBech32m()
 		log.Println("Alice's CKB address: ", add0)
-		add1, _ := parts[1].ToCKBAddress(network).EncodeFullBech32m()
+		add1, _ := parts[1].ToCKBAddress(testNetwork).EncodeFullBech32m()
 		log.Println("Bob's CKB address: ", add1)
 		setup.Participants = parts
 		aliceAccount = wallet.NewAccountFromPrivateKey(keyAlice, types.Hash{}, true)
@@ -234,7 +322,7 @@ func NewSetup(t *testing.T, rng *rand.Rand, omni bool) *Setup {
 	setup.WalletAccs = []*wallet.Account{aliceAccount, bobAccount}
 	setup.AccKeys = []secp256k1.PrivateKey{*keyAlice, *keyBob}
 
-	funders, adjs := createFundersAndAdjudicators(t, setup.WalletAccs, setup.AccKeys, d, RpcNodeURL, omni, evmAddresses, DevnetRpcNodeURL)
+	funders, adjs := createFundersAndAdjudicators(t, setup.WalletAccs, setup.AccKeys, d, DevnetRpcNodeURL, omni, evmAddresses)
 	setup.Funders = funders
 	setup.Adjs = adjs
 
@@ -242,86 +330,43 @@ func NewSetup(t *testing.T, rng *rand.Rand, omni bool) *Setup {
 }
 
 func NewDevnetVirtualChannelSetup(t *testing.T, rng *rand.Rand) *Setup {
+	return newVirtualChannelSetupForNetwork(t, rng, devNetDir, DevnetRpcNodeURL)
+}
+
+func NewTestnetLedgerChannelSetup(t *testing.T, rng *rand.Rand) *Setup {
+	return newLedgerChannelSetupForNetwork(t, rng, testNetDir, TestnetRpcNodeURL)
+}
+
+func NewTestnetVirtualChannelSetup(t *testing.T, rng *rand.Rand) *Setup {
+	return newVirtualChannelSetupForNetwork(t, rng, testNetDir, TestnetRpcNodeURL)
+}
+
+func newLedgerChannelSetupForNetwork(t *testing.T, rng *rand.Rand, netDir, rpcURL string) *Setup {
 	setup := &Setup{}
 	setup.t = t
 	setup.Rng = rng
 
-	sudtOwnerLockArg, err := parseSUDTOwnerLockArg(devNetDir + "/accounts/sudt-owner-lock-hash.txt")
+	sudtOwnerLockArg, err := ParseSUDTOwnerLockArg(netDir + "/accounts/sudt-owner-lock-hash.txt")
 	require.NoError(t, err, "error getting SUDT owner lock arg")
 
-	d, sudtInfo, err := GetDeploymentDevnet(devNetDir+"/contract/migrations/dev/", devNetDir+"/contract/migrations_vc/dev", devNetDir+"/system_scripts", sudtOwnerLockArg)
+	d, sudtInfo, err := GetDeployment(netDir+"/contract/migrations_0/dev/", netDir+"/contract/migrations_1/dev/", netDir+"/contract/migrations_vc/dev/", netDir+"/system_scripts", sudtOwnerLockArg)
 	require.NoError(t, err, "error getting deployment")
 	setup.Deployment = d
 	setup.SUDTInfo = *sudtInfo
 
-	ckbAsset := asset.NewCKBytesNervosAsset()
-	setup.CkbAsset = ckbAsset
-	setup.Asset = ckbAsset
-
-	wallets := make([]*ckbwallettest.TestEphemeralWallet, 3)
-	setup.EphemeralWallets = wallets
-	parts := make([]*address.Participant, 3)
-	keyAlice, err := GetKey(devNetDir + "/accounts/alice.pk")
-	require.NoError(t, err, "error getting alice's private key")
-
-	keyBob, err := GetKey(devNetDir + "/accounts/bob.pk")
-	require.NoError(t, err, "error getting bob's private key")
-
-	keyIngrid, err := GetKey(devNetDir + "/accounts/ingrid.pk")
-	require.NoError(t, err, "error getting ingrid's private key")
-
-	aliceAccount := wallet.NewAccountFromPrivateKey(keyAlice)
-	bobAccount := wallet.NewAccountFromPrivateKey(keyBob)
-	ingridAccount := wallet.NewAccountFromPrivateKey(keyIngrid)
-
-	wallets[0] = ckbwallettest.NewTestEphemeralWallet(aliceAccount)
-	err = wallets[0].AddAccount(aliceAccount)
-	require.NoError(t, err, "error adding alice's account")
-
-	wallets[1] = ckbwallettest.NewTestEphemeralWallet(bobAccount)
-	err = wallets[1].AddAccount(bobAccount)
-	require.NoError(t, err, "error adding bob's account")
-
-	wallets[2] = ckbwallettest.NewTestEphemeralWallet(ingridAccount)
-	err = wallets[2].AddAccount(ingridAccount)
-	require.NoError(t, err, "error adding ingrid's account")
-
-	setup.WalletAccs = []*wallet.Account{aliceAccount, bobAccount, ingridAccount}
-	setup.AccKeys = []secp256k1.PrivateKey{*keyAlice, *keyBob, *keyIngrid}
-
-	funders, adjs := createFundersAndAdjudicators(t, setup.WalletAccs, setup.AccKeys, d, DevnetRpcNodeURL)
-	setup.Funders = funders
-	setup.Adjs = adjs
-
-	return setup
-}
-
-func NewTestnetLedgerChannelSetup(t *testing.T, rng *rand.Rand) *Setup {
-	setup := &Setup{}
-	setup.t = t
-	setup.Rng = rng
-
-	sudtOwnerLockArg, err := parseSUDTOwnerLockArg(testNetDir + "/accounts/sudt-owner-lock-hash.txt")
-	require.NoError(t, err, "error getting SUDT owner lock arg")
-
-	d, sudtInfo, err := GetDeploymentTestnet(testNetDir+"/system_scripts", sudtOwnerLockArg)
-	require.NoError(t, err, "error getting deployment")
-	setup.Deployment = d
-	setup.SUDTInfo = sudtInfo
-
-	setup.Asset = asset.NewCKBytesAsset()
+	setup.Asset = asset.NewCKBytesNervosAsset()
 
 	wallets := make([]*ckbwallettest.TestEphemeralWallet, 2)
 	setup.EphemeralWallets = wallets
 
-	keyAlice, err := GetKey(testNetDir + "/accounts/alice.pk")
+	keyAlice, err := GetKey(netDir + "/accounts/alice.pk")
 	require.NoError(t, err, "error getting alice's private key")
 
-	keyBob, err := GetKey(testNetDir + "/accounts/bob.pk")
+	keyBob, err := GetKey(netDir + "/accounts/bob.pk")
 	require.NoError(t, err, "error getting bob's private key")
 
-	aliceAccount := wallet.NewAccountFromPrivateKey(keyAlice)
-	bobAccount := wallet.NewAccountFromPrivateKey(keyBob)
+	aliceAccount := wallet.NewAccountFromPrivateKey(keyAlice, types.Hash{}, true)
+	bobAccount := wallet.NewAccountFromPrivateKey(keyBob, types.Hash{}, true)
 
 	wallets[0] = ckbwallettest.NewTestEphemeralWallet(aliceAccount)
 	err = wallets[0].AddAccount(aliceAccount)
@@ -334,43 +379,43 @@ func NewTestnetLedgerChannelSetup(t *testing.T, rng *rand.Rand) *Setup {
 	setup.WalletAccs = []*wallet.Account{aliceAccount, bobAccount}
 	setup.AccKeys = []secp256k1.PrivateKey{*keyAlice, *keyBob}
 
-	funders, adjs := createFundersAndAdjudicators(t, setup.WalletAccs, setup.AccKeys, d, TestnetRpcNodeURL)
+	funders, adjs := createFundersAndAdjudicators(t, setup.WalletAccs, setup.AccKeys, d, rpcURL, false, nil)
 	setup.Funders = funders
 	setup.Adjs = adjs
 
 	return setup
 }
 
-func NewTestnetVirtualChannelSetup(t *testing.T, rng *rand.Rand) *Setup {
+func newVirtualChannelSetupForNetwork(t *testing.T, rng *rand.Rand, netDir, rpcURL string) *Setup {
 	setup := &Setup{}
 	setup.t = t
 	setup.Rng = rng
 
-	sudtOwnerLockArg, err := parseSUDTOwnerLockArg(testNetDir + "/accounts/sudt-owner-lock-hash.txt")
+	sudtOwnerLockArg, err := ParseSUDTOwnerLockArg(netDir + "/accounts/sudt-owner-lock-hash.txt")
 	require.NoError(t, err, "error getting SUDT owner lock arg")
 
-	d, sudtInfo, err := GetDeploymentTestnet(testNetDir+"/system_scripts", sudtOwnerLockArg)
+	d, sudtInfo, err := GetDeployment(netDir+"/contract/migrations_0/dev/", netDir+"/contract/migrations_1/dev/", netDir+"/contract/migrations_vc/dev/", netDir+"/system_scripts", sudtOwnerLockArg)
 	require.NoError(t, err, "error getting deployment")
 	setup.Deployment = d
-	setup.SUDTInfo = sudtInfo
+	setup.SUDTInfo = *sudtInfo
 
-	setup.Asset = asset.NewCKBytesAsset()
+	setup.Asset = asset.NewCKBytesNervosAsset()
 
 	wallets := make([]*ckbwallettest.TestEphemeralWallet, 3)
 	setup.EphemeralWallets = wallets
 
-	keyAlice, err := GetKey(testNetDir + "/accounts/alice.pk")
+	keyAlice, err := GetKey(netDir + "/accounts/alice.pk")
 	require.NoError(t, err, "error getting alice's private key")
 
-	keyBob, err := GetKey(testNetDir + "/accounts/bob.pk")
+	keyBob, err := GetKey(netDir + "/accounts/bob.pk")
 	require.NoError(t, err, "error getting bob's private key")
 
-	keyIngrid, err := GetKey(testNetDir + "/accounts/ingrid.pk")
+	keyIngrid, err := GetKey(netDir + "/accounts/ingrid.pk")
 	require.NoError(t, err, "error getting ingrid's private key")
 
-	aliceAccount := wallet.NewAccountFromPrivateKey(keyAlice)
-	bobAccount := wallet.NewAccountFromPrivateKey(keyBob)
-	ingridAccount := wallet.NewAccountFromPrivateKey(keyIngrid)
+	aliceAccount := wallet.NewAccountFromPrivateKey(keyAlice, types.Hash{}, true)
+	bobAccount := wallet.NewAccountFromPrivateKey(keyBob, types.Hash{}, true)
+	ingridAccount := wallet.NewAccountFromPrivateKey(keyIngrid, types.Hash{}, true)
 
 	wallets[0] = ckbwallettest.NewTestEphemeralWallet(aliceAccount)
 	err = wallets[0].AddAccount(aliceAccount)
@@ -387,7 +432,7 @@ func NewTestnetVirtualChannelSetup(t *testing.T, rng *rand.Rand) *Setup {
 	setup.WalletAccs = []*wallet.Account{aliceAccount, bobAccount, ingridAccount}
 	setup.AccKeys = []secp256k1.PrivateKey{*keyAlice, *keyBob, *keyIngrid}
 
-	funders, adjs := createFundersAndAdjudicators(t, setup.WalletAccs, setup.AccKeys, d, TestnetRpcNodeURL)
+	funders, adjs := createFundersAndAdjudicators(t, setup.WalletAccs, setup.AccKeys, d, rpcURL, false, nil)
 	setup.Funders = funders
 	setup.Adjs = adjs
 
@@ -414,16 +459,18 @@ func createFundersAndAdjudicators(t *testing.T, accs []*wallet.Account, keys []s
 	for i, acc := range accs {
 		rpcClient, err := rpc.Dial(rpcURL)
 		require.NoError(t, err, "error connecting to ckb node")
-		log.Println("Participant: ", address.AsParticipant(acc.Address()).ToCKBAddress(network).Script.Hash())
+		log.Println("Participant: ", address.AsParticipant(acc.Address()).ToCKBAddress(testNetwork).Script.Hash())
 		var signer backend.Signer
 		if omni {
-			evmsigner := backend.NewEVMSignerInstance(address.AsParticipant(acc.Address()).ToCKBAddress(network), keys[i], network, evmAddresses[i])
+			evmsigner := backend.NewEVMSignerInstance(address.AsParticipant(acc.Address()).ToCKBAddress(testNetwork), keys[i], testNetwork, evmAddresses[i])
 			txSigner := evmsigner.Signer()
 			txSigner.RegisterLockSigner(deployment.OmniLockScript.CodeHash, &ckbsigner.OmnilockSigner{})
 			signer = evmsigner
+		} else {
+			signer = backend.NewSignerInstance(address.AsParticipant(acc.Address()).ToCKBAddress(testNetwork), keys[i], testNetwork)
+		}
 
-		signer := backend.NewSignerInstance(address.AsParticipant(acc.Address()).ToCKBAddress(testNetwork), keys[i], testNetwork)
-		ckbClient, err := client.NewClient(rpcClient, *signer, deployment)
+		ckbClient, err := client.NewClient(rpcClient, signer, deployment)
 		require.NoError(t, err, "error creating ckb client")
 		funders[i] = funder.NewDefaultFunder(ckbClient, deployment)
 		adjs[i] = adjudicator.NewAdjudicator(ckbClient)

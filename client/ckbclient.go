@@ -92,46 +92,6 @@ type CKBClient interface {
 	GetBlockTime(ctx context.Context, blockNumber BlockNumber) (time.Time, error)
 }
 
-type FilteredCellIterator struct {
-	base      collector.CellIterator
-	filter    func(*types.CellOutput) bool
-	nextInput *types.TransactionInput
-	loaded    bool
-}
-
-func NewFilteredCellIterator(base collector.CellIterator, filter func(*types.CellOutput) bool) *FilteredCellIterator {
-	return &FilteredCellIterator{
-		base:   base,
-		filter: filter,
-	}
-}
-
-func (f *FilteredCellIterator) HasNext() bool {
-	if f.loaded {
-		return true
-	}
-	for f.base.HasNext() {
-		candidate := f.base.Next()
-		if candidate == nil {
-			continue
-		}
-		if f.filter(candidate.Output) {
-			f.nextInput = candidate
-			f.loaded = true
-			return true
-		}
-	}
-	return false
-}
-
-func (f *FilteredCellIterator) Next() *types.TransactionInput {
-	if !f.loaded && !f.HasNext() {
-		return nil
-	}
-	f.loaded = false
-	return f.nextInput
-}
-
 func retryRPC[T any](ctx context.Context, n int, delay time.Duration, fn func() (T, error)) (T, error) {
 	var zero T
 	var err error
@@ -206,12 +166,11 @@ func (c Client) Start(ctx context.Context, params *channel.Params, state *channe
 		return nil, fmt.Errorf("creating open transaction: %w", err)
 	}
 	tx, err := builder.Build(c.signer.Contexts())
-	log.Println("Start: created open transaction")
-	tx, err := builder.Build()
 	if err != nil {
 		log.Println("Start: error while building open Tx")
 		return nil, fmt.Errorf("building open transaction: %w", err)
 	}
+	log.Println("Start: created open transaction")
 	log.Println("Start: built open transaction")
 	if err := c.submitTx(ctx, tx); err != nil {
 		return nil, fmt.Errorf("submitting transaction: %w", err)
@@ -831,18 +790,6 @@ func (c Client) ForceCloseWithVC(ctx context.Context, id channel.ID, vcid channe
 		return fmt.Errorf("encoding signature B: %w", err)
 	}
 
-	vcSigA, err := encoding.NewMoleculeSignature(vcSigs[0])
-	if err != nil {
-		return fmt.Errorf("encoding signature A: %w", err)
-	}
-
-	vcSigB, err := encoding.NewMoleculeSignature(vcSigs[1])
-	if err != nil {
-		return fmt.Errorf("encoding signature B: %w", err)
-	}
-
-	vcDispute := encoding.PackVCDispute(vcSigA, vcSigB, sigA, sigB)
-
 	header, err := retryRPC(ctx, 3, 10*time.Second, func() (*types.Header, error) {
 		return c.client.GetTipHeader(ctx)
 	})
@@ -877,7 +824,6 @@ func (c Client) ForceCloseWithVC(ctx context.Context, id channel.ID, vcid channe
 		vcstate,
 		vcStatus,
 		*sigA, *sigB,
-		&vcDispute,
 		params,
 		[]types.Hash{header.Hash, *blockHash},
 		mkCellInputs(assets),

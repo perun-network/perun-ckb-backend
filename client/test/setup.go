@@ -15,19 +15,23 @@ package test
 
 import (
 	"log"
+	"math/big"
 	"math/rand"
-	gpwallet "perun.network/go-perun/wallet"
-	wallettest "perun.network/go-perun/wallet/test"
+	"testing"
 	"time"
 
 	"github.com/nervosnetwork/ckb-sdk-go/v2/rpc"
 
-	"perun.network/perun-ckb-backend/channel/test"
-
 	gpwiretest "perun.network/go-perun/backend/sim/wire"
 	clienttest "perun.network/go-perun/client/test"
+	gpwallet "perun.network/go-perun/wallet"
+	wallettest "perun.network/go-perun/wallet/test"
 	"perun.network/go-perun/watcher/local"
 	"perun.network/go-perun/wire"
+
+	"perun.network/perun-ckb-backend/channel/asset"
+	"perun.network/perun-ckb-backend/channel/test"
+	"perun.network/perun-ckb-backend/transaction"
 )
 
 const (
@@ -113,7 +117,7 @@ func MakeRoleSetupsCross(rng *rand.Rand, s *test.SetupCross, names []string) []c
 			panic("Error initializing watcher: " + err.Error())
 		}
 
-		balanceRPC, err := rpc.Dial(test.RpcNodeURL)
+		balanceRPC, err := rpc.Dial(test.DevnetRpcNodeURL)
 		if err != nil {
 			panic("Error dialing RPC: " + err.Error())
 		}
@@ -136,9 +140,9 @@ func MakeRoleSetupsCross(rng *rand.Rand, s *test.SetupCross, names []string) []c
 			Adjudicator: s.Adjs[i],
 			Watcher:     watcher,
 			Wallet:      map[gpwallet.BackendID]wallettest.Wallet{3: s.EphemeralWallets[i]},
-			Timeout:     timeout,
+			Timeout:     DefaultTimeout,
 			// Scaled due to simbackend automining progressing faster than real time.
-			ChallengeDuration: challengeDuration,
+			ChallengeDuration: ChallengeDurationBlocks * uint64(time.Second/BlockInterval),
 			Errors:            errors,
 			BalanceReader:     test.NewBalanceReader(balanceRPC, s.WalletAccs[i].Address()),
 		}
