@@ -19,9 +19,8 @@ type ForceCloseWithVCInfo struct {
 	Headers     []types.Hash
 	AssetInputs []types.CellInput
 
-	SigA      molecule.Bytes
-	SigB      molecule.Bytes
-	VCDispute *molecule.VCDispute
+	SigA molecule.Bytes
+	SigB molecule.Bytes
 
 	ChannelCapacity        uint64
 	VirtualChannelCapacity uint64
@@ -42,7 +41,6 @@ func NewForceCloseWithVCInfo(
 	vcStatus *molecule.VirtualChannelStatus,
 	sigA molecule.Bytes,
 	sigB molecule.Bytes,
-	vcDispute *molecule.VCDispute,
 	params *channel.Params,
 	headers []types.Hash,
 	assetInputs []types.CellInput,
@@ -60,7 +58,6 @@ func NewForceCloseWithVCInfo(
 		VCStatus:               vcStatus,
 		SigA:                   sigA,
 		SigB:                   sigB,
-		VCDispute:              vcDispute,
 		Params:                 params,
 		Headers:                headers,
 		AssetInputs:            assetInputs,

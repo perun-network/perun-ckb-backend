@@ -1,3 +1,6 @@
+//go:build !testnet
+// +build !testnet
+
 package client_test
 
 import (
@@ -7,7 +10,6 @@ import (
 	"perun.network/go-perun/channel"
 	"perun.network/go-perun/wallet"
 	"testing"
-	"time"
 
 	"perun.network/go-perun/client"
 	"perun.network/go-perun/log"
@@ -15,7 +17,6 @@ import (
 	"perun.network/perun-ckb-backend/channel/asset"
 	btest "perun.network/perun-ckb-backend/channel/test"
 	ctest "perun.network/perun-ckb-backend/client/test"
-	"perun.network/perun-ckb-backend/transaction"
 	"polycry.pt/poly-go/sync"
 	pkgtest "polycry.pt/poly-go/test"
 
@@ -84,7 +85,7 @@ func TestPaymentDispute(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), testDuration)
 	defer cancel()
 
-	setup := makePaymentChannelSetup(t, rng)
+	setup := ctest.MakePaymentChannelSetup(t, rng, false)
 	clienttest.TestPaymentChannelDispute(ctx, t, setup)
 	log.Info("Payment dispute test done")
 }

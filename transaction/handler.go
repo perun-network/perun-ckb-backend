@@ -3,7 +3,6 @@ package transaction
 import (
 	"errors"
 	"fmt"
-	"log"
 
 	"github.com/Pilatuz/bigz/uint128"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/collector"
@@ -45,8 +44,6 @@ type PerunScriptHandler struct {
 
 	defaultLockScript    types.Script
 	defaultLockScriptDep types.CellDep
-	omniLockScript       types.Script
-	omniLockScriptDep    []types.CellDep
 }
 
 var _ collector.ScriptHandler = (*PerunScriptHandler)(nil)
@@ -129,7 +126,6 @@ func (psh *PerunScriptHandler) BuildTransaction(builder collector.TransactionBui
 }
 
 func (psh *PerunScriptHandler) buildOpenTransaction(builder collector.TransactionBuilder, group *transaction.ScriptGroup, openInfo *OpenInfo) (bool, error) {
-	log.Println("buildOpenTransaction")
 	const partyIndex = 0
 	// Add required cell dependencies for Perun scripts.
 	builder.AddCellDep(&psh.defaultLockScriptDep)
@@ -186,7 +182,6 @@ func (psh *PerunScriptHandler) AddSudtCellDeps(builder collector.TransactionBuil
 }
 
 func (psh *PerunScriptHandler) buildCloseTransaction(builder collector.TransactionBuilder, group *transaction.ScriptGroup, closeInfo *CloseInfo) (bool, error) {
-	log.Println("buildCloseTransaction")
 	// TODO: How do we make sure that we unlock the channel?
 	if len(psh.omniLockScriptDep) != 0 {
 		builder.AddCellDep(&psh.omniLockScriptDep[0])
@@ -243,7 +238,6 @@ func (psh *PerunScriptHandler) buildCloseTransaction(builder collector.Transacti
 }
 
 func (psh *PerunScriptHandler) buildAbortTransaction(builder collector.TransactionBuilder, group *transaction.ScriptGroup, abortInfo *AbortInfo) (bool, error) {
-	log.Println("buildAbortTransaction")
 	const partyIdx = 0
 	// TODO: How do we make sure that we unlock the channel?
 	if len(psh.omniLockScriptDep) != 0 {
@@ -293,7 +287,6 @@ func (psh *PerunScriptHandler) buildAbortTransaction(builder collector.Transacti
 }
 
 func (psh *PerunScriptHandler) buildForceCloseTransaction(builder collector.TransactionBuilder, group *transaction.ScriptGroup, forceCloseInfo *ForceCloseInfo) (bool, error) {
-	log.Println("buildForceCloseTransaction")
 	// TODO: How do we make sure that we unlock the channel?
 	if len(psh.omniLockScriptDep) != 0 {
 		builder.AddCellDep(&psh.omniLockScriptDep[0])
@@ -347,7 +340,6 @@ func (psh *PerunScriptHandler) buildForceCloseTransaction(builder collector.Tran
 }
 
 func (psh *PerunScriptHandler) buildFundTransaction(builder collector.TransactionBuilder, group *transaction.ScriptGroup, fundInfo *FundInfo) (bool, error) {
-	log.Println("buildFundTransaction")
 	const partyIndex = 1
 	// Dependencies.
 	builder.AddCellDep(&psh.defaultLockScriptDep)
@@ -379,7 +371,6 @@ func (psh *PerunScriptHandler) buildFundTransaction(builder collector.Transactio
 		Type:     fundInfo.PCTS,
 	}
 	channelCell.Capacity = channelCell.OccupiedCapacity(channelStatus.AsSlice())
-	log.Println("channelCell.Capacity", channelCell.Capacity)
 	builder.AddOutput(&channelCell, channelStatus.AsSlice())
 
 	// Channel funds cell output.
@@ -486,7 +477,6 @@ func (psh *PerunScriptHandler) buildFirstVCDisputeTransaction(builder collector.
 		return false, fmt.Errorf("updating vc dispute info: %w", err)
 	}
 	channelCell.Capacity = channelCell.OccupiedCapacity(disputeInfo.LCStatus.AsSlice())
-	log.Println("channelCell.Capacity", channelCell.Capacity)
 	builder.AddOutput(&vcChannelCell, vcChannelData)
 	builder.AddOutput(&channelCell, disputeInfo.LCStatus.AsSlice())
 
@@ -494,7 +484,6 @@ func (psh *PerunScriptHandler) buildFirstVCDisputeTransaction(builder collector.
 }
 
 func (psh *PerunScriptHandler) buildVCDisputeProgressTransaction(builder collector.TransactionBuilder, group *transaction.ScriptGroup, disputeInfo *VcDisputeInfo) (bool, error) {
-	log.Println("buildVCDisputeProgressTransaction")
 	if len(psh.omniLockScriptDep) != 0 {
 		builder.AddCellDep(&psh.omniLockScriptDep[0])
 		builder.AddCellDep(&psh.omniLockScriptDep[1])
@@ -622,7 +611,6 @@ func (psh *PerunScriptHandler) buildVCMergeTransaction(builder collector.Transac
 }
 
 func (psh *PerunScriptHandler) buildFirstForceCloseWithVCTransaction(builder collector.TransactionBuilder, group *transaction.ScriptGroup, forceCloseWithVCInfo *ForceCloseWithVCInfo) (bool, error) {
-	log.Println("buildFirstForceCloseWithVCTransaction")
 	if len(psh.omniLockScriptDep) != 0 {
 		builder.AddCellDep(&psh.omniLockScriptDep[0])
 		builder.AddCellDep(&psh.omniLockScriptDep[1])
@@ -647,13 +635,10 @@ func (psh *PerunScriptHandler) buildFirstForceCloseWithVCTransaction(builder col
 	}
 
 	// Virtual channel cell input.
-	vcInputIndex := builder.AddInput(&types.CellInput{
+_:
+	builder.AddInput(&types.CellInput{
 		PreviousOutput: &forceCloseWithVCInfo.VCCell,
 	})
-	err = builder.SetWitness(uint(vcInputIndex), types.WitnessTypeInputType, psh.mkWitnessVCDispute(forceCloseWithVCInfo.VCDispute))
-	if err != nil {
-		return false, err
-	}
 
 	for _, assetInput := range forceCloseWithVCInfo.AssetInputs {
 		builder.AddInput(&assetInput)
@@ -711,7 +696,6 @@ func (psh *PerunScriptHandler) buildFirstForceCloseWithVCTransaction(builder col
 }
 
 func (psh *PerunScriptHandler) buildSecondForceCloseWithVCTransaction(builder collector.TransactionBuilder, group *transaction.ScriptGroup, forceCloseWithVCInfo *ForceCloseWithVCInfo) (bool, error) {
-	log.Println("buildSecondForceCloseWithVCTransaction")
 	if len(psh.omniLockScriptDep) != 0 {
 		builder.AddCellDep(&psh.omniLockScriptDep[0])
 		builder.AddCellDep(&psh.omniLockScriptDep[1])
@@ -736,14 +720,9 @@ func (psh *PerunScriptHandler) buildSecondForceCloseWithVCTransaction(builder co
 	}
 
 	// Virtual channel cell input.
-	vcInputIndex := builder.AddInput(&types.CellInput{
+	_ = builder.AddInput(&types.CellInput{
 		PreviousOutput: &forceCloseWithVCInfo.VCCell,
 	})
-	err = builder.SetWitness(uint(vcInputIndex), types.WitnessTypeInputType, psh.mkWitnessVCDispute(forceCloseWithVCInfo.VCDispute))
-	if err != nil {
-		return false, err
-	}
-
 	for _, assetInput := range forceCloseWithVCInfo.AssetInputs {
 		builder.AddInput(&assetInput)
 	}
@@ -806,7 +785,6 @@ func (psh *PerunScriptHandler) buildSecondForceCloseWithVCTransaction(builder co
 		}
 	}
 	if !returnedVCBalance {
-		log.Println("restoredPayoutScript not equals payoutScript")
 		paymentOutput := psh.mkPaymentOutput(restoredPayoutScript, forceCloseWithVCInfo.VirtualChannelCapacity)
 		builder.AddOutput(paymentOutput, nil)
 	}
@@ -956,7 +934,6 @@ func (psh PerunScriptHandler) mkWitnessForceClose() []byte {
 func GetCKByteBalance(index int, state *channel.State) (uint64, error) {
 	assetIdx, ok := state.AssetIndex(asset.NewCKBytesNervosAsset())
 	if !ok {
-		log.Println("CKBytes asset not found in state", asset.NewCKBytesNervosAsset(), state.Assets)
 		return 0, nil
 	}
 	bal := state.Balances[assetIdx][index]

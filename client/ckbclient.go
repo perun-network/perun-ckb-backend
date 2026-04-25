@@ -29,6 +29,8 @@ import (
 
 var ErrNoChannelLiveCell = errors.New("no channel live cell found")
 
+const SearchIndexerLimit = 1199
+
 type BlockNumber = uint64
 
 type CKBClient interface {
@@ -70,7 +72,7 @@ type CKBClient interface {
 	// The implementation can assume that the channel has already been disputed and that the challenge duration
 	// is expired in real-time, though it may be necessary to wait until a block is produced with a timestamp strictly
 	// later than the expiration of the challenge duration.
-	ForceCloseWithVC(ctx context.Context, id channel.ID, vcid channel.ID, state *channel.State, vcstate *channel.State, sigs []wallet.Sig, vcSigs []wallet.Sig, params *channel.Params, indexMap []channel.Index) error
+	ForceCloseWithVC(ctx context.Context, id channel.ID, vcid channel.ID, state *channel.State, vcstate *channel.State, sigs []wallet.Sig, params *channel.Params, indexMap []channel.Index) error
 
 	// GetChannelWithID returns an on-chain channel with the given channel ID.
 	// Note: Only the channel ID field in the state must be checked, as the pcts verifies the integrity of said
@@ -182,7 +184,7 @@ var _ CKBClient = (*Client)(nil)
 
 func (c Client) Start(ctx context.Context, params *channel.Params, state *channel.State) (*types.Script, error) {
 	// TODO: Override defaulthash logic.
-	log.Println("Starting channel with params: ", params, "and state: ", state)
+	log.Println("Start called")
 	iter, _, err := c.mkMyCKBCellIterator()
 	if err != nil {
 		return nil, fmt.Errorf("creating cell iterator: %w", err)
@@ -199,13 +201,18 @@ func (c Client) Start(ctx context.Context, params *channel.Params, state *channe
 	if err != nil {
 		return nil, fmt.Errorf("creating Perun transaction builder: %w", err)
 	}
+	log.Println("Start: created Perun transaction builder")
 	if err := builder.Open(oi); err != nil {
 		return nil, fmt.Errorf("creating open transaction: %w", err)
 	}
 	tx, err := builder.Build(c.signer.Contexts())
+	log.Println("Start: created open transaction")
+	tx, err := builder.Build()
 	if err != nil {
+		log.Println("Start: error while building open Tx")
 		return nil, fmt.Errorf("building open transaction: %w", err)
 	}
+	log.Println("Start: built open transaction")
 	if err := c.submitTx(ctx, tx); err != nil {
 		return nil, fmt.Errorf("submitting transaction: %w", err)
 	}
@@ -359,6 +366,7 @@ func (c Client) createOrGetChannelToken(ctx context.Context, iter collector.Cell
 }
 
 func (c Client) Fund(ctx context.Context, pcts *types.Script, state *channel.State, params *channel.Params) error {
+	log.Println("Fund(ckbclient) called")
 	channelCell, err := c.getExactChannelLiveCell(ctx, pcts)
 	if err != nil {
 		return fmt.Errorf("getting channel live cell: %w", err)
@@ -728,7 +736,7 @@ func (c Client) getAssets(ctx context.Context, pcts *types.Script) (*indexer.Liv
 		WithData:         true,
 	}
 	cells, err := retryRPC(ctx, 3, 10*time.Second, func() (*indexer.LiveCells, error) {
-		return c.client.GetCells(ctx, searchKey, indexer.SearchOrderDesc, math.MaxUint32, "")
+		return c.client.GetCells(ctx, searchKey, indexer.SearchOrderDesc, SearchIndexerLimit, "")
 	})
 	return cells, err
 }
@@ -783,7 +791,7 @@ func (c Client) ForceClose(ctx context.Context, id channel.ID, state *channel.St
 	return c.submitTx(ctx, tx)
 }
 
-func (c Client) ForceCloseWithVC(ctx context.Context, id channel.ID, vcid channel.ID, state *channel.State, vcstate *channel.State, sigs []wallet.Sig, vcSigs []wallet.Sig, params *channel.Params, indexMap []channel.Index) error {
+func (c Client) ForceCloseWithVC(ctx context.Context, id channel.ID, vcid channel.ID, state *channel.State, vcstate *channel.State, sigs []wallet.Sig, params *channel.Params, indexMap []channel.Index) error {
 	virtualChannelCells, vcStatuses, err := c.getVirtualChannelLiveCellWithCache(ctx, vcid)
 	if err != nil {
 		return fmt.Errorf("getting virtual channel live cell: %w", err)
@@ -1048,7 +1056,7 @@ func (c Client) getAllChannelLiveCells(ctx context.Context) (*indexer.LiveCells,
 		WithData:         true,
 	}
 	cells, err := retryRPC(ctx, 3, 10*time.Second, func() (*indexer.LiveCells, error) {
-		return c.client.GetCells(ctx, searchKey, indexer.SearchOrderDesc, math.MaxUint32, "")
+		return c.client.GetCells(ctx, searchKey, indexer.SearchOrderDesc, SearchIndexerLimit, "")
 	})
 	return cells, err
 }
@@ -1066,10 +1074,7 @@ func (c Client) getAllVirtualChannelLiveCells(ctx context.Context) (*indexer.Liv
 		Filter:           nil,
 		WithData:         true,
 	}
-	cells, err := retryRPC(ctx, 3, 10*time.Second, func() (*indexer.LiveCells, error) {
-		return c.client.GetCells(ctx, searchKey, indexer.SearchOrderDesc, math.MaxUint32, "")
-	})
-	return cells, err
+	return c.client.GetCells(ctx, searchKey, indexer.SearchOrderDesc, math.MaxUint32, "")
 }
 
 func (c Client) getExactChannelLiveCell(ctx context.Context, pcts *types.Script) (*indexer.LiveCell, error) {
@@ -1081,7 +1086,7 @@ func (c Client) getExactChannelLiveCell(ctx context.Context, pcts *types.Script)
 		WithData:         true,
 	}
 	cells, err := retryRPC(ctx, 3, 10*time.Second, func() (*indexer.LiveCells, error) {
-		return c.client.GetCells(ctx, searchKey, indexer.SearchOrderDesc, math.MaxUint32, "")
+		return c.client.GetCells(ctx, searchKey, indexer.SearchOrderDesc, SearchIndexerLimit, "")
 	})
 	if err != nil {
 		log.Println("getExactChannelLiveCell: GetCells error: ", err)
@@ -1105,7 +1110,7 @@ func (c Client) getExactVirtualChannelLiveCell(ctx context.Context, vcts *types.
 		WithData:         true,
 	}
 	cells, err := retryRPC(ctx, 3, 10*time.Second, func() (*indexer.LiveCells, error) {
-		return c.client.GetCells(ctx, searchKey, indexer.SearchOrderDesc, math.MaxUint32, "")
+		return c.client.GetCells(ctx, searchKey, indexer.SearchOrderDesc, SearchIndexerLimit, "")
 	})
 	log.Println("getExactVirtualChannelLiveCell: GetCells")
 	if err != nil {
@@ -1179,7 +1184,7 @@ func (c Client) getChannelLiveCellWithCache(ctx context.Context, id channel.ID) 
 	}
 	errCache := c.cache.Set(id, cell.Output.Type)
 	if errCache != nil {
-		log.Printf("warning: failed to cache channel cell: %v", errCache)
+		return c.getChannelLiveCellWithCache(ctx, id)
 	}
 	return cell, status, err
 }
@@ -1214,7 +1219,7 @@ func (c Client) getVirtualChannelLiveCellWithCache(ctx context.Context, id chann
 	}
 	errCache := c.vccache.Set(id, cell.Output.Type)
 	if errCache != nil {
-		log.Printf("warning: failed to cache virtual channel cell: %v", errCache)
+		return c.getVirtualChannelLiveCellWithCache(ctx, id)
 	}
 	return []*indexer.LiveCell{cell}, []*molecule.VirtualChannelStatus{status}, err
 }

@@ -4,6 +4,9 @@ import (
 	"errors"
 	"github.com/ethereum/go-ethereum/crypto"
 	"io"
+
+	"github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
+	"golang.org/x/crypto/blake2b"
 	"perun.network/go-perun/wallet"
 	"perun.network/perun-ckb-backend/wallet/address"
 )

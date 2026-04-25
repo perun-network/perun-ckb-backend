@@ -1,0 +1,53 @@
+{
+    "dao": {
+        "cell_dep": {
+            "dep_type": "code",
+            "out_point": {
+                "index": "0x2",
+                "tx_hash": "0x8f8c79eb6671709633fe6a46de93c0fedc9c1b8a6527a18d3983879542635c9f"
+            }
+        },
+        "script_id": {
+            "code_hash": "0x82d76d1b75fe2fd9a27dfbaa65a039221a380d76c926f378d3f81cf3e7e13f2e",
+            "hash_type": "type"
+        }
+    },
+    "secp256k1_blake160_multisig_all": {
+        "cell_dep": {
+            "dep_type": "dep_group",
+            "out_point": {
+                "index": "0x1",
+                "tx_hash": "0xf8de3bb47d055cdf460d93a2a6e1b05f7432f9777c8c474abf4eec1d4aee5d37"
+            }
+        },
+        "script_id": {
+            "code_hash": "0x5c5069eb0857efc65e1bca0c07df34c31663b3622fd3876c876320fc9634e2a8",
+            "hash_type": "type"
+        }
+    },
+    "secp256k1_blake160_sighash_all": {
+        "cell_dep": {
+            "dep_type": "dep_group",
+            "out_point": {
+                "index": "0x0",
+                "tx_hash": "0xf8de3bb47d055cdf460d93a2a6e1b05f7432f9777c8c474abf4eec1d4aee5d37"
+            }
+        },
+        "script_id": {
+            "code_hash": "0x9bd7e06f3ecf4be0f2fcd2188b23f1b9fcc88e5d4b65a8637b17723bbda3cce8",
+            "hash_type": "type"
+        }
+    },
+    "secp256k1_data": {
+        "out_point": {
+            "index": "0x3",
+            "tx_hash": "0x8f8c79eb6671709633fe6a46de93c0fedc9c1b8a6527a18d3983879542635c9f"
+        }
+    },
+    "type_id": {
+        "script_id": {
+            "code_hash": "0x00000000000000000000000000000000000000000000000000545950455f4944",
+            "hash_type": "type"
+        }
+    }
+}
