@@ -6,9 +6,10 @@ package client_test
 import (
 	"context"
 	"math/big"
+	"testing"
+
 	"perun.network/go-perun/channel"
 	"perun.network/go-perun/wallet"
-	"testing"
 
 	"perun.network/go-perun/client"
 	"perun.network/go-perun/log"
@@ -84,7 +85,7 @@ func TestPaymentDispute(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), testDuration)
 	defer cancel()
 
-	setup := ctest.MakePaymentChannelSetup(t, rng, false)
+	setup := ctest.MakePaymentChannelSetup(t, rng)
 	clienttest.TestPaymentChannelDispute(ctx, t, setup)
 	log.Info("Payment dispute test done")
 }

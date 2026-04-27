@@ -43,14 +43,7 @@ const (
 	ChallengeDurationBlocks = 90
 )
 
-const (
-	// Testnet Config
-	TestnetTimeout                 = 5 * time.Minute
-	TestnetBlockInterval           = 3 * time.Second
-	TestnetChallengeDurationBlocks = 9
-)
-
-func MakeRoleSetups(rng *rand.Rand, s *test.Setup, names []string, isTestnet bool) []clienttest.RoleSetup {
+func MakeRoleSetups(rng *rand.Rand, s *test.Setup, names []string) []clienttest.RoleSetup {
 	setups := make([]clienttest.RoleSetup, len(names))
 	bus := wire.NewLocalBus()
 
@@ -63,15 +56,9 @@ func MakeRoleSetups(rng *rand.Rand, s *test.Setup, names []string, isTestnet boo
 		var rpcURL string
 		var challengeDuration uint64
 		var timeout time.Duration
-		if isTestnet {
-			rpcURL = test.TestnetRpcNodeURL
-			challengeDuration = TestnetChallengeDurationBlocks
-			timeout = TestnetTimeout
-		} else {
-			rpcURL = test.DevnetRpcNodeURL
-			challengeDuration = ChallengeDurationBlocks * uint64(time.Second/BlockInterval)
-			timeout = DefaultTimeout
-		}
+		rpcURL = test.DevnetRpcNodeURL
+		challengeDuration = ChallengeDurationBlocks * uint64(time.Second/BlockInterval)
+		timeout = DefaultTimeout
 		balanceRPC, err := rpc.Dial(rpcURL)
 		if err != nil {
 			panic("Error dialing RPC: " + err.Error())
@@ -152,16 +139,12 @@ func MakeRoleSetupsCross(rng *rand.Rand, s *test.SetupCross, names []string) []c
 	return setups
 }
 
-func MakePaymentChannelSetup(t *testing.T, rng *rand.Rand, isTestnet bool) clienttest.PaymentChannelSetup {
+func MakePaymentChannelSetup(t *testing.T, rng *rand.Rand) clienttest.PaymentChannelSetup {
 	t.Helper()
 	name := [2]string{"Alice", "Bob"}
 	var setup *test.Setup
-	if isTestnet {
-		setup = test.NewTestnetVirtualChannelSetup(t, rng)
-	} else {
-		setup = test.NewDevnetVirtualChannelSetup(t, rng)
-	}
-	roleSetup := MakeRoleSetups(rng, setup, name[:], isTestnet)
+	setup = test.NewDevnetVirtualChannelSetup(t, rng)
+	roleSetup := MakeRoleSetups(rng, setup, name[:])
 
 	return clienttest.PaymentChannelSetup{
 		Clients:           [2]clienttest.RoleSetup(roleSetup),
@@ -179,17 +162,13 @@ func MakePaymentChannelSetup(t *testing.T, rng *rand.Rand, isTestnet bool) clien
 	}
 }
 
-func MakeVirtualChannelSetup(t *testing.T, rng *rand.Rand, isTestnet bool) clienttest.VirtualChannelSetup {
+func MakeVirtualChannelSetup(t *testing.T, rng *rand.Rand) clienttest.VirtualChannelSetup {
 	t.Helper()
 	name := [3]string{"Alice", "Bob", "Ingrid"}
 	var setup *test.Setup
-	if isTestnet {
-		setup = test.NewTestnetVirtualChannelSetup(t, rng)
-	} else {
-		setup = test.NewDevnetVirtualChannelSetup(t, rng)
-	}
+	setup = test.NewDevnetVirtualChannelSetup(t, rng)
 
-	roleSetup := MakeRoleSetups(rng, setup, name[:], isTestnet)
+	roleSetup := MakeRoleSetups(rng, setup, name[:])
 
 	return clienttest.VirtualChannelSetup{
 		Clients:           [3]clienttest.RoleSetup(roleSetup),

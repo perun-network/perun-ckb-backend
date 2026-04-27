@@ -3,5 +3,7 @@
 dev:
 	go run ../cmd/get_address.go
 	tmuxp load -d ./devnet-session.yaml
-	sleep 200
+	@echo "Waiting for the local devnet to start..."
+	@sleep 60
 	go run ../cmd/fund_sudt.go
+	tmux a -t devnet

@@ -90,6 +90,8 @@ make dev
 go test ./...
 ```
 
+**Disclaimer:** The tests require at least 3 minutes to complete.
+
 ## Security Disclaimer
 
 The authors take no responsibility for any loss of digital assets or other damage caused by the use of this software.

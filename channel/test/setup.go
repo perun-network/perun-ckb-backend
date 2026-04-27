@@ -17,14 +17,15 @@ package test
 import (
 	"errors"
 	"fmt"
-	"github.com/decred/dcrd/dcrec/secp256k1/v4"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/stretchr/testify/require"
 	"log"
 	"math/big"
 	"math/rand"
 	"os"
 	"testing"
+
+	"github.com/decred/dcrd/dcrec/secp256k1/v4"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/stretchr/testify/require"
 
 	"github.com/nervosnetwork/ckb-sdk-go/v2/rpc"
 	ckbsigner "github.com/nervosnetwork/ckb-sdk-go/v2/transaction/signer"
@@ -42,11 +43,9 @@ import (
 )
 
 const (
-	DevnetRpcNodeURL  = "http://localhost:8114"
-	TestnetRpcNodeURL = "https://testnet.ckb.dev/"
-	testNetwork       = types.NetworkTest
-	devNetDir         = "../devnet"
-	testNetDir        = "../testnet"
+	DevnetRpcNodeURL = "http://localhost:8114"
+	testNetwork      = types.NetworkTest
+	devNetDir        = "../devnet"
 )
 
 type SetupCross struct {
@@ -331,14 +330,6 @@ func NewSetup(t *testing.T, rng *rand.Rand, omni bool) *Setup {
 
 func NewDevnetVirtualChannelSetup(t *testing.T, rng *rand.Rand) *Setup {
 	return newVirtualChannelSetupForNetwork(t, rng, devNetDir, DevnetRpcNodeURL)
-}
-
-func NewTestnetLedgerChannelSetup(t *testing.T, rng *rand.Rand) *Setup {
-	return newLedgerChannelSetupForNetwork(t, rng, testNetDir, TestnetRpcNodeURL)
-}
-
-func NewTestnetVirtualChannelSetup(t *testing.T, rng *rand.Rand) *Setup {
-	return newVirtualChannelSetupForNetwork(t, rng, testNetDir, TestnetRpcNodeURL)
 }
 
 func newLedgerChannelSetupForNetwork(t *testing.T, rng *rand.Rand, netDir, rpcURL string) *Setup {
