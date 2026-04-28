@@ -10,35 +10,36 @@ import (
 // use the go-perun framework. This includes the Perun scripts on their
 // respective networks.
 type Deployment struct {
-	Network types.Network
+	Network types.Network `json:"network"`
 
-	PCTSDep types.CellDep
-	PCLSDep types.CellDep
-	VCTSDep types.CellDep
-	VCLSDep types.CellDep
-	PFLSDep types.CellDep
+	PCTSDep types.CellDep `json:"pcts_dep"`
+	PCLSDep types.CellDep `json:"pcls_dep"`
+	PFLSDep types.CellDep `json:"pfls_dep"`
+	VCLSDep types.CellDep `json:"vcls_dep"`
+	VCTSDep types.CellDep `json:"vcts_dep"`
 
-	PCTSCodeHash types.Hash
-	PCTSHashType types.ScriptHashType
+	PCTSCodeHash types.Hash           `json:"pcts_code_hash"`
+	PCTSHashType types.ScriptHashType `json:"pcts_hash_type"`
 
-	PCLSCodeHash types.Hash
-	PCLSHashType types.ScriptHashType
+	PCLSCodeHash types.Hash           `json:"pcls_code_hash"`
+	PCLSHashType types.ScriptHashType `json:"pcls_hash_type"`
 
-	PFLSCodeHash    types.Hash
-	PFLSHashType    types.ScriptHashType
-	PFLSMinCapacity uint64
+	PFLSCodeHash    types.Hash           `json:"pfls_code_hash"`
+	PFLSHashType    types.ScriptHashType `json:"pfls_hash_type"`
+	PFLSMinCapacity uint64               `json:"pfls_min_capacity"`
 
-	VCTSCodeHash types.Hash
-	VCTSHashType types.ScriptHashType
+	DefaultLockScript    types.Script         `json:"default_lock_script"`
+	DefaultLockScriptDep types.CellDep        `json:"default_lock_script_dep"`
+	OmniLockScript       types.Script         `json:"omni_lock_script"`
+	OmniLockScriptDep    []types.CellDep      `json:"omni_lock_script_dep"`
+	VCTSCodeHash         types.Hash           `json:"vcts_code_hash"`
+	VCTSHashType         types.ScriptHashType `json:"vcts_hash_type"`
 
-	VCLSCodeHash types.Hash
-	VCLSHashType types.ScriptHashType
+	VCLSCodeHash types.Hash           `json:"vcls_code_hash"`
+	VCLSHashType types.ScriptHashType `json:"vcls_hash_type"`
 
-	DefaultLockScript    types.Script
-	DefaultLockScriptDep types.CellDep
-
-	SUDTs    map[types.Hash]types.Script
-	SUDTDeps map[types.Hash]types.CellDep
+	SUDTs    map[types.Hash]types.Script  `json:"sudts"`
+	SUDTDeps map[types.Hash]types.CellDep `json:"sudt_deps"`
 }
 
 type DeploymentConfig struct {

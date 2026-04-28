@@ -1,35 +1,39 @@
 package channel
 
 import (
-	"fmt"
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/pkg/errors"
 	"math"
 	"math/big"
-
-	"golang.org/x/crypto/blake2b"
 	"perun.network/go-perun/channel"
 	"perun.network/go-perun/wallet"
 	"perun.network/perun-ckb-backend/channel/asset"
-	"perun.network/perun-ckb-backend/encoding"
 )
 
+const CKBBackendID = 3
+
 func init() {
-	channel.SetBackend(Backend)
+	channel.SetBackend(Backend, CKBBackendID)
 }
 
 type backend struct{}
 
-func (b backend) NewAppID() channel.AppID {
+func (b backend) NewAppID() (channel.AppID, error) {
 	panic("no app channels")
 }
 
 var Backend = backend{}
 
-func (b backend) CalcID(params *channel.Params) channel.ID {
-	cp, err := encoding.PackChannelParameters(params)
+func (b backend) CalcID(params *channel.Params) (channel.ID, error) {
+	p, err := ToEthParams(params)
 	if err != nil {
-		panic(err)
+		return channel.ID{}, errors.WithMessage(err, "could not convert params")
 	}
-	return blake2b.Sum256(cp.AsSlice())
+	bytes, err := EncodeChannelParams(&p)
+	if err != nil {
+		return channel.ID{}, errors.WithMessage(err, "could not encode params")
+	}
+	return crypto.Keccak256Hash(bytes), nil
 }
 
 func (b backend) CalcVCID(params *channel.Params) channel.ID {
@@ -37,19 +41,30 @@ func (b backend) CalcVCID(params *channel.Params) channel.ID {
 }
 
 func (b backend) Sign(account wallet.Account, state *channel.State) (wallet.Sig, error) {
-	s, err := encoding.PackChannelState(state)
-	if err != nil {
-		return nil, fmt.Errorf("unable to encode channel state: %w", err)
+	if err := checkBackends(state.Allocation.Backends); err != nil {
+		return nil, errors.New("invalid backends in state allocation: " + err.Error())
 	}
-	return account.SignData(s.AsSlice())
+
+	ethState := ToEthState(state)
+
+	bytes, err := EncodeEthState(&ethState)
+	if err != nil {
+		return nil, err
+	}
+	sig, err := account.SignData(bytes)
+	if err != nil {
+		return nil, err
+	}
+	return sig, err
 }
 
 func (b backend) Verify(addr wallet.Address, state *channel.State, sig wallet.Sig) (bool, error) {
-	s, err := encoding.PackChannelState(state)
+	ethState := ToEthState(state)
+	bytes, err := EncodeEthState(&ethState)
 	if err != nil {
-		return false, fmt.Errorf("unable to encode channel state: %w", err)
+		return false, err
 	}
-	return wallet.VerifySignature(s.AsSlice(), sig, addr)
+	return wallet.VerifySignature(bytes, sig, addr)
 }
 
 // NewAsset returns an empty (and thus invalid) asset for unmarshalling into.
@@ -58,3 +73,23 @@ func (b backend) NewAsset() channel.Asset {
 }
 
 var MaxBalance = new(big.Int).SetUint64(math.MaxUint64)
+
+func checkBackends(backends []wallet.BackendID) error {
+	if len(backends) == 0 {
+		return errors.New("backends slice is empty")
+	}
+
+	hasCKBBackend := false
+
+	for _, backend := range backends {
+		if backend == CKBBackendID {
+			hasCKBBackend = true
+		}
+	}
+
+	if !hasCKBBackend {
+		return errors.New("CKBBackendID not found in backends")
+	}
+
+	return nil
+}

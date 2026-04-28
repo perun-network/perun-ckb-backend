@@ -12,6 +12,7 @@ import (
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types/numeric"
 	"github.com/stretchr/testify/require"
 	"perun.network/go-perun/channel/test"
+	"perun.network/go-perun/wallet"
 	btest "perun.network/perun-ckb-backend/backend/test"
 	"perun.network/perun-ckb-backend/channel/asset"
 	molecule2 "perun.network/perun-ckb-backend/encoding/molecule"
@@ -29,6 +30,7 @@ func TestScriptHandler(t *testing.T) {
 	senderCkbAddr := sender.ToCKBAddress(types.NetworkTest)
 	defaultLock := btest.NewRandomScript(rng)
 	defaultLockDep := btest.NewRandomCellDep(rng)
+	omnilockDep := []types.CellDep{*btest.NewRandomCellDep(rng), *btest.NewRandomCellDep(rng)}
 	pctsDep := btest.NewRandomCellDep(rng)
 	pclsDep := btest.NewRandomCellDep(rng)
 	pflsDep := btest.NewRandomCellDep(rng)
@@ -37,6 +39,7 @@ func TestScriptHandler(t *testing.T) {
 		btest.WithPCLS(types.Hash{}, *pclsDep, types.HashTypeData),
 		btest.WithPFLS(types.Hash{}, *pflsDep, types.HashTypeData),
 		btest.WithDefaultLockScript(*defaultLock, *defaultLockDep),
+		btest.WithOmniLockScript(*btest.NewRandomScript(rng), omnilockDep...),
 	)
 	psh := transaction.NewPerunScriptHandlerWithDeployment(*deployment)
 
@@ -61,7 +64,7 @@ func TestScriptHandler(t *testing.T) {
 		mockIterator.GenerateInput(rng, txtest.WithOutPoint(channelTokenOutpoint))
 		liveCellMap := liveCellMapFromIterators(mockIterator)
 		client := txtest.NewMockClient(txtest.WithMockLiveCells(liveCellMap))
-		b, err := transaction.NewPerunTransactionBuilder(client, iters, make(map[types.Hash]types.Script), psh, senderCkbAddr)
+		b, err := transaction.NewPerunTransactionBuilder(client, iters, make(map[types.Hash]types.Script), psh, senderCkbAddr, false)
 		require.NoError(t, err, "creating perun transaction builder")
 		b.Register(mockHandler)
 		// Open
@@ -71,13 +74,16 @@ func TestScriptHandler(t *testing.T) {
 			test.WithNumAssets(1),
 			test.WithAssets(asset.NewCKBytesAsset()),
 			test.WithNumLocked(0),
+			test.WithBackend(txtest.CKBBackendID),
+			test.WithBackendIDs([]wallet.BackendID{txtest.CKBBackendID}),
 			test.WithBalancesInRange(big.NewInt(0).Mul(big.NewInt(100), big.NewInt(100_000_000)), big.NewInt(0).Mul(big.NewInt(10_000), big.NewInt(100_000_000))),
 		)
 		params := test.NewRandomParams(rng,
 			test.WithNumParts(2),
 			test.WithLedgerChannel(true),
 			test.WithVirtualChannel(false),
-			test.WithoutApp())
+			test.WithoutApp(),
+			test.WithBackend(txtest.CKBBackendID))
 		oi := transaction.NewOpenInfo([32]byte{}, btest.NewRandomToken(rng,
 			btest.WithOutpoint(*channelTokenOutpoint)),
 			params,
@@ -111,7 +117,7 @@ func TestScriptHandler(t *testing.T) {
 		mockIterator.GenerateInput(rng, txtest.WithOutPoint(channelTokenOutpoint))
 		liveCellMap := liveCellMapFromIterators(mockIterator, sudtMockIterator)
 		client := txtest.NewMockClient(txtest.WithMockLiveCells(liveCellMap))
-		b, err := transaction.NewPerunTransactionBuilder(client, iters, map[types.Hash]types.Script{sudtTypeScript.Hash(): *sudtTypeScript}, psh, senderCkbAddr)
+		b, err := transaction.NewPerunTransactionBuilder(client, iters, map[types.Hash]types.Script{sudtTypeScript.Hash(): *sudtTypeScript}, psh, senderCkbAddr, false)
 		require.NoError(t, err, "creating perun transaction builder")
 		b.Register(mockHandler)
 		maxSUDTCellCapacity := transaction.CalculateCellCapacity(types.CellOutput{
@@ -124,6 +130,8 @@ func TestScriptHandler(t *testing.T) {
 			test.WithoutApp(),
 			test.WithNumParts(2),
 			test.WithAssets(asset.NewCKBytesAsset(), asset.NewSUDTAsset(asset.NewSUDT(*sudtTypeScript, maxSUDTCellCapacity))),
+			test.WithBackend(txtest.CKBBackendID),
+			test.WithBackendIDs([]wallet.BackendID{txtest.CKBBackendID}),
 			test.WithNumLocked(0),
 			test.WithBalancesInRange(big.NewInt(0).Mul(big.NewInt(100), big.NewInt(100_000_000)), big.NewInt(0).Mul(big.NewInt(10_000), big.NewInt(100_000_000))),
 		)
@@ -131,6 +139,7 @@ func TestScriptHandler(t *testing.T) {
 			test.WithNumParts(2),
 			test.WithLedgerChannel(true),
 			test.WithVirtualChannel(false),
+			test.WithBackend(txtest.CKBBackendID),
 			test.WithoutApp())
 		oi := transaction.NewOpenInfo([32]byte{}, btest.NewRandomToken(rng,
 			btest.WithOutpoint(*channelTokenOutpoint)),
@@ -171,7 +180,7 @@ func TestScriptHandler(t *testing.T) {
 		mockIterator.GenerateInput(rng, txtest.WithOutPoint(channelTokenOutpoint))
 		liveCellMap := liveCellMapFromIterators(mockIterator, sudtMockIterator)
 		client := txtest.NewMockClient(txtest.WithMockLiveCells(liveCellMap))
-		b, err := transaction.NewPerunTransactionBuilder(client, iters, map[types.Hash]types.Script{sudtTypeScript.Hash(): *sudtTypeScript}, psh, senderCkbAddr)
+		b, err := transaction.NewPerunTransactionBuilder(client, iters, map[types.Hash]types.Script{sudtTypeScript.Hash(): *sudtTypeScript}, psh, senderCkbAddr, false)
 		require.NoError(t, err, "creating perun transaction builder")
 		b.Register(mockHandler)
 		maxSUDTCellCapacity := transaction.CalculateCellCapacity(types.CellOutput{
@@ -184,6 +193,8 @@ func TestScriptHandler(t *testing.T) {
 			test.WithoutApp(),
 			test.WithNumParts(2),
 			test.WithAssets(asset.NewCKBytesAsset(), asset.NewSUDTAsset(asset.NewSUDT(*sudtTypeScript, maxSUDTCellCapacity))),
+			test.WithBackend(txtest.CKBBackendID),
+			test.WithBackendIDs([]wallet.BackendID{txtest.CKBBackendID}),
 			test.WithNumLocked(0),
 			test.WithBalances([]*big.Int{big.NewInt(0).SetUint64(ckbInFundingCells), big.NewInt(100)},
 				[]*big.Int{big.NewInt(0).SetUint64(ckbInFundingCells), big.NewInt(100)}),
@@ -192,6 +203,7 @@ func TestScriptHandler(t *testing.T) {
 			test.WithNumParts(2),
 			test.WithLedgerChannel(true),
 			test.WithVirtualChannel(false),
+			test.WithBackend(txtest.CKBBackendID),
 			test.WithoutApp())
 		oi := transaction.NewOpenInfo([32]byte{}, btest.NewRandomToken(rng,
 			btest.WithOutpoint(*channelTokenOutpoint)),
@@ -209,13 +221,13 @@ func TestScriptHandler(t *testing.T) {
 			transaction.DefaultFeeShannon),
 			"transaction should be properly balanced")
 	})
-
 }
 
 func checkTransactionBalance(
 	tx *ckbtransaction.TransactionWithScriptGroups,
 	mockIterator *txtest.MockIterator,
-	expectedFeeShannon uint64) error {
+	expectedFeeShannon uint64,
+) error {
 	inputs := mockIterator.GetInputs()
 	findInInputs := func(cellInput *types.CellInput) *types.TransactionInput {
 		for _, input := range inputs {
@@ -254,7 +266,8 @@ func checkSudtTransactionBalance(
 	mockIterator *txtest.MockIterator,
 	sudtMockIterator *txtest.MockIterator,
 	sudtScript types.Script,
-	expectedFeeShannon uint64) error {
+	expectedFeeShannon uint64,
+) error {
 	ckbInputs := mockIterator.GetInputs()
 	sudtInputs := sudtMockIterator.GetInputs()
 	findInCKBInputs := func(cellInput *types.CellInput) *types.TransactionInput {

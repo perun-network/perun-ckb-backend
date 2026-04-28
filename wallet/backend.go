@@ -2,22 +2,19 @@ package wallet
 
 import (
 	"errors"
-	"fmt"
 	"io"
 
-	"github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
-	"golang.org/x/crypto/blake2b"
+	"github.com/ethereum/go-ethereum/crypto"
 	"perun.network/go-perun/wallet"
 	"perun.network/perun-ckb-backend/wallet/address"
 )
 
-type backend struct {
-}
+type backend struct{}
 
 var Backend = backend{}
 
 func init() {
-	wallet.SetBackend(Backend)
+	wallet.SetBackend(Backend, address.CKBBackendID)
 }
 
 // NewAddress returns an empty address.Participant to marshal into.
@@ -29,7 +26,7 @@ func (b backend) NewAddress() wallet.Address {
 // The padding used is defined by PadDEREncodedSignature / RemovePadding.
 // The signature is then returned (still padded, as VerifySignature also expects a padded signature).
 func (b backend) DecodeSig(reader io.Reader) (wallet.Sig, error) {
-	sig := make([]byte, PaddedSignatureLength)
+	sig := make([]byte, 65)
 	if _, err := io.ReadFull(reader, sig); err != nil {
 		return nil, err
 	}
@@ -44,14 +41,19 @@ func (b backend) VerifySignature(msg []byte, sig wallet.Sig, a wallet.Address) (
 	if !ok {
 		return false, errors.New("address is not of type Participant")
 	}
-	hash := blake2b.Sum256(msg)
-	sigWithoutPadding, err := RemovePadding(sig)
-	if err != nil {
-		return false, fmt.Errorf("removing padding: %w", err)
+	hash := crypto.Keccak256(msg)
+	prefix := []byte("\x19Ethereum Signed Message:\n32")
+	hash = crypto.Keccak256(prefix, hash)
+	sigCopy := make([]byte, 65) //nolint:gomnd
+	copy(sigCopy, sig)
+	if len(sigCopy) == 65 && (sigCopy[65-1] >= 27) { //nolint:gomnd
+		sigCopy[65-1] -= 27
 	}
-	signature, err := ecdsa.ParseDERSignature(sigWithoutPadding)
+	pk, err := crypto.SigToPub(hash, sigCopy)
 	if err != nil {
-		return false, fmt.Errorf("parsing DER signature: %w", err)
+		return false, err
 	}
-	return signature.Verify(hash[:], addr.PubKey), nil
+	recovered := crypto.PubkeyToAddress(*pk)
+	expected := crypto.PubkeyToAddress(*addr.PubKey.ToECDSA())
+	return recovered == expected, nil
 }

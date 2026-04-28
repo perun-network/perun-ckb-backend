@@ -1,6 +1,8 @@
 package transaction
 
 import (
+	"fmt"
+
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types/molecule"
 	"perun.network/go-perun/channel"
@@ -66,10 +68,13 @@ func NewVCDisputeInfo(
 	}
 }
 
-func (di *VcDisputeInfo) mkInitialVirtualChannelCell(vcLockScript, vcTypeScript types.Script) (types.CellOutput, []byte) {
+func (di *VcDisputeInfo) mkInitialVirtualChannelCell(vcLockScript, vcTypeScript types.Script) (types.CellOutput, []byte, error) {
 	di.VCTS = &vcTypeScript
 
-	vcStatus := di.mkInitialVirtualChannelStatus()
+	vcStatus, err := di.mkInitialVirtualChannelStatus()
+	if err != nil {
+		return types.CellOutput{}, nil, err
+	}
 	vcOutput := types.CellOutput{
 		Capacity: 0,
 		Lock:     &vcLockScript,
@@ -77,18 +82,18 @@ func (di *VcDisputeInfo) mkInitialVirtualChannelCell(vcLockScript, vcTypeScript 
 	}
 	capacity := vcOutput.OccupiedCapacity(vcStatus.AsSlice())
 	vcOutput.Capacity = capacity
-	return vcOutput, vcStatus.AsSlice()
+	return vcOutput, vcStatus.AsSlice(), nil
 }
 
-func (di *VcDisputeInfo) mkInitialVirtualChannelStatus() molecule.VirtualChannelStatus {
+func (di *VcDisputeInfo) mkInitialVirtualChannelStatus() (molecule.VirtualChannelStatus, error) {
 	packedState, err := encoding.PackChannelState(di.VcState)
 	if err != nil {
-		panic("Error packing channel state: " + err.Error())
+		return molecule.VirtualChannelStatus{}, fmt.Errorf("packing vc state: %w", err)
 	}
 
 	ownerPacked, err := di.Owner.PackOnChainParticipant()
 	if err != nil {
-		panic("Error packing owner: " + err.Error())
+		return molecule.VirtualChannelStatus{}, fmt.Errorf("packing owner: %w", err)
 	}
 
 	return molecule.NewVirtualChannelStatusBuilder().
@@ -96,27 +101,27 @@ func (di *VcDisputeInfo) mkInitialVirtualChannelStatus() molecule.VirtualChannel
 		Parents(*di.ParentsVec).
 		FirstForceClose(encoding.False).
 		Owner(ownerPacked).
-		Build()
+		Build(), nil
 }
 
-func (di *VcDisputeInfo) update(vcts *types.Script) *VcDisputeInfo {
+func (di *VcDisputeInfo) update(vcts *types.Script) (*VcDisputeInfo, error) {
 	builder := di.LCStatus.AsBuilder()
 	newState, err := encoding.PackChannelState(di.ParentState)
 	if err != nil {
-		panic(err)
+		return nil, fmt.Errorf("packing parent state: %w", err)
 	}
 	newStatus := builder.State(newState).Disputed(encoding.True).VcDisputed(encoding.True).VctsHash(*molecule2.PackByte32(vcts.Hash())).Build()
 	di.LCStatus = &newStatus
-	return di
+	return di, nil
 }
 
-func (di *VcDisputeInfo) updateVCStatus() *VcDisputeInfo {
+func (di *VcDisputeInfo) updateVCStatus() (*VcDisputeInfo, error) {
 	builder := di.VCStatus.AsBuilder()
 	newVCState, err := encoding.PackChannelState(di.VcState)
 	if err != nil {
-		panic(err)
+		return nil, fmt.Errorf("packing vc state: %w", err)
 	}
 	newVCStatus := builder.Vcstate(newVCState).Build()
 	di.VCStatus = &newVCStatus
-	return di
+	return di, nil
 }

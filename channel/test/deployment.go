@@ -14,13 +14,19 @@ import (
 	"perun.network/perun-ckb-backend/backend"
 )
 
-const PFLSMinCapacity = 4100000032
+const (
+	PFLSMinCapacity = 4100000032
+	sudtMaxCapacity = 200_00_000_000
+)
 
+// SUDTInfo contains the script and cell dep of an SUDT.
 type SUDTInfo struct {
-	Script  *types.Script
-	CellDep *types.CellDep
+	Script      *types.Script  `json:"script"`
+	CellDep     *types.CellDep `json:"cell_dep"`
+	MaxCapacity int64          `json:"max_capacity"` //capacity needed for typescript(sudt) + lockscript(participant's) + outputs data
 }
 
+// Migration contains the cell recipes and dep group recipes of a nervos_deployment.
 type Migration struct {
 	CellRecipes []struct {
 		Name             string      `json:"name"`
@@ -33,63 +39,63 @@ type Migration struct {
 	DepGroupRecipes []interface{} `json:"dep_group_recipes"`
 }
 
-func (m Migration) MakeDeployment(systemScripts SystemScripts, sudtOwnerLockArg string, vcm Migration) (backend.Deployment, SUDTInfo, error) {
+func parseDepType(depTypeRaw string) types.DepType {
+	switch strings.ToLower(depTypeRaw) {
+	case "code":
+		return types.DepTypeCode
+	case "depgroup", "dep_group":
+		return types.DepTypeDepGroup
+	default:
+		log.Fatalf("Unknown dep type: %s", depTypeRaw)
+		return "" // unreachable
+	}
+}
+
+// MakeDeployment creates a deployment from the migration and system scripts.
+func (m Migration) MakeDeployment(systemScripts SystemScripts, sudtOwnerLockArg string, vcm Migration) (backend.Deployment, *SUDTInfo, error) {
+	log.Println("Lock Hashes: ", sudtOwnerLockArg)
 	sudtInfo, err := m.GetSUDT()
 	if err != nil {
-		return backend.Deployment{}, SUDTInfo{}, err
+		return backend.Deployment{}, nil, err
 	}
-	pcts := m.CellRecipes[1]
+	pcts := m.CellRecipes[3]
 	if pcts.Name != "pcts" {
-		return backend.Deployment{}, SUDTInfo{}, fmt.Errorf("second cell recipe must be pcts")
+		return backend.Deployment{}, nil, fmt.Errorf("second cell recipe must be pcts")
 	}
-	pcls := m.CellRecipes[2]
+	pcls := m.CellRecipes[1]
 	if pcls.Name != "pcls" {
-		return backend.Deployment{}, SUDTInfo{}, fmt.Errorf("third cell recipe must be pcls")
+		return backend.Deployment{}, nil, fmt.Errorf("third cell recipe must be pcls")
 	}
-	pfls := m.CellRecipes[3]
+	pfls := m.CellRecipes[2]
 	if pfls.Name != "pfls" {
-		return backend.Deployment{}, SUDTInfo{}, fmt.Errorf("fourth cell recipe must be pfls")
+		return backend.Deployment{}, nil, fmt.Errorf("fourth cell recipe must be pfls")
 	}
 
 	// Virtual channel scripts.
 	vcts := vcm.CellRecipes[0]
 	if vcts.Name != "vcts" {
-		return backend.Deployment{}, SUDTInfo{}, fmt.Errorf("fifth cell recipe must be vcts")
+		return backend.Deployment{}, nil, fmt.Errorf("fifth cell recipe must be vcts")
 	}
 	vcls := vcm.CellRecipes[1]
 	if vcls.Name != "vcls" {
-		return backend.Deployment{}, SUDTInfo{}, fmt.Errorf("sixth cell recipe must be vcls")
+		return backend.Deployment{}, nil, fmt.Errorf("sixth cell recipe must be vcls")
 	}
 	// NOTE: The SUDT lock-arg always contains a newline character at the end.
 	hexString := strings.ReplaceAll(sudtOwnerLockArg[2:], "\n", "")
 	hexString = strings.ReplaceAll(hexString, "\r", "")
 	hexString = strings.ReplaceAll(hexString, " ", "")
-	sudtInfo.Script.Args, err = hex.DecodeString(hexString)
-	if err != nil {
-		return backend.Deployment{}, SUDTInfo{}, fmt.Errorf("invalid sudt owner lock arg: %v", err)
+	byteString, err := hex.DecodeString(hexString)
+	sUDTInfo := &SUDTInfo{
+		Script: &types.Script{
+			CodeHash: sudtInfo.Script.CodeHash,
+			HashType: sudtInfo.Script.HashType,
+			Args:     byteString,
+		},
+		CellDep:     sudtInfo.CellDep,
+		MaxCapacity: sudtInfo.MaxCapacity,
 	}
 
-	pctsCodeHash, pctsHashType, err := getCodeHashAndType(pcts.DataHash, pcts.TypeId)
-	if err != nil {
-		return backend.Deployment{}, SUDTInfo{}, err
-	}
-	pclsCodeHash, pclsHashType, err := getCodeHashAndType(pcls.DataHash, pcls.TypeId)
-	if err != nil {
-		return backend.Deployment{}, SUDTInfo{}, err
-	}
-	pflsCodeHash, pflsHashType, err := getCodeHashAndType(pfls.DataHash, pfls.TypeId)
-	if err != nil {
-		return backend.Deployment{}, SUDTInfo{}, err
-	}
-	vctsCodeHash, vctsHashType, err := getCodeHashAndType(vcts.DataHash, vcts.TypeId)
-	if err != nil {
-		return backend.Deployment{}, SUDTInfo{}, err
-	}
-	vclsCodeHash, vclsHashType, err := getCodeHashAndType(vcls.DataHash, vcls.TypeId)
-	if err != nil {
-		return backend.Deployment{}, SUDTInfo{}, err
-	}
-
+	log.Println("Using SUDT owner lock args:", sUDTInfo.Script.Args, "for SUDT:", sUDTInfo.Script.Hash())
 	return backend.Deployment{
 		Network: types.NetworkTest,
 		PCTSDep: types.CellDep{
@@ -127,61 +133,71 @@ func (m Migration) MakeDeployment(systemScripts SystemScripts, sudtOwnerLockArg 
 			},
 			DepType: types.DepTypeCode,
 		},
-		PCTSCodeHash:    pctsCodeHash,
-		PCTSHashType:    pctsHashType,
-		PCLSCodeHash:    pclsCodeHash,
-		PCLSHashType:    pclsHashType,
-		VCTSCodeHash:    vctsCodeHash,
-		VCTSHashType:    vctsHashType,
-		VCLSCodeHash:    vclsCodeHash,
-		VCLSHashType:    vclsHashType,
-		PFLSCodeHash:    pflsCodeHash,
-		PFLSHashType:    pflsHashType,
+		PCTSCodeHash:    types.HexToHash(pcts.DataHash),
+		PCTSHashType:    types.HashTypeData1,
+		PCLSCodeHash:    types.HexToHash(pcls.DataHash),
+		PCLSHashType:    types.HashTypeData1,
+		VCTSCodeHash:    types.HexToHash(vcts.DataHash),
+		VCTSHashType:    types.HashTypeData1,
+		VCLSCodeHash:    types.HexToHash(vcls.DataHash),
+		VCLSHashType:    types.HashTypeData1,
+		PFLSCodeHash:    types.HexToHash(pfls.DataHash),
+		PFLSHashType:    types.HashTypeData1,
 		PFLSMinCapacity: PFLSMinCapacity,
 		DefaultLockScript: types.Script{
-			CodeHash: systemScripts.Secp256k1Blake160SighashAll.ScriptID.CodeHash,
-			HashType: systemScripts.Secp256k1Blake160SighashAll.ScriptID.HashType,
+			CodeHash: systemScripts.Secp256k1Blake160.CodeHash,
+			HashType: systemScripts.Secp256k1Blake160.HashType,
 			Args:     make([]byte, 32),
 		},
-		DefaultLockScriptDep: systemScripts.Secp256k1Blake160SighashAll.CellDep,
+		DefaultLockScriptDep: types.CellDep{
+			OutPoint: &types.OutPoint{
+				TxHash: systemScripts.Secp256k1Blake160.CellDeps[0].CellDep.OutPoint.TxHash,
+				Index:  systemScripts.Secp256k1Blake160.CellDeps[0].CellDep.OutPoint.Index,
+			},
+			DepType: parseDepType(string(systemScripts.Secp256k1Blake160.CellDeps[0].CellDep.DepType)),
+		},
+		OmniLockScript: types.Script{
+			CodeHash: systemScripts.OmniLock.CodeHash,
+			HashType: systemScripts.OmniLock.HashType,
+			Args:     make([]byte, 32),
+		},
+		OmniLockScriptDep: []types.CellDep{
+			{
+				OutPoint: &types.OutPoint{
+					TxHash: systemScripts.OmniLock.CellDeps[0].CellDep.OutPoint.TxHash,
+					Index:  systemScripts.OmniLock.CellDeps[0].CellDep.OutPoint.Index,
+				},
+				DepType: parseDepType(string(systemScripts.OmniLock.CellDeps[0].CellDep.DepType)),
+			},
+			{
+				OutPoint: &types.OutPoint{
+					TxHash: systemScripts.OmniLock.CellDeps[1].CellDep.OutPoint.TxHash,
+					Index:  systemScripts.OmniLock.CellDeps[1].CellDep.OutPoint.Index,
+				},
+				DepType: parseDepType(string(systemScripts.OmniLock.CellDeps[1].CellDep.DepType)),
+			},
+		},
 		SUDTDeps: map[types.Hash]types.CellDep{
-			sudtInfo.Script.Hash(): *sudtInfo.CellDep,
+			sUDTInfo.Script.Hash(): *sUDTInfo.CellDep,
 		},
 		SUDTs: map[types.Hash]types.Script{
-			sudtInfo.Script.Hash(): *sudtInfo.Script,
+			sUDTInfo.Script.Hash(): *sUDTInfo.Script,
 		},
-	}, *sudtInfo, nil
+	}, sUDTInfo, nil
 }
 
+// GetSUDT returns the SUDT info from the migration.
 func (m Migration) GetSUDT() (*SUDTInfo, error) {
 	sudt := m.CellRecipes[0]
 	if sudt.Name != "sudt" {
 		return nil, fmt.Errorf("first cell recipe must be sudt")
 	}
 
-	var codeHash types.Hash
-	var hashType types.ScriptHashType
-
-	if sudt.TypeId != nil {
-		// If TypeId is given, prefer that
-		typeIDStr, ok := sudt.TypeId.(string)
-		if !ok {
-			return nil, fmt.Errorf("invalid type_id format")
-		}
-		codeHash = types.HexToHash(typeIDStr)
-		hashType = types.HashTypeType
-	} else {
-		// Default: use data hash
-		codeHash = types.HexToHash(sudt.DataHash)
-		hashType = types.HashTypeData1
-	}
-
 	sudtScript := types.Script{
-		CodeHash: codeHash,
-		HashType: hashType,
+		CodeHash: types.HexToHash(sudt.DataHash),
+		HashType: types.HashTypeData1,
 		Args:     []byte{},
 	}
-
 	sudtCellDep := types.CellDep{
 		OutPoint: &types.OutPoint{
 			TxHash: types.HexToHash(sudt.TxHash),
@@ -189,39 +205,55 @@ func (m Migration) GetSUDT() (*SUDTInfo, error) {
 		},
 		DepType: types.DepTypeCode,
 	}
-
 	return &SUDTInfo{
-		Script:  &sudtScript,
-		CellDep: &sudtCellDep,
+		Script:      &sudtScript,
+		CellDep:     &sudtCellDep,
+		MaxCapacity: sudtMaxCapacity,
 	}, nil
 }
 
-func GetDeploymentDevnet(migrationDir, migrationDirVC, systemScriptsDir, sudtOwnerLockArg string) (backend.Deployment, SUDTInfo, error) {
-	dir, err := os.ReadDir(migrationDir)
+// GetDeployment reads the migration file and returns a nervos_deployment.
+func GetDeployment(migrationDir0, migrationDir1, migrationDirVC, systemScriptsDir string, sudtOwnerLockArg string) (backend.Deployment, *SUDTInfo, error) {
+	dir0, err := os.ReadDir(migrationDir0)
 	if err != nil {
-		return backend.Deployment{}, SUDTInfo{}, err
+		return backend.Deployment{}, nil, err
 	}
-	if len(dir) != 1 {
-		return backend.Deployment{}, SUDTInfo{}, fmt.Errorf("migration dir must contain exactly one file")
+	if len(dir0) != 1 {
+		return backend.Deployment{}, nil, fmt.Errorf("migration dir must contain exactly one file")
 	}
-
+	dir1, err := os.ReadDir(migrationDir1)
+	if err != nil {
+		return backend.Deployment{}, nil, err
+	}
+	if len(dir1) != 1 {
+		return backend.Deployment{}, nil, fmt.Errorf("migration dir must contain exactly one file")
+	}
 	vc_dir, err := os.ReadDir(migrationDirVC)
 	if err != nil {
-		return backend.Deployment{}, SUDTInfo{}, err
+		return backend.Deployment{}, nil, err
 	}
 	if len(vc_dir) != 1 {
-		return backend.Deployment{}, SUDTInfo{}, fmt.Errorf("migration dir must contain exactly one file")
+		return backend.Deployment{}, nil, fmt.Errorf("migration dir must contain exactly one file")
 	}
-
-	migrationName := dir[0].Name()
-	migrationFile, err := os.Open(path.Join(migrationDir, migrationName))
+	migrationName0 := dir0[0].Name()
+	migrationFile0, err := os.Open(path.Join(migrationDir0, migrationName0))
 	defer func() {
-		if err := migrationFile.Close(); err != nil {
+		if err := migrationFile0.Close(); err != nil {
 			log.Fatalf("failed to close migration file: %v\n", err)
 		}
 	}()
 	if err != nil {
-		return backend.Deployment{}, SUDTInfo{}, err
+		return backend.Deployment{}, nil, err
+	}
+	migrationName1 := dir1[0].Name()
+	migrationFile1, err := os.Open(path.Join(migrationDir1, migrationName1))
+	defer func() {
+		if err := migrationFile1.Close(); err != nil {
+			log.Fatalf("failed to close migration file: %v\n", err)
+		}
+	}()
+	if err != nil {
+		return backend.Deployment{}, nil, err
 	}
 
 	vcMigrationName := vc_dir[0].Name()
@@ -232,130 +264,49 @@ func GetDeploymentDevnet(migrationDir, migrationDirVC, systemScriptsDir, sudtOwn
 		}
 	}()
 	if err != nil {
-		return backend.Deployment{}, SUDTInfo{}, err
+		return backend.Deployment{}, nil, err
 	}
 
 	// Read and unmarshall migration file
-	migrationData, err := io.ReadAll(migrationFile)
+	migrationData0, err := io.ReadAll(migrationFile0)
 	if err != nil {
-		return backend.Deployment{}, SUDTInfo{}, err
+		return backend.Deployment{}, nil, err
 	}
-	var migration Migration
-	err = json.Unmarshal(migrationData, &migration)
+	var migration0 Migration
+	err = json.Unmarshal(migrationData0, &migration0)
 	if err != nil {
-		return backend.Deployment{}, SUDTInfo{}, err
+		return backend.Deployment{}, nil, err
+	}
+	migrationData1, err := io.ReadAll(migrationFile1)
+	if err != nil {
+		return backend.Deployment{}, nil, err
+	}
+	var migration1 Migration
+	err = json.Unmarshal(migrationData1, &migration1)
+	if err != nil {
+		return backend.Deployment{}, nil, err
 	}
 
 	// Read and unmarshall vc migration file
 	vcMigrationData, err := io.ReadAll(vcMigrationFile)
 	if err != nil {
-		return backend.Deployment{}, SUDTInfo{}, err
+		return backend.Deployment{}, nil, err
 	}
 	var vcMigration Migration
 	err = json.Unmarshal(vcMigrationData, &vcMigration)
 	if err != nil {
-		return backend.Deployment{}, SUDTInfo{}, err
+		return backend.Deployment{}, nil, err
 	}
-
+	migration := migration0
+	migration.CellRecipes = append(migration.CellRecipes, migration1.CellRecipes[:]...)
+	migration.DepGroupRecipes = append(migration.DepGroupRecipes, migration1.DepGroupRecipes[:]...)
 	// Read system scripts
 	ss, err := GetSystemScripts(systemScriptsDir)
 	if err != nil {
-		return backend.Deployment{}, SUDTInfo{}, err
+		return backend.Deployment{}, nil, err
 	}
+	fmt.Printf("Migration0: %v\n", migration0)
+	fmt.Printf("Migration1: %v\n", migration1)
+	fmt.Printf("VC Migration: %v\n", vcMigration)
 	return migration.MakeDeployment(ss, sudtOwnerLockArg, vcMigration)
-}
-
-func GetDeploymentTestnet(systemScriptsDir string, sudtOwnerLockArg string) (backend.Deployment, SUDTInfo, error) {
-	// Hardcoded deployed contract info on testnet
-	migration := Migration{
-		CellRecipes: []struct {
-			Name             string      `json:"name"`
-			TxHash           string      `json:"tx_hash"`
-			Index            uint32      `json:"index"`
-			OccupiedCapacity int64       `json:"occupied_capacity"`
-			DataHash         string      `json:"data_hash"`
-			TypeId           interface{} `json:"type_id"`
-		}{
-			// SUDT
-			{
-				Name:     "sudt",
-				TxHash:   "0xc247df0052ab5d67b6da04bf6f0743696a83db0cf94e2fef192cd29ef4cfe799",
-				Index:    0,
-				DataHash: "0xb875ff254fcaee9c5e164f3f2bf02f8e10a0d00526db46571ff22abae0766f11",
-				TypeId:   "0xd7cb2e882ae04f0ba2d00d46d49ae2a7375f0e0d0a5d0d4aa48cef428d5bc5e5",
-			},
-			// PCTS
-			{
-				Name:     "pcts",
-				TxHash:   "0xc247df0052ab5d67b6da04bf6f0743696a83db0cf94e2fef192cd29ef4cfe799",
-				Index:    1,
-				DataHash: "0x9c8eb7243aef83b0135d450407292da728753870b804a1d64a27d901f7b9640f",
-				TypeId:   "0x96b5e79709e3c4931a35e5af67356e4ab752e5a990fce241fa17c4f6c3d510e2",
-			},
-			// PCLS
-			{
-				Name:     "pcls",
-				TxHash:   "0xc247df0052ab5d67b6da04bf6f0743696a83db0cf94e2fef192cd29ef4cfe799",
-				Index:    2,
-				DataHash: "0x358519445ce23f8befc6580c5359c3477b8b5283f397a29806f0e95522a6adb8",
-				TypeId:   "0x4fa6fd8c0ae0e4b870ed748f86cc42afcb47380f51a6864852820c127acb8f83",
-			},
-			// PFLS
-			{
-				Name:     "pfls",
-				TxHash:   "0xc247df0052ab5d67b6da04bf6f0743696a83db0cf94e2fef192cd29ef4cfe799",
-				Index:    3,
-				DataHash: "0xd0507f41f9ddc3ef784e3a1c561d7d6e2dd08f0b24f9c9d61b9b93747d4a8295",
-				TypeId:   "0xa8690a18bde4123fa04e7e5823f0554f196ec0bd04f3bbf8ed4360902fed05a9",
-			},
-		},
-		DepGroupRecipes: nil,
-	}
-
-	vcMigration := Migration{
-		CellRecipes: []struct {
-			Name             string      `json:"name"`
-			TxHash           string      `json:"tx_hash"`
-			Index            uint32      `json:"index"`
-			OccupiedCapacity int64       `json:"occupied_capacity"`
-			DataHash         string      `json:"data_hash"`
-			TypeId           interface{} `json:"type_id"`
-		}{
-			// VCTS
-			{
-				Name:     "vcts",
-				TxHash:   "0x0f024bbf4180247031d20541eb2757cf15996821d81b9910b5b3e65990502aa2",
-				Index:    0,
-				DataHash: "0x979629341d3435a8155ff4867e604cdf018f60c391bf2fa03ccf46f7ead07c81",
-				TypeId:   "0x43b3139ed05cdd86d5d0cbbcf414b3d89193a05493593f88e12f4effd1d39fce",
-			},
-			// VCLS
-			{
-				Name:     "vcls",
-				TxHash:   "0x0f024bbf4180247031d20541eb2757cf15996821d81b9910b5b3e65990502aa2",
-				Index:    1,
-				DataHash: "0x13870abb0ab8b56d0500f06c3c7af7fa93648259d6945203493907ac11da8b66",
-				TypeId:   "0x74c694dad6b36e72526a9345153d7f16759b9c3071b7c9119bdc1bb9898f3928",
-			},
-		},
-		DepGroupRecipes: nil,
-	}
-
-	ss, err := GetSystemScripts(systemScriptsDir)
-	if err != nil {
-		return backend.Deployment{}, SUDTInfo{}, err
-	}
-
-	return migration.MakeDeployment(ss, sudtOwnerLockArg, vcMigration)
-}
-
-func getCodeHashAndType(dataHash string, typeId interface{}) (types.Hash, types.ScriptHashType, error) {
-	if typeId != nil {
-		typeIDStr, ok := typeId.(string)
-		if !ok {
-			return types.Hash{}, types.HashTypeData, fmt.Errorf("invalid type_id format")
-		}
-		return types.HexToHash(typeIDStr), types.HashTypeType, nil
-	}
-	return types.HexToHash(dataHash), types.HashTypeData1, nil
 }

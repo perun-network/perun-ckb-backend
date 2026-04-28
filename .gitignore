@@ -13,16 +13,23 @@
 
 # Dependency directories (remove the comment below to include it)
 # vendor/
-devnet/accounts
-devnet/data
-devnet/specs
+devnet/accounts/
+devnet/data/
+devnet/specs/
 devnet/ckb-miner.toml
 devnet/ckb.toml
 devnet/fundingtx.json
 devnet/default.db-options
-devnet/system_scripts
+devnet/system_scripts/
 
-
-# Testnet
-testnet/accounts/*
-!testnet/accounts/sudt-owner-lock-hash.txt
+# Devnet deployment artifacts (do not commit migration jsons, info files or logs)
+devnet/contract/migrations_*/
+devnet/contract/migrations_*/dev/
+devnet/contract/migrations_*/dev/*.json
+devnet/contract/migrations_vc/
+devnet/contract/migrations_vc/dev/
+devnet/info_*.json
+devnet/deploy_*_gen-txs.log
+devnet/deploy_*.log
+devnet/*.json
+devnet/contract/migrations_*/

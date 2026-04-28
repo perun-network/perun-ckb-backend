@@ -22,6 +22,8 @@ func NewRandomDeployment(rng *rand.Rand, opt ...DeploymentOpt) *backend.Deployme
 		PFLSMinCapacity:      uint64(rng.Intn(10*10 ^ 8)),
 		DefaultLockScript:    *NewRandomScript(rng),
 		DefaultLockScriptDep: *NewRandomCellDep(rng),
+		OmniLockScript:       *NewRandomScript(rng),
+		OmniLockScriptDep:    []types.CellDep{*NewRandomCellDep(rng), *NewRandomCellDep(rng)},
 	}
 	for _, o := range opt {
 		o(d)
@@ -65,5 +67,12 @@ func WithDefaultLockScript(s types.Script, dep types.CellDep) DeploymentOpt {
 	return func(d *backend.Deployment) {
 		d.DefaultLockScript = s
 		d.DefaultLockScriptDep = dep
+	}
+}
+
+func WithOmniLockScript(s types.Script, deps ...types.CellDep) DeploymentOpt {
+	return func(d *backend.Deployment) {
+		d.OmniLockScript = s
+		d.OmniLockScriptDep = deps
 	}
 }

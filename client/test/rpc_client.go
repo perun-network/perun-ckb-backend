@@ -2,6 +2,7 @@ package test
 
 import (
 	"context"
+
 	"github.com/nervosnetwork/ckb-sdk-go/v2/indexer"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/rpc"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types"
@@ -235,159 +236,211 @@ func NewMockRPCClient() *MockRPCClient {
 func (m *MockRPCClient) SetAddNode(f func(ctx context.Context, peerId string, address string) error) {
 	m.addNode = f
 }
+
 func (m *MockRPCClient) SetBatchLiveCells(f func(ctx context.Context, batch []types.BatchLiveCellItem) error) {
 	m.batchLiveCells = f
 }
+
 func (m *MockRPCClient) SetBatchTransactions(f func(ctx context.Context, batch []types.BatchTransactionItem) error) {
 	m.batchTransactions = f
 }
+
 func (m *MockRPCClient) SetCalculateDaoMaximumWithdraw(f func(ctx context.Context, point *types.OutPoint, hash types.Hash) (uint64, error)) {
 	m.calculateDaoMaximumWithdraw = f
 }
+
 func (m *MockRPCClient) SetCallContext(f func(ctx context.Context, result interface{}, method string, args ...interface{}) error) {
 	m.callContext = f
 }
+
 func (m *MockRPCClient) SetClearBannedAddresses(f func(ctx context.Context) error) {
 	m.clearBannedAddresses = f
 }
+
 func (m *MockRPCClient) SetClearTxPool(f func(ctx context.Context) error) {
 	m.clearTxPool = f
 }
+
 func (m *MockRPCClient) SetClose(f func()) {
 	m.close = f
 }
+
 func (m *MockRPCClient) SetDryRunTransaction(f func(ctx context.Context, transaction *types.Transaction) (*types.DryRunTransactionResult, error)) {
 	m.dryRunTransaction = f
 }
+
 func (m *MockRPCClient) SetEstimateCycles(f func(ctx context.Context, transaction *types.Transaction) (*types.EstimateCycles, error)) {
 	m.estimateCycles = f
 }
+
 func (m *MockRPCClient) SetGetBannedAddresses(f func(ctx context.Context) ([]*types.BannedAddress, error)) {
 	m.getBannedAddresses = f
 }
+
 func (m *MockRPCClient) SetGetBlock(f func(ctx context.Context, hash types.Hash) (*types.Block, error)) {
 	m.getBlock = f
 }
+
 func (m *MockRPCClient) SetGetBlockByNumber(f func(ctx context.Context, number uint64) (*types.Block, error)) {
 	m.getBlockByNumber = f
 }
+
 func (m *MockRPCClient) SetGetBlockByNumberWithCycles(f func(ctx context.Context, number uint64) (*types.BlockWithCycles, error)) {
 	m.getBlockByNumberWithCycles = f
 }
+
 func (m *MockRPCClient) SetGetBlockEconomicState(f func(ctx context.Context, hash types.Hash) (*types.BlockEconomicState, error)) {
 	m.getBlockEconomicState = f
 }
+
 func (m *MockRPCClient) SetGetBlockHash(f func(ctx context.Context, number uint64) (*types.Hash, error)) {
 	m.getBlockHash = f
 }
+
 func (m *MockRPCClient) SetGetBlockMedianTime(f func(ctx context.Context, blockHash types.Hash) (uint64, error)) {
 	m.getBlockMedianTime = f
 }
+
 func (m *MockRPCClient) SetGetBlockWithCycles(f func(ctx context.Context, hash types.Hash) (*types.BlockWithCycles, error)) {
 	m.getBlockWithCycles = f
 }
+
 func (m *MockRPCClient) SetGetBlockchainInfo(f func(ctx context.Context) (*types.BlockchainInfo, error)) {
 	m.getBlockchainInfo = f
 }
+
 func (m *MockRPCClient) SetGetCells(f func(ctx context.Context, searchKey *indexer.SearchKey, order indexer.SearchOrder, limit uint64, afterCursor string) (*indexer.LiveCells, error)) {
 	m.getCells = f
 }
+
 func (m *MockRPCClient) SetGetCellsCapacity(f func(ctx context.Context, searchKey *indexer.SearchKey) (*indexer.Capacity, error)) {
 	m.getCellsCapacity = f
 }
+
 func (m *MockRPCClient) SetGetConsensus(f func(ctx context.Context) (*types.Consensus, error)) {
 	m.getConsensus = f
 }
+
 func (m *MockRPCClient) SetGetCurrentEpoch(f func(ctx context.Context) (*types.Epoch, error)) {
 	m.getCurrentEpoch = f
 }
+
 func (m *MockRPCClient) SetGetEpochByNumber(f func(ctx context.Context, number uint64) (*types.Epoch, error)) {
 	m.getEpochByNumber = f
 }
+
 func (m *MockRPCClient) SetGetFeeRateStatics(f func(ctx context.Context, target interface{}) (*types.FeeRateStatics, error)) {
 	m.getFeeRateStatics = f
 }
+
 func (m *MockRPCClient) SetGetForkBlock(f func(ctx context.Context, blockHash types.Hash) (*types.Block, error)) {
 	m.getForkBlock = f
 }
+
 func (m *MockRPCClient) SetGetHeader(f func(ctx context.Context, hash types.Hash) (*types.Header, error)) {
 	m.getHeader = f
 }
+
 func (m *MockRPCClient) SetGetHeaderByNumber(f func(ctx context.Context, number uint64) (*types.Header, error)) {
 	m.getHeaderByNumber = f
 }
+
 func (m *MockRPCClient) SetGetIndexerTip(f func(ctx context.Context) (*indexer.TipHeader, error)) {
 	m.getIndexerTip = f
 }
+
 func (m *MockRPCClient) SetGetLiveCell(f func(ctx context.Context, outPoint *types.OutPoint, withData bool) (*types.CellWithStatus, error)) {
 	m.getLiveCell = f
 }
+
 func (m *MockRPCClient) SetGetPackedBlock(f func(ctx context.Context, hash types.Hash) (*types.Block, error)) {
 	m.getPackedBlock = f
 }
+
 func (m *MockRPCClient) SetGetPackedBlockWithCycles(f func(ctx context.Context, hash types.Hash) (*types.BlockWithCycles, error)) {
 	m.getPackedBlockWithCycles = f
 }
+
 func (m *MockRPCClient) SetGetPackedHeader(f func(ctx context.Context, hash types.Hash) (*types.Header, error)) {
 	m.getPackedHeader = f
 }
+
 func (m *MockRPCClient) SetGetPackedHeaderByNumber(f func(ctx context.Context, number uint64) (*types.Header, error)) {
 	m.getPackedHeaderByNumber = f
 }
+
 func (m *MockRPCClient) SetGetPeers(f func(ctx context.Context) ([]*types.RemoteNode, error)) {
 	m.getPeers = f
 }
+
 func (m *MockRPCClient) SetGetRawTxPool(f func(ctx context.Context) (*types.RawTxPool, error)) {
 	m.getRawTxPool = f
 }
+
 func (m *MockRPCClient) SetGetTipBlockNumber(f func(ctx context.Context) (uint64, error)) {
 	m.getTipBlockNumber = f
 }
+
 func (m *MockRPCClient) SetGetTipHeader(f func(ctx context.Context) (*types.Header, error)) {
 	m.getTipHeader = f
 }
+
 func (m *MockRPCClient) SetGetTransaction(f func(ctx context.Context, hash types.Hash) (*types.TransactionWithStatus, error)) {
 	m.getTransaction = f
 }
+
 func (m *MockRPCClient) SetGetTransactionAndWitnessProof(f func(ctx context.Context, txHashes []string, blockHash *types.Hash) (*types.TransactionAndWitnessProof, error)) {
 	m.getTransactionAndWitnessProof = f
 }
+
 func (m *MockRPCClient) SetGetTransactionProof(f func(ctx context.Context, txHashes []string, blockHash *types.Hash) (*types.TransactionProof, error)) {
 	m.getTransactionProof = f
 }
+
 func (m *MockRPCClient) SetGetTransactions(f func(ctx context.Context, searchKey *indexer.SearchKey, order indexer.SearchOrder, limit uint64, afterCursor string) (*indexer.TxsWithCell, error)) {
 	m.getTransactions = f
 }
+
 func (m *MockRPCClient) SetGetTransactionsGrouped(f func(ctx context.Context, searchKey *indexer.SearchKey, order indexer.SearchOrder, limit uint64, afterCursor string) (*indexer.TxsWithCells, error)) {
 	m.getTransactionsGrouped = f
 }
+
 func (m *MockRPCClient) SetLocalNodeInfo(f func(ctx context.Context) (*types.LocalNode, error)) {
 	m.localNodeInfo = f
 }
+
 func (m *MockRPCClient) SetPingPeers(f func(ctx context.Context) error) {
 	m.pingPeers = f
 }
+
 func (m *MockRPCClient) SetRemoveNode(f func(ctx context.Context, peerId string) error) {
 	m.removeNode = f
 }
+
 func (m *MockRPCClient) SetSendTransaction(f func(ctx context.Context, tx *types.Transaction) (*types.Hash, error)) {
 	m.sendTransaction = f
 }
+
 func (m *MockRPCClient) SetSetBan(f func(ctx context.Context, address string, command string, banTime uint64, absolute bool, reason string) error) {
 	m.setBan = f
 }
+
 func (m *MockRPCClient) SetSetNetworkActive(f func(ctx context.Context, state bool) error) {
 	m.setNetworkActive = f
 }
+
 func (m *MockRPCClient) SetSyncState(f func(ctx context.Context) (*types.SyncState, error)) {
 	m.syncState = f
 }
+
 func (m *MockRPCClient) SetTxPoolInfo(f func(ctx context.Context) (*types.TxPoolInfo, error)) {
 	m.txPoolInfo = f
 }
+
 func (m *MockRPCClient) SetVerifyTransactionAndWitnessProof(f func(ctx context.Context, proof *types.TransactionAndWitnessProof) ([]*types.Hash, error)) {
 	m.verifyTransactionAndWitnessProof = f
 }
+
 func (m *MockRPCClient) SetVerifyTransactionProof(f func(ctx context.Context, proof *types.TransactionProof) ([]*types.Hash, error)) {
 	m.verifyTransactionProof = f
 }

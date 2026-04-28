@@ -27,11 +27,11 @@ func PackChannelParameters(params *channel.Params) (molecule.ChannelParameters, 
 		isLedgerChannel = False
 		isVirtualChannel = True
 	}
-	a, err := PackAddressToOnChainParticipant(params.Parts[0])
+	a, err := PackAddressToOnChainParticipant(params.Parts[0][address.CKBBackendID]) // TODO: change contract encoding
 	if err != nil {
 		return molecule.ChannelParameters{}, fmt.Errorf("packing first party: %w", err)
 	}
-	b, err := PackAddressToOnChainParticipant(params.Parts[1])
+	b, err := PackAddressToOnChainParticipant(params.Parts[1][address.CKBBackendID]) // TODO: change contract encoding
 	if err != nil {
 		return molecule.ChannelParameters{}, fmt.Errorf("packing second party: %w", err)
 	}

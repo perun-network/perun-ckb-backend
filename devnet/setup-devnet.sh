@@ -10,10 +10,13 @@ set -eu
 ACCOUNTS_DIR="accounts"
 PERUN_CONTRACTS_DIR="contract"
 
-if [ -d $ACCOUNTS_DIR ]; then
-  rm -rf $ACCOUNTS_DIR/*
-fi
 mkdir -p $ACCOUNTS_DIR
+
+rm -rf ~/.ckb-cli ~/.ckb/keystore/
+
+if [ -d $ACCOUNTS_DIR ]; then
+  rm -rf $ACCOUNTS_DIR/miner.pk $ACCOUNTS_DIR/miner.txt $ACCOUNTS_DIR/genesis-1.pk $ACCOUNTS_DIR/genesis-1.txt $ACCOUNTS_DIR/genesis-2.pk $ACCOUNTS_DIR/genesis-2.txt $ACCOUNTS_DIR/sudt-owner-lock-hash1.txt $ACCOUNTS_DIR/sudt-owner-lock-hash2.txt
+fi
 
 if [ -d "data" ]; then
   rm -rf "data"
@@ -35,48 +38,65 @@ if [ -f "default.db-options" ]; then
   rm "default.db-options"
 fi
 
-# Build all required contracts for Perun.
+# Build all required contract for Perun.
 DEVNET=$(pwd)
 cd $PERUN_CONTRACTS_DIR
 source ./setup_env.sh build && make build
 cd $DEVNET
+offckb accounts > accounts.txt
 
-# Genesis cell #1
-GenCellOnePK="0xd00c06bfd800d27397002dca6fb0993d5ba6399b4238b2f29ee9deb97593d2bc"
-GenCellOneLockArg="0xc8328aabcd9b9e8e64fbc566c4385c3bdeb219d7"
-GenCellOneAddress="ckt1qyqvsv5240xeh85wvnau2eky8pwrhh4jr8ts8vyj37"
-# Genesis cell #2
-GenCellTwoPK="0x63d86723e08f0f813a36ce6aa123bb2289d90680ae1e99d4de8cdb334553f24d"
-GenCellTwoLockArg="0x470dcdc5e44064909650113a274b3b36aecb6dc7"
-GenCellTwoAddress="ckt1qyqywrwdchjyqeysjegpzw38fvandtktdhrs0zaxl4"
+MinerPK=$(grep -A 4 '"#": 17' accounts.txt | grep 'privkey' | awk '{print $2}')
+GenCellOnePK=$(grep -A 4 '"#": 18' accounts.txt | grep 'privkey' | awk '{print $2}')
+GenCellTwoPK=$(grep -A 4 '"#": 19' accounts.txt | grep 'privkey' | awk '{print $2}')
 
-create_account() {
-  echo -e '\n\n' | ckb-cli account new  > $ACCOUNTS_DIR/$1.txt
-}
+GenCellOnePubKey=$(grep -A 4 '"#": 18' accounts.txt | grep 'pubkey' | awk '{print $2}')
+GenCellTwoPubKey=$(grep -A 4 '"#": 19' accounts.txt | grep 'pubkey' | awk '{print $2}')
+# Similarly, extract the addresses
+MinerAddress=$(grep -A 1 '"#": 17' accounts.txt | grep 'address' | awk '{print $2}')
+GenCellOneAddress=$(grep -A 1 '"#": 18' accounts.txt | grep 'address' | awk '{print $2}')
+GenCellTwoAddress=$(grep -A 1 '"#": 19' accounts.txt | grep 'address' | awk '{print $2}')
+
+# Extract lock_args
+MinerLockArg=$(grep -A 6 '"#": 17' accounts.txt | grep 'lock_arg' | awk '{print $2}')
+GenCellOneLockArg=$(grep -A 6 '"#": 18' accounts.txt | grep 'lock_arg' | awk '{print $2}')
+GenCellTwoLockArg=$(grep -A 6 '"#": 19' accounts.txt | grep 'lock_arg' | awk '{print $2}')
+
+# Extract fields for account #18 (GenCellOne)
+GenCellOneCodeHash=$(awk '/"#": 18/,/^$/' accounts.txt | grep 'codeHash:' | awk '{print $2}')
+GenCellOneHashType=$(awk '/"#": 18/,/^$/' accounts.txt | grep 'hashType:' | awk '{print $2}')
+
+# Extract fields for account #19 (GenCellTwo)
+GenCellTwoCodeHash=$(awk '/"#": 19/,/^$/' accounts.txt | grep 'codeHash:' | awk '{print $2}')
+GenCellTwoHashType=$(awk '/"#": 19/,/^$/' accounts.txt | grep 'hashType:' | awk '{print $2}')
+
+
+echo "getting lock hash $GenCellOneCodeHash type $GenCellOneHashType lockarg $GenCellOneLockArg"
+ONE_LOCK_HASH=$(ckb-cli util key-info --pubkey "$GenCellOnePubKey" | grep 'lock_hash:' | awk '{print $2}')
+TWO_LOCK_HASH=$(ckb-cli util key-info --pubkey "$GenCellTwoPubKey" | grep 'lock_hash:' | awk '{print $2}')
+echo "Lock hash one: $ONE_LOCK_HASH"
+echo "Lock hash two: $TWO_LOCK_HASH"
 
 # Create accounts for genesis cells.
-touch privateKeyGenesisCells.txt
-echo $GenCellOnePK > privateKeyGenesisCells.txt
-echo -e '\n\n' | ckb-cli account import --privkey-path privateKeyGenesisCells.txt || true
-ckb-cli account list | grep -B 5 -A 4 "$GenCellOneAddress" > $ACCOUNTS_DIR/genesis-1.txt
-echo $GenCellTwoPK > privateKeyGenesisCells.txt
-echo -e '\n\n' | ckb-cli account import --privkey-path privateKeyGenesisCells.txt || true
-ckb-cli account list | grep -B 5 -A 4 "$GenCellTwoAddress" > $ACCOUNTS_DIR/genesis-2.txt
-rm privateKeyGenesisCells.txt
+echo -e "lock_hash: $ONE_LOCK_HASH\nlock_arg: $GenCellOneLockArg\nckb_address: $GenCellOneAddress" > "$ACCOUNTS_DIR/genesis-1.txt"
+echo -e "lock_hash: $TWO_LOCK_HASH\nlock_arg: $GenCellTwoLockArg\nckb_address: $GenCellTwoAddress" > "$ACCOUNTS_DIR/genesis-2.txt"
+echo -e "eth_address: $MinerAddress\nlock_arg: $MinerLockArg\nckb_address: $MinerAddress" > "$ACCOUNTS_DIR/miner.txt"
 
-echo -e '\n\n' |  ckb-cli account new > $ACCOUNTS_DIR/miner.txt
-MINER_LOCK_ARG=$(cat $ACCOUNTS_DIR/miner.txt | awk '/lock_arg/ {print $2}')
+# Also save private keys
+echo "$GenCellOnePK" > "$ACCOUNTS_DIR/genesis-1.pk"
+echo "$GenCellTwoPK" > "$ACCOUNTS_DIR/genesis-2.pk"
+echo "$MinerPK" > "$ACCOUNTS_DIR/miner.pk"
+echo -e "\n\n" | ckb-cli account import --privkey-path $ACCOUNTS_DIR/genesis-1.pk >/dev/null 2>&1 || true
+echo -e "\n\n" | ckb-cli account import --privkey-path $ACCOUNTS_DIR/genesis-2.pk >/dev/null 2>&1 || true
+echo -e "\n\n" | ckb-cli account import --privkey-path $ACCOUNTS_DIR/miner.pk >/dev/null 2>&1 || true
+MINER_LOCK_ARG=$MinerLockArg
 
-create_account "alice"
-create_account "bob"
-create_account "ingrid"
+rm -rf accounts.txt
 
 ckb init --chain dev --ba-arg $MINER_LOCK_ARG --ba-message "0x" --force
 
 # Make the scripts owned by the miner.
-sed -i "s/args =.*$/args = \"$MINER_LOCK_ARG\"/" $PERUN_CONTRACTS_DIR/deployment/dev/deployment.toml
-sed -i "s/args =.*$/args = \"$MINER_LOCK_ARG\"/" $PERUN_CONTRACTS_DIR/deployment/dev/deployment_vc.toml
-# Use the debug versions of the contracts.
+sed -i "s/args =.*$/args = \"$MINER_LOCK_ARG\"/" $PERUN_CONTRACTS_DIR/deployment/dev/deployment_0.toml
+# Use the debug versions of the contract.
 # sed -i "s/release/debug/" $PERUN_CONTRACTS_DIR/deployment/dev/deployment.toml
 
 # Adjust miner config to process blocks faster.

@@ -27,14 +27,20 @@ type PollingSubscription struct {
 	client            client.CKBClient
 	id                channel.ID
 	pcts              *types.Script
-	events            chan channel.AdjudicatorEvent
-	err               error
-	cancel            context.CancelFunc
-	foundLiveCellOnce bool
-	concluded         chan struct{}
-	fatalErrors       chan error
-	challengeDuration *time.Duration
+	events             chan channel.AdjudicatorEvent
+	err                error
+	cancel             context.CancelFunc
+	foundLiveCellOnce  bool
+	consecutiveMisses  int
+	concluded          chan struct{}
+	fatalErrors        chan error
+	challengeDuration  *time.Duration
 }
+
+// ConcludeMissThreshold is the number of consecutive missed live-cell lookups
+// required before we emit a ConcludedEvent. This protects against transient
+// indexer/RPC inconsistencies falsely concluding a live channel.
+const ConcludeMissThreshold = 3
 
 func NewAdjudicatorSubFromChannelID(ctx context.Context, ckbClient client.CKBClient, id channel.ID) *PollingSubscription {
 	sub := &PollingSubscription{
@@ -81,7 +87,6 @@ func (a *PollingSubscription) run(ctx context.Context) {
 				oldStatus = newStatus
 			}
 		}
-
 	}
 }
 
@@ -112,12 +117,20 @@ func (a *PollingSubscription) emitEventIfNecessary(
 		return false
 	}
 	if !foundLiveCell {
+		// Require several consecutive misses before concluding, to avoid false
+		// positives from transient indexer/RPC inconsistency or short reorgs.
+		a.consecutiveMisses++
+		if a.consecutiveMisses < ConcludeMissThreshold {
+			return false
+		}
 		// TODO: figure out how to set the timeout and version for concluded events.
 		// TODO: Do we want to verify that the channel is actually concluded here?
 		a.events <- channel.NewConcludedEvent(a.id, &channel.ElapsedTimeout{}, 0)
 		close(a.concluded)
 		return true
 	}
+	// Live cell found again: reset miss counter.
+	a.consecutiveMisses = 0
 	if newStatus == nil {
 		a.fatalErrors <- fmt.Errorf("a live cell was found but newStatus is nil")
 		return false

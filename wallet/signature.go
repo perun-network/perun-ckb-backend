@@ -5,9 +5,11 @@ import (
 	"fmt"
 )
 
-const PaddedSignatureLength = 73
-const MarkerByte byte = 0xff
-const ZeroByte byte = 0x00
+const (
+	PaddedSignatureLength      = 73
+	MarkerByte            byte = 0xff
+	ZeroByte              byte = 0x00
+)
 
 // A DER encoded secp256k1 signature does not have a fixed length. Its length varies depending on the values of r and s.
 // The maximum length of a DER encoded signature is 72 bytes.

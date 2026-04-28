@@ -8,6 +8,9 @@ import (
 	"math/big"
 	"testing"
 
+	"perun.network/go-perun/channel"
+	"perun.network/go-perun/wallet"
+
 	"perun.network/go-perun/client"
 	"perun.network/go-perun/log"
 	"perun.network/go-perun/wire"
@@ -34,8 +37,8 @@ func TestPaymentHappy(t *testing.T) {
 		role [2]clienttest.Executer
 	)
 
-	s := btest.NewDevnetLedgerChannelSetup(t, rng)
-	setup := ctest.MakeRoleSetups(rng, s, name[:], false)
+	s := btest.NewCrossSetup(t, rng, true)
+	setup := ctest.MakeRoleSetupsCross(rng, s, name[:])
 
 	role[A] = clienttest.NewAlice(t, setup[A])
 	role[B] = clienttest.NewBob(t, setup[B])
@@ -46,9 +49,10 @@ func TestPaymentHappy(t *testing.T) {
 
 	execConfig := &clienttest.AliceBobExecConfig{
 		BaseExecConfig: clienttest.MakeBaseExecConfig(
-			[2]wire.Address{setup[A].Identity.Address(), setup[B].Identity.Address()},
-			s.Asset,
-			[2]*big.Int{asset.CKByteToShannon(big.NewFloat(100)), asset.CKByteToShannon(big.NewFloat(100))},
+			[2]map[wallet.BackendID]wire.Address{{3: setup[A].Identity[3].Address()}, {3: setup[B].Identity[3].Address()}},
+			[]channel.Asset{s.CkbAsset},
+			[]wallet.BackendID{3},
+			[][2]*big.Int{{asset.CKByteToShannon(big.NewFloat(100)), asset.CKByteToShannon(big.NewFloat(100))}},
 			client.WithoutApp(),
 		),
 		NumPayments: [2]int{2, 2},
@@ -81,7 +85,7 @@ func TestPaymentDispute(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), testDuration)
 	defer cancel()
 
-	setup := ctest.MakePaymentChannelSetup(t, rng, false)
+	setup := ctest.MakePaymentChannelSetup(t, rng)
 	clienttest.TestPaymentChannelDispute(ctx, t, setup)
 	log.Info("Payment dispute test done")
 }

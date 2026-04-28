@@ -19,8 +19,10 @@ import (
 	"perun.network/perun-ckb-backend/wallet/address"
 )
 
-const DefaultPollingInterval = time.Duration(5) * time.Second
-const DefaultMaxIterationsUntilAbort = 12
+const (
+	DefaultPollingInterval         = time.Duration(5) * time.Second
+	DefaultMaxIterationsUntilAbort = 12
+)
 
 type Funder struct {
 	client                  client.CKBClient
@@ -47,7 +49,14 @@ polling:
 	for i := 0; i < f.MaxIterationsUntilAbort; i++ {
 		select {
 		case <-ctx.Done():
-			return f.client.Abort(ctx, script, req.Params, req.State)
+			// Use a fresh bounded context for cleanup: the outer ctx is already
+			// cancelled and would cause Abort to fail immediately.
+			abortCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			if err := f.client.Abort(abortCtx, script, req.Params, req.State); err != nil {
+				return fmt.Errorf("abort after cancellation: %w (original cause: %w)", err, ctx.Err())
+			}
+			return ctx.Err()
 		case <-time.After(f.PollingInterval):
 			_, cs, err := f.client.GetChannelWithExactPCTS(ctx, script)
 			if err != nil {
@@ -94,11 +103,11 @@ func (f Funder) Fund(ctx context.Context, req channel.FundingReq) error {
 	// TODO: Verify channel fundable, such as:
 	// - no ckbytes allocation in initial state in (0, pflsMinCapacity)
 	// - ...
-	_, err := address.IsParticipant(req.Params.Parts[0])
+	_, err := address.IsParticipant(req.Params.Parts[0][address.CKBBackendID])
 	if err != nil {
 		return fmt.Errorf("party a: %w", err)
 	}
-	_, err = address.IsParticipant(req.Params.Parts[1])
+	_, err = address.IsParticipant(req.Params.Parts[1][address.CKBBackendID])
 	if err != nil {
 		return fmt.Errorf("party b: %w", err)
 	}

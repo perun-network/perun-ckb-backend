@@ -1,15 +1,20 @@
 package wallet_test
 
 import (
+	"encoding/hex"
+	"log"
 	"math/big"
+	wallet2 "perun.network/go-perun/wallet"
+	"perun.network/perun-ckb-backend/encoding"
 	"testing"
+
+	"perun.network/go-perun/channel"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	gpchannel "perun.network/go-perun/channel"
 	gptest "perun.network/go-perun/wallet/test"
+	nchannel "perun.network/perun-ckb-backend/channel"
 	"perun.network/perun-ckb-backend/channel/asset"
-	"perun.network/perun-ckb-backend/encoding"
 	"perun.network/perun-ckb-backend/wallet"
 	"perun.network/perun-ckb-backend/wallet/address"
 )
@@ -33,6 +38,53 @@ func TestEphemeralWallet(t *testing.T) {
 	require.True(t, valid)
 }
 
+func TestStateSignature(t *testing.T) {
+	w := wallet.NewEphemeralWallet()
+	acc, err := w.AddNewAccount()
+	require.NoError(t, err)
+
+	participant := address.AsParticipant(acc.Address())
+	publicKey := participant.PubKey
+	require.NotNil(t, publicKey)
+	log.Println("public key:", hex.EncodeToString(publicKey.SerializeCompressed()))
+
+	alloc := &channel.Allocation{
+		Assets: []channel.Asset{asset.NewCKBytesNervosAsset()},
+		Balances: [][]channel.Bal{
+			{big.NewInt(10), big.NewInt(11)},
+		},
+		Backends: []wallet2.BackendID{3},
+		Locked:   []channel.SubAlloc{},
+	}
+
+	state := &channel.State{
+		ID:         channel.Zero,
+		Version:    10,
+		App:        channel.NoApp(),
+		Allocation: *alloc,
+		Data:       channel.NoData(),
+		IsFinal:    true,
+	}
+
+	ethState := nchannel.ToEthState(state)
+	log.Println("eth state:", ethState)
+	bytes, err := nchannel.EncodeEthState(&ethState)
+	log.Println("encoded state:", bytes)
+	require.NoError(t, err)
+
+	signature, err := acc.SignData(bytes)
+	log.Println("signature:", hex.EncodeToString(signature))
+	sig, err := encoding.NewMoleculeSignature(signature)
+	require.NoError(t, err)
+	log.Println("molecule signature:", hex.EncodeToString(sig.AsSlice()))
+	log.Println("packed state:", "0x"+hex.EncodeToString(bytes))
+	require.NoError(t, err)
+
+	b, err := wallet.Backend.VerifySignature(bytes, signature, acc.Address())
+	require.NoError(t, err)
+	assert.Truef(t, b, "signature verification failed for address %s", acc.Address().String())
+}
+
 func TestPackAdddress(t *testing.T) {
 	w := wallet.NewEphemeralWallet()
 
@@ -53,43 +105,6 @@ func TestPackAdddress(t *testing.T) {
 	require.Equal(t, participant.PubKey, restoredParticipant.PubKey)
 	require.Equal(t, participant.PaymentScript, restoredParticipant.PaymentScript)
 	require.Equal(t, participant.UnlockScript, restoredParticipant.UnlockScript)
-}
-
-func TestStateSignature(t *testing.T) {
-	w := wallet.NewEphemeralWallet()
-	acc, err := w.AddNewAccount()
-	require.NoError(t, err)
-
-	participant := address.AsParticipant(acc.Address())
-	publicKey := participant.PubKey
-	require.NotNil(t, publicKey)
-
-	alloc := &gpchannel.Allocation{
-		Assets: []gpchannel.Asset{asset.NewCKBytesAsset()},
-		Balances: [][]gpchannel.Bal{
-			{big.NewInt(10), big.NewInt(11)},
-		},
-		Locked: []gpchannel.SubAlloc{},
-	}
-
-	state := &gpchannel.State{
-		ID:         gpchannel.Zero,
-		Version:    10,
-		App:        gpchannel.NoApp(),
-		Allocation: *alloc,
-		Data:       gpchannel.NoData(),
-		IsFinal:    true,
-	}
-
-	packedState, err := encoding.PackChannelState(state)
-	require.NoError(t, err)
-
-	signature, err := acc.SignData(packedState.AsSlice())
-	require.NoError(t, err)
-
-	b, err := wallet.Backend.VerifySignature(packedState.AsSlice(), signature, acc.Address())
-	require.NoError(t, err)
-	assert.Truef(t, b, "signature verification failed for address %s", acc.Address().String())
 }
 
 func setup() *gptest.Setup {
