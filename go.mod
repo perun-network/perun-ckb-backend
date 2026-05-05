@@ -7,7 +7,7 @@ require perun.network/go-perun v0.13.1-0.20250521092916-8f6050cb4409
 require (
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.2.0
 	github.com/nervosnetwork/ckb-sdk-go/v2 v2.2.0
-	golang.org/x/crypto v0.18.0
+	golang.org/x/crypto v0.18.0 // indirect
 )
 
 require (

@@ -42,3 +42,7 @@ func parseOutPoint(value string) (*types.OutPoint, error) {
 func outPointKey(outPoint *types.OutPoint) string {
 	return fmt.Sprintf("%s:%d", outPoint.TxHash.String(), outPoint.Index)
 }
+
+func isZeroHash(hash types.Hash) bool {
+	return hash == (types.Hash{})
+}

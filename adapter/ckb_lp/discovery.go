@@ -22,7 +22,7 @@ func (a *Adapter) DiscoverLPCells(ctx context.Context, operatorLockHash [32]byte
 
 	cells, err := a.rpcClient.GetCells(ctx, searchKey, indexer.SearchOrderDesc, client.SearchIndexerLimit, "")
 	if err != nil {
-		return nil, err
+		return nil, Retriable(err)
 	}
 
 	infos := make([]LPCellInfo, 0, len(cells.Objects))
@@ -30,11 +30,17 @@ func (a *Adapter) DiscoverLPCells(ctx context.Context, operatorLockHash [32]byte
 		if cell.Output == nil {
 			continue
 		}
+		if cell.Output.Type == nil || len(cell.Output.Type.Args) != 32 {
+			continue
+		}
 		if !IsLPCell(cell.OutputData) {
 			continue
 		}
 		decoded, err := DecodeLPCell(cell.OutputData)
 		if err != nil {
+			continue
+		}
+		if string(cell.Output.Type.Args) != string(decoded.PoolID[:]) {
 			continue
 		}
 		if decoded.OperatorLockHash != operatorLockHash {
@@ -53,18 +59,18 @@ func (a *Adapter) DiscoverLPCells(ctx context.Context, operatorLockHash [32]byte
 func (a *Adapter) GetLPCell(ctx context.Context, lpCellID string) (LPCellInfo, error) {
 	outPoint, err := parseOutPoint(lpCellID)
 	if err != nil {
-		return LPCellInfo{}, err
+		return LPCellInfo{}, Deterministic(err)
 	}
 	cell, err := a.rpcClient.GetLiveCell(ctx, outPoint, true)
 	if err != nil {
-		return LPCellInfo{}, err
+		return LPCellInfo{}, Retriable(err)
 	}
 	if cell == nil || cell.Cell == nil || cell.Cell.Output == nil || cell.Cell.Data == nil {
-		return LPCellInfo{}, ErrInvalidLPCell
+		return LPCellInfo{}, Deterministic(ErrInvalidLPCell)
 	}
 	decoded, err := DecodeLPCell(cell.Cell.Data.Content)
 	if err != nil {
-		return LPCellInfo{}, err
+		return LPCellInfo{}, Deterministic(ErrInvalidLPCell)
 	}
 	return LPCellInfo{
 		Cell:        decoded,

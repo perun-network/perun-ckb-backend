@@ -47,34 +47,37 @@ func (a *Adapter) BuildFundChannelTx(
 	amount uint64,
 ) error {
 	if amount == 0 {
-		return ErrInvalidWitness
+		return Deterministic(ErrInvalidWitness)
 	}
 	channelHash, err := parseHash32(channelID)
 	if err != nil {
-		return err
+		return Deterministic(err)
+	}
+	if isZeroHash(channelHash) {
+		return Deterministic(ErrInvalidChannelID)
 	}
 	outPoint, err := parseOutPoint(lpCellID)
 	if err != nil {
-		return err
+		return Deterministic(err)
 	}
 	cell, err := a.rpcClient.GetLiveCell(ctx, outPoint, true)
 	if err != nil {
-		return err
+		return Retriable(err)
 	}
 	if cell == nil || cell.Cell == nil || cell.Cell.Output == nil || cell.Cell.Data == nil {
-		return ErrInvalidLPCell
+		return Deterministic(ErrInvalidLPCell)
 	}
 	inputLPData := cell.Cell.Data.Content
 	inputLP, err := DecodeLPCell(inputLPData)
 	if err != nil {
-		return err
+		return Deterministic(ErrInvalidLPCell)
 	}
 	operatorLockHash := a.signer.Address().Script.Hash()
 	if inputLP.OperatorLockHash != operatorLockHash {
-		return ErrInvalidLPCellArg
+		return Deterministic(ErrScriptHashMismatch)
 	}
 	if amount > inputLP.AvailableCKB {
-		return ErrInvalidLPCellArg
+		return Deterministic(ErrInvalidLPCellArg)
 	}
 
 	channelCell, err := a.findChannelCellByID(ctx, channelHash)
@@ -92,16 +95,16 @@ func (a *Adapter) BuildFundChannelTx(
 	updatedLP.Nonce += 1
 	updatedLPData, err := EncodeLPCell(updatedLP)
 	if err != nil {
-		return err
+		return Deterministic(ErrInvalidLPCell)
 	}
 
 	fee := transaction.DefaultFeeShannon
 	if operatorCell.Output.Capacity <= fee {
-		return ErrInvalidLPCellArg
+		return Deterministic(ErrInsufficientOperatorFunds)
 	}
 	operatorChange := operatorCell.Output.Capacity - fee
 	if cell.Cell.Output.Capacity < amount {
-		return ErrInvalidLPCellArg
+		return Deterministic(ErrInvalidLPCellArg)
 	}
 	updatedLPCap := cell.Cell.Output.Capacity - amount
 	updatedChannelCap := channelCell.Output.Capacity + amount
@@ -153,15 +156,15 @@ func (a *Adapter) BuildFundChannelTx(
 		ExtractCKB:     amount,
 	})
 	if err := builder.SetWitness(0, types.WitnessTypeInputType, witness); err != nil {
-		return err
+		return Deterministic(ErrInvalidWitness)
 	}
 
 	tx, err := builder.Build()
 	if err != nil {
-		return err
+		return Deterministic(err)
 	}
 	if _, err := a.transactor.SubmitTransaction(ctx, tx); err != nil {
-		return err
+		return Retriable(err)
 	}
 	return nil
 }
@@ -177,48 +180,54 @@ func (a *Adapter) BuildSettleChannelInsertTx(
 	priceX64 uint128.Uint128,
 ) error {
 	if priceX64 == (uint128.Uint128{}) {
-		return ErrZeroPrice
+		return Deterministic(ErrZeroPrice)
 	}
 	channelHash, err := parseHash32(channelID)
 	if err != nil {
-		return err
+		return Deterministic(err)
+	}
+	if isZeroHash(channelHash) {
+		return Deterministic(ErrInvalidChannelID)
 	}
 	contribHash := channelHash
 	if contributionID != "" {
 		contribHash, err = parseHash32(contributionID)
 		if err != nil {
-			return err
+			return Deterministic(err)
+		}
+		if isZeroHash(contribHash) {
+			return Deterministic(ErrInvalidContributionID)
 		}
 	}
 	outPoint, err := parseOutPoint(lpCellID)
 	if err != nil {
-		return err
+		return Deterministic(err)
 	}
 	cell, err := a.rpcClient.GetLiveCell(ctx, outPoint, true)
 	if err != nil {
-		return err
+		return Retriable(err)
 	}
 	if cell == nil || cell.Cell == nil || cell.Cell.Output == nil || cell.Cell.Data == nil {
-		return ErrInvalidLPCell
+		return Deterministic(ErrInvalidLPCell)
 	}
 	inputLPData := cell.Cell.Data.Content
 	inputLP, err := DecodeLPCell(inputLPData)
 	if err != nil {
-		return err
+		return Deterministic(ErrInvalidLPCell)
 	}
 	operatorLockHash := a.signer.Address().Script.Hash()
 	if inputLP.OperatorLockHash != operatorLockHash {
-		return ErrInvalidLPCellArg
+		return Deterministic(ErrScriptHashMismatch)
 	}
 	if principal > inputLP.ReservedCKB {
-		return ErrInvalidLPCellArg
+		return Deterministic(ErrInvalidLPCellArg)
 	}
 	if (inputLP.Policy.PolicyFlags&policyFlagRequirePrice) != 0 && priceX64 == (uint128.Uint128{}) {
-		return ErrZeroPrice
+		return Deterministic(ErrZeroPrice)
 	}
 	if (inputLP.Policy.PolicyFlags & policyFlagSafePrice) != 0 {
 		if priceX64.Cmp(inputLP.Policy.SafePriceMinX64) < 0 || priceX64.Cmp(inputLP.Policy.SafePriceMaxX64) > 0 {
-			return ErrInvalidLPCellArg
+			return Deterministic(ErrInvalidLPCellArg)
 		}
 	}
 
@@ -233,13 +242,13 @@ func (a *Adapter) BuildSettleChannelInsertTx(
 	updatedLP.Nonce += 1
 	updatedLPData, err := EncodeLPCell(updatedLP)
 	if err != nil {
-		return err
+		return Deterministic(ErrInvalidLPCell)
 	}
 
 	fee := transaction.DefaultFeeShannon
 	totalReturn := principal + feeCKB
 	if operatorCell.Output.Capacity <= totalReturn+fee {
-		return ErrInvalidLPCellArg
+		return Deterministic(ErrInsufficientOperatorFunds)
 	}
 	operatorChange := operatorCell.Output.Capacity - totalReturn - fee
 	updatedLPCap := cell.Cell.Output.Capacity + totalReturn
@@ -285,15 +294,15 @@ func (a *Adapter) BuildSettleChannelInsertTx(
 		PriceX64:          priceX64,
 	})
 	if err := builder.SetWitness(0, types.WitnessTypeInputType, witness); err != nil {
-		return err
+		return Deterministic(ErrInvalidWitness)
 	}
 
 	tx, err := builder.Build()
 	if err != nil {
-		return err
+		return Deterministic(err)
 	}
 	if _, err := a.transactor.SubmitTransaction(ctx, tx); err != nil {
-		return err
+		return Retriable(err)
 	}
 	return nil
 }
@@ -312,7 +321,7 @@ func (a *Adapter) findChannelCellByID(ctx context.Context, channelID types.Hash)
 	}
 	resp, err := a.rpcClient.GetCells(ctx, searchKey, indexer.SearchOrderDesc, client.SearchIndexerLimit, "")
 	if err != nil {
-		return nil, err
+		return nil, Retriable(err)
 	}
 	for _, cell := range resp.Objects {
 		if cell.Output == nil {
@@ -326,7 +335,7 @@ func (a *Adapter) findChannelCellByID(ctx context.Context, channelID types.Hash)
 			return cell, nil
 		}
 	}
-	return nil, ErrInvalidLPCellArg
+	return nil, Deterministic(ErrInvalidLPCellArg)
 }
 
 func (a *Adapter) selectLargestOperatorCell(ctx context.Context) (*indexer.LiveCell, error) {
@@ -339,7 +348,7 @@ func (a *Adapter) selectLargestOperatorCell(ctx context.Context) (*indexer.LiveC
 	}
 	resp, err := a.rpcClient.GetCells(ctx, searchKey, indexer.SearchOrderDesc, client.SearchIndexerLimit, "")
 	if err != nil {
-		return nil, err
+		return nil, Retriable(err)
 	}
 	var best *indexer.LiveCell
 	for _, cell := range resp.Objects {
@@ -354,7 +363,7 @@ func (a *Adapter) selectLargestOperatorCell(ctx context.Context) (*indexer.LiveC
 		}
 	}
 	if best == nil {
-		return nil, ErrInvalidLPCellArg
+		return nil, Deterministic(ErrInsufficientOperatorFunds)
 	}
 	return best, nil
 }

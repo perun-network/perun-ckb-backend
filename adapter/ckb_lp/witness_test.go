@@ -1,77 +1,50 @@
 package ckblp
 
 import (
+	"math/big"
 	"testing"
 
 	"github.com/Pilatuz/bigz/uint128"
-	"github.com/nervosnetwork/ckb-sdk-go/v2/types"
+	"github.com/stretchr/testify/require"
 )
 
-// TestEncodeFundChannelExtractWitness verifies FundChannelExtract witness encoding.
 func TestEncodeFundChannelExtractWitness(t *testing.T) {
-	channelID := types.Hash{1, 2, 3, 4, 5, 6, 7, 8}
-	contribID := types.Hash{9, 10, 11, 12}
-
-	witness := FundChannelExtractWitness{
+	channelID := filled32(0xAA)
+	contribID := filled32(0xBB)
+	witness := EncodeFundChannelExtractWitness(FundChannelExtractWitness{
 		ChannelID:      channelID,
 		ContributionID: contribID,
-		ExtractCKB:     100000,
-	}
+		ExtractCKB:     42,
+	})
 
-	encoded := EncodeFundChannelExtractWitness(witness)
-
-	// Verify non-empty
-	if len(encoded) == 0 {
-		t.Error("encoded witness should not be empty")
-	}
-
-	// Verify opcode is present (0x43 for FundChannelExtract)
-	if encoded[0] != 0x43 {
-		t.Errorf("expected opcode 0x43 for FundChannelExtract, got 0x%02x", encoded[0])
-	}
+	require.Len(t, witness, witnessLenFundChannelExtract)
+	require.Equal(t, byte(opFundChannelExtract), witness[0])
+	require.Equal(t, channelID[:], witness[1:33])
+	require.Equal(t, contribID[:], witness[33:65])
+	require.Equal(t, byte(42), witness[65])
 }
 
-// TestEncodeSettleChannelInsertWitness verifies SettleChannelInsert witness encoding.
 func TestEncodeSettleChannelInsertWitness(t *testing.T) {
-	channelID := types.Hash{1, 2, 3, 4}
-	contribID := types.Hash{5, 6, 7, 8}
-	price := uint128.Uint128{Lo: 150}
+	channelID := filled32(0x01)
+	contribID := filled32(0x02)
+	priceBig := new(big.Int).Lsh(big.NewInt(1), 65)
+	priceBig.Add(priceBig, big.NewInt(5))
+	priceX64 := uint128.FromBig(priceBig)
 
-	witness := SettleChannelInsertWitness{
+	witness := EncodeSettleChannelInsertWitness(SettleChannelInsertWitness{
 		ChannelID:         channelID,
 		ContributionID:    contribID,
-		PrincipalReturned: 100000,
-		FeeCKB:            5000,
-		PriceX64:          price,
-	}
+		PrincipalReturned: 100,
+		FeeCKB:            7,
+		PriceX64:          priceX64,
+	})
 
-	encoded := EncodeSettleChannelInsertWitness(witness)
+	require.Len(t, witness, witnessLenSettleChannelInsert)
+	require.Equal(t, byte(opSettleChannelInsert), witness[0])
+	require.Equal(t, channelID[:], witness[1:33])
+	require.Equal(t, contribID[:], witness[33:65])
 
-	// Verify non-empty
-	if len(encoded) == 0 {
-		t.Error("encoded witness should not be empty")
-	}
-
-	// Verify opcode is present (0x44 for SettleChannelInsert)
-	if encoded[0] != 0x44 {
-		t.Errorf("expected opcode 0x44 for SettleChannelInsert, got 0x%02x", encoded[0])
-	}
-}
-
-// TestEncodeSettleChannelInsertWitness_ZeroPrice verifies that zero price is allowed in witness.
-// (The zero-price guard should be in the adapter method, not the witness encoder.)
-func TestEncodeSettleChannelInsertWitness_ZeroPrice(t *testing.T) {
-	witness := SettleChannelInsertWitness{
-		ChannelID:         types.Hash{1},
-		ContributionID:    types.Hash{2},
-		PrincipalReturned: 100000,
-		FeeCKB:            5000,
-		PriceX64:          uint128.Uint128{}, // Zero price
-	}
-
-	// Should not panic or error (encoding should work; validation is upstream)
-	encoded := EncodeSettleChannelInsertWitness(witness)
-	if len(encoded) == 0 {
-		t.Error("witness encoding should work even for zero price")
-	}
+	var expectedPrice [16]byte
+	uint128.StoreLittleEndian(expectedPrice[:], priceX64)
+	require.Equal(t, expectedPrice[:], witness[81:97])
 }
