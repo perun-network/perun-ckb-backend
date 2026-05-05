@@ -4,30 +4,38 @@ import (
 	"context"
 
 	"github.com/Pilatuz/bigz/uint128"
+	"github.com/nervosnetwork/ckb-sdk-go/v2/indexer"
+	"github.com/nervosnetwork/ckb-sdk-go/v2/rpc"
+	"github.com/nervosnetwork/ckb-sdk-go/v2/types"
+	"github.com/nervosnetwork/ckb-sdk-go/v2/types/molecule"
 	"perun.network/perun-ckb-backend/backend"
 	"perun.network/perun-ckb-backend/client"
+	"perun.network/perun-ckb-backend/transaction"
 )
 
 // Adapter builds LP transactions and witnesses for the hub.
 type Adapter struct {
-	client     client.CKBClient
-	signer     backend.Signer
-	transactor backend.Transactor
-	deployment backend.Deployment
+	rpcClient    rpc.Client
+	signer       backend.Signer
+	transactor   backend.Transactor
+	deployment   backend.Deployment
+	lpDeployment LPDeployment
 }
 
 // NewAdapter creates a new LP adapter with the provided dependencies.
 func NewAdapter(
-	client client.CKBClient,
+	rpcClient rpc.Client,
 	signer backend.Signer,
 	transactor backend.Transactor,
 	deployment backend.Deployment,
+	lpDeployment LPDeployment,
 ) *Adapter {
 	return &Adapter{
-		client:     client,
-		signer:     signer,
-		transactor: transactor,
-		deployment: deployment,
+		rpcClient:    rpcClient,
+		signer:       signer,
+		transactor:   transactor,
+		deployment:   deployment,
+		lpDeployment: lpDeployment,
 	}
 }
 
@@ -38,7 +46,124 @@ func (a *Adapter) BuildFundChannelTx(
 	lpCellID string,
 	amount uint64,
 ) error {
-	return ErrNotImplemented
+	if amount == 0 {
+		return ErrInvalidWitness
+	}
+	channelHash, err := parseHash32(channelID)
+	if err != nil {
+		return err
+	}
+	outPoint, err := parseOutPoint(lpCellID)
+	if err != nil {
+		return err
+	}
+	cell, err := a.rpcClient.GetLiveCell(ctx, outPoint, true)
+	if err != nil {
+		return err
+	}
+	if cell == nil || cell.Cell == nil || cell.Cell.Output == nil || cell.Cell.Data == nil {
+		return ErrInvalidLPCell
+	}
+	inputLPData := cell.Cell.Data.Content
+	inputLP, err := DecodeLPCell(inputLPData)
+	if err != nil {
+		return err
+	}
+	operatorLockHash := a.signer.Address().Script.Hash()
+	if inputLP.OperatorLockHash != operatorLockHash {
+		return ErrInvalidLPCellArg
+	}
+	if amount > inputLP.AvailableCKB {
+		return ErrInvalidLPCellArg
+	}
+
+	channelCell, err := a.findChannelCellByID(ctx, channelHash)
+	if err != nil {
+		return err
+	}
+	operatorCell, err := a.selectLargestOperatorCell(ctx)
+	if err != nil {
+		return err
+	}
+
+	updatedLP := inputLP
+	updatedLP.AvailableCKB -= amount
+	updatedLP.ReservedCKB += amount
+	updatedLP.Nonce += 1
+	updatedLPData, err := EncodeLPCell(updatedLP)
+	if err != nil {
+		return err
+	}
+
+	fee := transaction.DefaultFeeShannon
+	if operatorCell.Output.Capacity <= fee {
+		return ErrInvalidLPCellArg
+	}
+	operatorChange := operatorCell.Output.Capacity - fee
+	if cell.Cell.Output.Capacity < amount {
+		return ErrInvalidLPCellArg
+	}
+	updatedLPCap := cell.Cell.Output.Capacity - amount
+	updatedChannelCap := channelCell.Output.Capacity + amount
+
+	builder := transaction.NewSimpleTransactionBuilder(a.signer.Address().Script.CodeHash, a.deployment.DefaultLockScriptDep, false)
+	if a.signer.Address().Script.CodeHash != a.deployment.DefaultLockScript.CodeHash && len(a.deployment.OmniLockScriptDep) >= 2 {
+		builder = transaction.NewSimpleTransactionBuilder(a.deployment.OmniLockScript.CodeHash, a.deployment.OmniLockScriptDep[1], true)
+		builder.AddCellDep(&a.deployment.OmniLockScriptDep[0])
+		builder.AddCellDep(&a.deployment.OmniLockScriptDep[1])
+	} else {
+		builder.AddCellDep(&a.deployment.DefaultLockScriptDep)
+	}
+	builder.AddCellDep(&a.lpDeployment.TypeScriptDep)
+	builder.AddCellDep(&a.lpDeployment.LockScriptDep)
+
+	inputs := []*types.CellInput{
+		{PreviousOutput: outPoint},
+		{PreviousOutput: channelCell.OutPoint},
+		{PreviousOutput: operatorCell.OutPoint},
+	}
+	for _, input := range inputs {
+		builder.AddInput(input)
+		builder.Witnesses = append(builder.Witnesses, []byte{})
+	}
+
+	updatedLPOutput := &types.CellOutput{
+		Capacity: updatedLPCap,
+		Lock:     cell.Cell.Output.Lock,
+		Type:     cell.Cell.Output.Type,
+	}
+	updatedChannelOutput := &types.CellOutput{
+		Capacity: updatedChannelCap,
+		Lock:     channelCell.Output.Lock,
+		Type:     channelCell.Output.Type,
+	}
+	operatorChangeOutput := &types.CellOutput{
+		Capacity: operatorChange,
+		Lock:     operatorCell.Output.Lock,
+		Type:     nil,
+	}
+
+	builder.AddOutput(updatedLPOutput, updatedLPData)
+	builder.AddOutput(updatedChannelOutput, channelCell.OutputData)
+	builder.AddOutput(operatorChangeOutput, []byte{})
+
+	witness := EncodeFundChannelExtractWitness(FundChannelExtractWitness{
+		ChannelID:      channelHash,
+		ContributionID: channelHash,
+		ExtractCKB:     amount,
+	})
+	if err := builder.SetWitness(0, types.WitnessTypeInputType, witness); err != nil {
+		return err
+	}
+
+	tx, err := builder.Build()
+	if err != nil {
+		return err
+	}
+	if _, err := a.transactor.SubmitTransaction(ctx, tx); err != nil {
+		return err
+	}
+	return nil
 }
 
 // BuildSettleChannelInsertTx builds a SettleChannelInsert transaction (not implemented yet).
@@ -54,21 +179,182 @@ func (a *Adapter) BuildSettleChannelInsertTx(
 	if priceX64 == (uint128.Uint128{}) {
 		return ErrZeroPrice
 	}
-	return ErrNotImplemented
+	channelHash, err := parseHash32(channelID)
+	if err != nil {
+		return err
+	}
+	contribHash := channelHash
+	if contributionID != "" {
+		contribHash, err = parseHash32(contributionID)
+		if err != nil {
+			return err
+		}
+	}
+	outPoint, err := parseOutPoint(lpCellID)
+	if err != nil {
+		return err
+	}
+	cell, err := a.rpcClient.GetLiveCell(ctx, outPoint, true)
+	if err != nil {
+		return err
+	}
+	if cell == nil || cell.Cell == nil || cell.Cell.Output == nil || cell.Cell.Data == nil {
+		return ErrInvalidLPCell
+	}
+	inputLPData := cell.Cell.Data.Content
+	inputLP, err := DecodeLPCell(inputLPData)
+	if err != nil {
+		return err
+	}
+	operatorLockHash := a.signer.Address().Script.Hash()
+	if inputLP.OperatorLockHash != operatorLockHash {
+		return ErrInvalidLPCellArg
+	}
+	if principal > inputLP.ReservedCKB {
+		return ErrInvalidLPCellArg
+	}
+	if (inputLP.Policy.PolicyFlags&policyFlagRequirePrice) != 0 && priceX64 == (uint128.Uint128{}) {
+		return ErrZeroPrice
+	}
+	if (inputLP.Policy.PolicyFlags & policyFlagSafePrice) != 0 {
+		if priceX64.Cmp(inputLP.Policy.SafePriceMinX64) < 0 || priceX64.Cmp(inputLP.Policy.SafePriceMaxX64) > 0 {
+			return ErrInvalidLPCellArg
+		}
+	}
+
+	operatorCell, err := a.selectLargestOperatorCell(ctx)
+	if err != nil {
+		return err
+	}
+	updatedLP := inputLP
+	updatedLP.AvailableCKB += principal + feeCKB
+	updatedLP.ReservedCKB -= principal
+	updatedLP.CumulativeFeesEarnedCKB += feeCKB
+	updatedLP.Nonce += 1
+	updatedLPData, err := EncodeLPCell(updatedLP)
+	if err != nil {
+		return err
+	}
+
+	fee := transaction.DefaultFeeShannon
+	totalReturn := principal + feeCKB
+	if operatorCell.Output.Capacity <= totalReturn+fee {
+		return ErrInvalidLPCellArg
+	}
+	operatorChange := operatorCell.Output.Capacity - totalReturn - fee
+	updatedLPCap := cell.Cell.Output.Capacity + totalReturn
+
+	builder := transaction.NewSimpleTransactionBuilder(a.signer.Address().Script.CodeHash, a.deployment.DefaultLockScriptDep, false)
+	if a.signer.Address().Script.CodeHash != a.deployment.DefaultLockScript.CodeHash && len(a.deployment.OmniLockScriptDep) >= 2 {
+		builder = transaction.NewSimpleTransactionBuilder(a.deployment.OmniLockScript.CodeHash, a.deployment.OmniLockScriptDep[1], true)
+		builder.AddCellDep(&a.deployment.OmniLockScriptDep[0])
+		builder.AddCellDep(&a.deployment.OmniLockScriptDep[1])
+	} else {
+		builder.AddCellDep(&a.deployment.DefaultLockScriptDep)
+	}
+	builder.AddCellDep(&a.lpDeployment.TypeScriptDep)
+	builder.AddCellDep(&a.lpDeployment.LockScriptDep)
+
+	inputs := []*types.CellInput{
+		{PreviousOutput: outPoint},
+		{PreviousOutput: operatorCell.OutPoint},
+	}
+	for _, input := range inputs {
+		builder.AddInput(input)
+		builder.Witnesses = append(builder.Witnesses, []byte{})
+	}
+
+	updatedLPOutput := &types.CellOutput{
+		Capacity: updatedLPCap,
+		Lock:     cell.Cell.Output.Lock,
+		Type:     cell.Cell.Output.Type,
+	}
+	operatorChangeOutput := &types.CellOutput{
+		Capacity: operatorChange,
+		Lock:     operatorCell.Output.Lock,
+		Type:     nil,
+	}
+	builder.AddOutput(updatedLPOutput, updatedLPData)
+	builder.AddOutput(operatorChangeOutput, []byte{})
+
+	witness := EncodeSettleChannelInsertWitness(SettleChannelInsertWitness{
+		ChannelID:         channelHash,
+		ContributionID:    contribHash,
+		PrincipalReturned: principal,
+		FeeCKB:            feeCKB,
+		PriceX64:          priceX64,
+	})
+	if err := builder.SetWitness(0, types.WitnessTypeInputType, witness); err != nil {
+		return err
+	}
+
+	tx, err := builder.Build()
+	if err != nil {
+		return err
+	}
+	if _, err := a.transactor.SubmitTransaction(ctx, tx); err != nil {
+		return err
+	}
+	return nil
 }
 
-// DiscoverLPCells returns LP cells matching operator lock hash (not implemented yet).
-func (a *Adapter) DiscoverLPCells(
-	ctx context.Context,
-	operatorLockHash byte,
-) ([]LPCellInfo, error) {
-	return nil, ErrNotImplemented
+// findChannelCellByID locates a channel cell by channel ID.
+func (a *Adapter) findChannelCellByID(ctx context.Context, channelID types.Hash) (*indexer.LiveCell, error) {
+	searchKey := &indexer.SearchKey{
+		Script: &types.Script{
+			CodeHash: a.deployment.PCTSCodeHash,
+			HashType: a.deployment.PCTSHashType,
+			Args:     []byte{},
+		},
+		ScriptType:       types.ScriptTypeType,
+		ScriptSearchMode: types.ScriptSearchModePrefix,
+		WithData:         true,
+	}
+	resp, err := a.rpcClient.GetCells(ctx, searchKey, indexer.SearchOrderDesc, client.SearchIndexerLimit, "")
+	if err != nil {
+		return nil, err
+	}
+	for _, cell := range resp.Objects {
+		if cell.Output == nil {
+			continue
+		}
+		status, err := molecule.ChannelStatusFromSlice(cell.OutputData, false)
+		if err != nil {
+			continue
+		}
+		if types.UnpackHash(status.State().ChannelId()) == channelID {
+			return cell, nil
+		}
+	}
+	return nil, ErrInvalidLPCellArg
 }
 
-// GetLPCell fetches a single LP cell (not implemented yet).
-func (a *Adapter) GetLPCell(
-	ctx context.Context,
-	lpCellID string,
-) (LPCellInfo, error) {
-	return LPCellInfo{}, ErrNotImplemented
+func (a *Adapter) selectLargestOperatorCell(ctx context.Context) (*indexer.LiveCell, error) {
+	signerScript := a.signer.Address().Script
+	searchKey := &indexer.SearchKey{
+		Script:           signerScript,
+		ScriptType:       types.ScriptTypeLock,
+		ScriptSearchMode: types.ScriptSearchModeExact,
+		WithData:         true,
+	}
+	resp, err := a.rpcClient.GetCells(ctx, searchKey, indexer.SearchOrderDesc, client.SearchIndexerLimit, "")
+	if err != nil {
+		return nil, err
+	}
+	var best *indexer.LiveCell
+	for _, cell := range resp.Objects {
+		if cell.Output == nil || cell.Output.Type != nil {
+			continue
+		}
+		if IsLPCell(cell.OutputData) {
+			continue
+		}
+		if best == nil || cell.Output.Capacity > best.Output.Capacity {
+			best = cell
+		}
+	}
+	if best == nil {
+		return nil, ErrInvalidLPCellArg
+	}
+	return best, nil
 }

@@ -1,6 +1,17 @@
 package ckblp
 
-import "github.com/Pilatuz/bigz/uint128"
+import (
+	"github.com/Pilatuz/bigz/uint128"
+	"github.com/nervosnetwork/ckb-sdk-go/v2/types"
+)
+
+// LPDeployment holds deployed LP script metadata.
+type LPDeployment struct {
+	TypeScriptDep      types.CellDep
+	LockScriptDep      types.CellDep
+	TypeScriptCodeHash types.Hash
+	TypeScriptHashType types.ScriptHashType
+}
 
 // LPPolicy mirrors perun-common pool policy fields.
 type LPPolicy struct {
@@ -15,11 +26,11 @@ type LPPolicy struct {
 // LPCell mirrors perun-common LP cell data layout.
 type LPCell struct {
 	PoolID                  [32]byte
-	OwnerLockHash            [32]byte
-	OperatorLockHash         [32]byte
-	AvailableCKB             uint64
-	ReservedCKB              uint64
-	CumulativeFeesEarnedCKB  uint64
+	OwnerLockHash           [32]byte
+	OperatorLockHash        [32]byte
+	AvailableCKB            uint64
+	ReservedCKB             uint64
+	CumulativeFeesEarnedCKB uint64
 	Policy                  LPPolicy
 	Nonce                   uint64
 	Active                  bool
@@ -47,4 +58,3 @@ type SettleChannelInsertWitness struct {
 	FeeCKB            uint64
 	PriceX64          uint128.Uint128
 }
-package ckblp

@@ -1,5 +1,4 @@
 package ckblp
-package ckblp
 
 import "errors"
 

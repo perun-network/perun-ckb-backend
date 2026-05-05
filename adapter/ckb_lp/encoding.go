@@ -1,5 +1,4 @@
 package ckblp
-package ckblp
 
 import (
 	"bytes"
@@ -15,35 +14,35 @@ const (
 var lpMagic = []byte{'L', 'P', 'L', 'C'}
 
 const (
-	lpOffsetPoolID             = 4
-	lpOffsetOwnerLockHash       = lpOffsetPoolID + 32
-	lpOffsetOperatorLockHash    = lpOffsetOwnerLockHash + 32
-	lpOffsetAvailableCKB        = lpOffsetOperatorLockHash + 32
-	lpOffsetReservedCKB         = lpOffsetAvailableCKB + 8
-	lpOffsetCumulativeFees      = lpOffsetReservedCKB + 8
-	lpOffsetMaxTradingVolume    = lpOffsetCumulativeFees + 8
-	lpOffsetFeeRateBps          = lpOffsetMaxTradingVolume + 8
-	lpOffsetPolicyFlags         = lpOffsetFeeRateBps + 4
-	lpOffsetPolicyVersion       = lpOffsetPolicyFlags + 4
-	lpOffsetSafePriceMinX64     = lpOffsetPolicyVersion + 4
-	lpOffsetSafePriceMaxX64     = lpOffsetSafePriceMinX64 + 16
-	lpOffsetNonce               = lpOffsetSafePriceMaxX64 + 16
-	lpOffsetActive              = lpOffsetNonce + 8
+	lpOffsetPoolID           = 4
+	lpOffsetOwnerLockHash    = lpOffsetPoolID + 32
+	lpOffsetOperatorLockHash = lpOffsetOwnerLockHash + 32
+	lpOffsetAvailableCKB     = lpOffsetOperatorLockHash + 32
+	lpOffsetReservedCKB      = lpOffsetAvailableCKB + 8
+	lpOffsetCumulativeFees   = lpOffsetReservedCKB + 8
+	lpOffsetMaxTradingVolume = lpOffsetCumulativeFees + 8
+	lpOffsetFeeRateBps       = lpOffsetMaxTradingVolume + 8
+	lpOffsetPolicyFlags      = lpOffsetFeeRateBps + 4
+	lpOffsetPolicyVersion    = lpOffsetPolicyFlags + 4
+	lpOffsetSafePriceMinX64  = lpOffsetPolicyVersion + 4
+	lpOffsetSafePriceMaxX64  = lpOffsetSafePriceMinX64 + 16
+	lpOffsetNonce            = lpOffsetSafePriceMaxX64 + 16
+	lpOffsetActive           = lpOffsetNonce + 8
 
-	lpEndPoolID          = lpOffsetPoolID + 32
-	lpEndOwnerLockHash   = lpOffsetOwnerLockHash + 32
+	lpEndPoolID           = lpOffsetPoolID + 32
+	lpEndOwnerLockHash    = lpOffsetOwnerLockHash + 32
 	lpEndOperatorLockHash = lpOffsetOperatorLockHash + 32
-	lpEndAvailableCKB    = lpOffsetAvailableCKB + 8
-	lpEndReservedCKB     = lpOffsetReservedCKB + 8
-	lpEndCumulativeFees  = lpOffsetCumulativeFees + 8
+	lpEndAvailableCKB     = lpOffsetAvailableCKB + 8
+	lpEndReservedCKB      = lpOffsetReservedCKB + 8
+	lpEndCumulativeFees   = lpOffsetCumulativeFees + 8
 	lpEndMaxTradingVolume = lpOffsetMaxTradingVolume + 8
-	lpEndFeeRateBps      = lpOffsetFeeRateBps + 4
-	lpEndPolicyFlags     = lpOffsetPolicyFlags + 4
-	lpEndPolicyVersion   = lpOffsetPolicyVersion + 4
-	lpEndSafePriceMinX64 = lpOffsetSafePriceMinX64 + 16
-	lpEndSafePriceMaxX64 = lpOffsetSafePriceMaxX64 + 16
-	lpEndNonce           = lpOffsetNonce + 8
-	lpEndActive          = lpOffsetActive + 1
+	lpEndFeeRateBps       = lpOffsetFeeRateBps + 4
+	lpEndPolicyFlags      = lpOffsetPolicyFlags + 4
+	lpEndPolicyVersion    = lpOffsetPolicyVersion + 4
+	lpEndSafePriceMinX64  = lpOffsetSafePriceMinX64 + 16
+	lpEndSafePriceMaxX64  = lpOffsetSafePriceMaxX64 + 16
+	lpEndNonce            = lpOffsetNonce + 8
+	lpEndActive           = lpOffsetActive + 1
 )
 
 // EncodeLPCell encodes LP cell data using the raw fixed layout from pool.rs.
