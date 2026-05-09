@@ -11,6 +11,8 @@ type LPDeployment struct {
 	LockScriptDep      types.CellDep
 	TypeScriptCodeHash types.Hash
 	TypeScriptHashType types.ScriptHashType
+	LockScriptCodeHash types.Hash
+	LockScriptHashType types.ScriptHashType
 }
 
 // LPPolicy mirrors perun-common pool policy fields.

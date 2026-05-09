@@ -20,6 +20,11 @@ const (
 	witnessLenSettleChannelInsert = 97
 )
 
+const (
+	witnessLenLPDeposit  = 1
+	witnessLenLPWithdraw = 9
+)
+
 // EncodeFundChannelExtractWitness encodes a FundChannelExtract witness payload.
 func EncodeFundChannelExtractWitness(w FundChannelExtractWitness) []byte {
 	buf := make([]byte, 0, witnessLenFundChannelExtract)
@@ -29,6 +34,23 @@ func EncodeFundChannelExtractWitness(w FundChannelExtractWitness) []byte {
 
 	var tmp [8]byte
 	binary.LittleEndian.PutUint64(tmp[:], w.ExtractCKB)
+	buf = append(buf, tmp[:]...)
+	return buf
+}
+
+// EncodeLPDepositWitness encodes an LPDeposit witness payload.
+func EncodeLPDepositWitness() []byte {
+	buf := make([]byte, 0, witnessLenLPDeposit)
+	buf = append(buf, byte(opLPDeposit))
+	return buf
+}
+
+// EncodeLPWithdrawWitness encodes an LPWithdraw witness payload.
+func EncodeLPWithdrawWitness(ckbOut uint64) []byte {
+	buf := make([]byte, 0, witnessLenLPWithdraw)
+	buf = append(buf, byte(opLPWithdraw))
+	var tmp [8]byte
+	binary.LittleEndian.PutUint64(tmp[:], ckbOut)
 	buf = append(buf, tmp[:]...)
 	return buf
 }

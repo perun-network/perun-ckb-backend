@@ -3,6 +3,7 @@ package backend
 import (
 	"context"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/nervosnetwork/ckb-sdk-go/v2/rpc"
@@ -37,19 +38,22 @@ const defaultPollingInterval = 2 * time.Second
 
 func sendAndAwait(ctx context.Context, rpcClient rpc.Client, tx *types.Transaction) (types.Hash, error) {
 	var txHash *types.Hash
+	var lastErr error
 	for i := 0; i < 3; i++ {
 		var err error
 		txHash, err = rpcClient.SendTransaction(ctx, tx)
 		if err == nil {
 			break
 		}
+		lastErr = err
+		log.Printf("SendTransaction attempt %d failed: %v", i+1, err)
 		if ctx.Err() != nil {
 			return types.Hash{}, fmt.Errorf("sending transaction: %w", ctx.Err())
 		}
 		time.Sleep(10 * time.Second)
 	}
 	if txHash == nil {
-		return types.Hash{}, fmt.Errorf("sending transaction: retries exhausted")
+		return types.Hash{}, fmt.Errorf("sending transaction: retries exhausted (last error: %v)", lastErr)
 	}
 
 	var txWithStatus *types.TransactionWithStatus
