@@ -82,7 +82,8 @@ jobs:
           ckb miner > /dev/null 2>&1 &
           sleep 3
           ./print_accounts.sh
-          go run -tags getaddress ../cmd/get_address.go
+          env -u C_INCLUDE_PATH -u CFLAGS -u TARGET_CFLAGS \
+              go run -tags getaddress ../cmd/get_address.go
           sleep 6
           ./fund_omni_accounts.sh
           sleep 10
