@@ -3,61 +3,49 @@
 set -e
 
 ACCOUNTS_DIR="accounts"
-FUND_AMOUNT=10000  # Amount in CKB
+FUND_AMOUNT=10000
+DEPLOYER_AMOUNT=100000
+MINER_PK="$ACCOUNTS_DIR/miner.pk"
 
-# Extract CKB address from .txt file (line starting with ckb_address:)
 extract_address() {
-  local file="$1"
-  grep '^ckb_address:' "$file" | awk '{print $2}'
+  awk '/^ckb_address:/{print $2}' "$1"
 }
-# Fund a recipient using offckb transfer
+
 fund_address() {
   local to_addr="$1"
-  local privkey_path="$ACCOUNTS_DIR/genesis-1.pk"
-  local privkey=$(head -n 1 "$privkey_path")
-  echo "${privkey}"
-
-  echo "Sending ${FUND_AMOUNT} CKB to $to_addr"
-  local output
-    output=$(offckb transfer --privkey "$privkey" "$to_addr" "$FUND_AMOUNT" 2>&1)
-
-    echo "$output"
-  tx_hash=$(echo "$output" | grep -oE 'txHash: 0x[a-f0-9]{64}' | awk '{print $2}')
-
-  # Wait for it to commit using ckb-cli (or poll via JSON-RPC if you prefer)
-  if [ -n "$tx_hash" ]; then
-    echo "⏳ Waiting for tx to commit: $tx_hash"
-    while true; do
-      response=$(ckb-cli rpc get_transaction --output-format json --hash "$tx_hash")
-      status=$(echo "$response" | jq -r .tx_status.status)
-      if [ "$status" == "committed" ]; then
-        echo "✅ Tx committed: $tx_hash"
-        break
-      fi
-      sleep 2
-    done
+  local amount="${2:-$FUND_AMOUNT}"
+  echo "Sending ${amount} CKB to $to_addr"
+  local out tx_hash status
+  out=$(ckb-cli wallet transfer \
+    --privkey-path "$MINER_PK" \
+    --to-address "$to_addr" \
+    --capacity "$amount" \
+    --skip-check-to-address 2>&1)
+  tx_hash=$(echo "$out" | grep -m 1 -oE '0x[a-f0-9]{64}')
+  if [ -z "$tx_hash" ]; then
+    echo "Transfer failed: $out" >&2
+    return 1
   fi
+  echo "  tx $tx_hash — waiting for commit..."
+  for _ in $(seq 1 30); do
+    status=$(ckb-cli rpc get_transaction --output-format json --hash "$tx_hash" 2>/dev/null \
+      | jq -r .tx_status.status 2>/dev/null)
+    if [ "$status" = "committed" ]; then
+      echo "  committed"
+      return 0
+    fi
+    sleep 1
+  done
+  echo "Transfer $tx_hash did not commit in time (status=$status)" >&2
+  return 1
 }
 
-# Extract addresses
-alice=$(extract_address "$ACCOUNTS_DIR/alice.txt")
-bob=$(extract_address "$ACCOUNTS_DIR/bob.txt")
-ingrid=$(extract_address "$ACCOUNTS_DIR/ingrid.txt")
-alice_def=$(extract_address "$ACCOUNTS_DIR/alice_default.txt")
-bob_def=$(extract_address "$ACCOUNTS_DIR/bob_default.txt")
-ingrid_def=$(extract_address "$ACCOUNTS_DIR/ingrid_default.txt")
+for name in alice bob ingrid alice_default bob_default ingrid_default; do
+  fund_address "$(extract_address "$ACCOUNTS_DIR/$name.txt")"
+done
 
-# Fund each account
-fund_address "$alice"
-sleep 5
-fund_address "$bob"
-sleep 5
-fund_address "$ingrid"
-sleep 5
-fund_address "$alice_def"
-sleep 5
-fund_address "$bob_def"
-sleep 5
-fund_address "$ingrid_def"
+# genesis-2 is the deployment-tx funder used by deploy_contracts.sh.
+# On a vanilla ckb dev chain it owns no genesis cells, so bootstrap from miner.
+fund_address "$(extract_address "$ACCOUNTS_DIR/genesis-2.txt")" "$DEPLOYER_AMOUNT"
 
-echo "✅ All transfers completed."
+echo "All transfers completed."
