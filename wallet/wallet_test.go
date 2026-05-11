@@ -69,10 +69,11 @@ func TestStateSignature(t *testing.T) {
 	ethState := nchannel.ToEthState(state)
 	log.Println("eth state:", ethState)
 	bytes, err := nchannel.EncodeEthState(&ethState)
-	log.Println("encoded state:", bytes)
 	require.NoError(t, err)
+	log.Println("encoded state:", hex.EncodeToString(bytes))
 
 	signature, err := acc.SignData(bytes)
+	require.NoError(t, err)
 	log.Println("signature:", hex.EncodeToString(signature))
 	sig, err := encoding.NewMoleculeSignature(signature)
 	require.NoError(t, err)

@@ -2,16 +2,11 @@ package client_test
 
 import (
 	"context"
-	"encoding/hex"
-	"fmt"
-	"github.com/nervosnetwork/ckb-sdk-go/v2/indexer"
-	"github.com/nervosnetwork/ckb-sdk-go/v2/types"
 	"github.com/sirupsen/logrus"
 	"math/big"
 	"math/rand"
 	"perun.network/go-perun/channel"
 	"perun.network/go-perun/wallet"
-	"perun.network/perun-ckb-backend/wallet/address"
 	"testing"
 	"time"
 
@@ -133,81 +128,3 @@ func makeMultiPaymentChannelSetup(t *testing.T, rng *rand.Rand) clienttest.Payme
 	}
 }
 
-func getBalance(asset asset.Asset, participant address.Participant) (*big.Int, error) {
-	ctx := context.Background()
-	fmt.Println("Participant: ", participant.UnlockScript.CodeHash, "hashtype: ", participant.UnlockScript.HashType, "Args: ", participant.UnlockScript.Args)
-	indexerClient, _ := indexer.Dial("http://127.0.0.1:8114")
-	lockScript := &types.Script{
-		CodeHash: participant.UnlockScript.CodeHash, // secp256k1_blake160_sighash_all
-		HashType: participant.UnlockScript.HashType,
-		Args:     participant.UnlockScript.Args, // from public key
-	}
-
-	// Query CKB balance
-	capacityResp, err := indexerClient.GetCellsCapacity(ctx, &indexer.SearchKey{
-		Script:     lockScript,
-		ScriptType: types.ScriptTypeLock,
-	})
-	if err != nil {
-		log.Errorf("failed to get CKB balance: %v", err)
-		return big.NewInt(0), err
-	}
-	ckbAmount := capacityResp.Capacity
-	log.Println("CKB balance", ckbAmount)
-
-	// If no SUDT requested
-	if asset.IsCKBytes {
-		log.Println("no SUDT requested, CKB: ", ckbAmount)
-		return big.NewInt(int64(ckbAmount)), nil
-	}
-
-	// Query SUDT balance by filtering cells with type script
-	var balance = big.NewInt(0)
-	cursor := ""
-	outputrange := [2]uint64{1, 129}
-	fmt.Println("getting sudt balance", asset.SUDT.TypeScript.CodeHash.String(), asset.SUDT.TypeScript.HashType, hex.EncodeToString(asset.SUDT.TypeScript.Args), hex.EncodeToString(lockScript.Args))
-	for {
-		resp, err := indexerClient.GetCells(ctx, &indexer.SearchKey{
-			Script: &types.Script{
-				CodeHash: asset.SUDT.TypeScript.CodeHash,
-				HashType: asset.SUDT.TypeScript.HashType,
-				Args:     asset.SUDT.TypeScript.Args,
-			},
-			WithData:   true,
-			ScriptType: types.ScriptTypeType,
-			Filter: &indexer.Filter{
-				Script:             lockScript,
-				OutputDataLenRange: &outputrange,
-			},
-		}, indexer.SearchOrderAsc, 500, cursor)
-		if err != nil {
-			log.Println("indexer query failed:", err)
-			return balance, err
-		}
-		log.Println("Found: ", len(resp.Objects), "cells with cursor:", resp.LastCursor)
-		for i, cell := range resp.Objects {
-			if len(cell.OutputData) < 16 {
-				log.Printf("Skipping cell %d due to short or missing data: %v", i, cell.OutputData)
-				continue
-			}
-			amount := new(big.Int).SetBytes(reverseBytes(cell.OutputData[:16]))
-			log.Printf("Cell %d amount: %s", i, amount.String())
-			balance.Add(balance, amount)
-		}
-
-		if resp.LastCursor == cursor || len(resp.Objects) == 0 {
-			break
-		}
-		cursor = resp.LastCursor
-	}
-	log.Println("Final SUDT balance:", balance)
-	return balance, nil
-}
-
-func reverseBytes(b []byte) []byte {
-	out := make([]byte, len(b))
-	for i := range b {
-		out[i] = b[len(b)-1-i]
-	}
-	return out
-}

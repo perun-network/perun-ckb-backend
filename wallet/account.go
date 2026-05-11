@@ -51,6 +51,9 @@ func (a Account) SignData(data []byte) ([]byte, error) {
 	prefix := []byte("\x19Ethereum Signed Message:\n32")
 	phash := crypto.Keccak256(prefix, hash)
 	privateKeyECDSA, err := crypto.HexToECDSA(hex.EncodeToString(a.key.Serialize()))
+	if err != nil {
+		return nil, errors.Wrap(err, "HexToECDSA")
+	}
 	sig, err := crypto.Sign(phash, privateKeyECDSA)
 	if err != nil {
 		return nil, errors.Wrap(err, "SignHash")
@@ -74,11 +77,11 @@ func NewAccountFromPrivateKey(key *secp256k1.PrivateKey, codeHash types.Hash, de
 // ConvertDecredKeyToECDSA converts a decred secp256k1 PrivateKey to an ecdsa.PrivateKey compatible with go-ethereum.
 func ConvertDecredKeyToECDSA(decredKey *secp256k1.PrivateKey) *ecdsa.PrivateKey {
 	ecPriv := new(ecdsa.PrivateKey)
-	ecPriv.PublicKey.Curve = secp256k1.S256()
+	ecPriv.Curve = secp256k1.S256()
 	ecPriv.D = new(big.Int).SetBytes(decredKey.Serialize())
 
 	pub := decredKey.PubKey()
-	ecPriv.PublicKey.X = pub.X()
-	ecPriv.PublicKey.Y = pub.Y()
+	ecPriv.X = pub.X()
+	ecPriv.Y = pub.Y()
 	return ecPriv
 }

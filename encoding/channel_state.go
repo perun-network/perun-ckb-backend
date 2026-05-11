@@ -35,7 +35,7 @@ func PackBalances(state *pchannel.State) (molecule.Balances, error) {
 	allocBuilder := molecule.NewAllocationBuilder()
 	for _, pAsset := range state.Assets {
 		a, ckb := asset.IsCompatibleAsset(pAsset)
-		if ckb != true {
+		if !ckb {
 			d, err := PackEthBalances(
 				[2]*big.Int{
 					state.Balance(0, pAsset),
@@ -121,7 +121,7 @@ func PackSubAlloc(subAlloc *pchannel.SubAlloc, state *pchannel.State) (molecule.
 	}
 	for i, pAsset := range state.Assets {
 		a, ckb := asset.IsCompatibleAsset(pAsset)
-		if ckb != true {
+		if !ckb {
 			return molecule.SubAlloc{}, errors.New("locked eth assets are not supported")
 		}
 		if a.IsInvalid() {

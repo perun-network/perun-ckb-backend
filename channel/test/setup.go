@@ -332,51 +332,6 @@ func NewDevnetVirtualChannelSetup(t *testing.T, rng *rand.Rand) *Setup {
 	return newVirtualChannelSetupForNetwork(t, rng, devNetDir, DevnetRpcNodeURL)
 }
 
-func newLedgerChannelSetupForNetwork(t *testing.T, rng *rand.Rand, netDir, rpcURL string) *Setup {
-	setup := &Setup{}
-	setup.t = t
-	setup.Rng = rng
-
-	sudtOwnerLockArg, err := ParseSUDTOwnerLockArg(netDir + "/accounts/sudt-owner-lock-hash.txt")
-	require.NoError(t, err, "error getting SUDT owner lock arg")
-
-	d, sudtInfo, err := GetDeployment(netDir+"/contract/migrations_0/dev/", netDir+"/contract/migrations_1/dev/", netDir+"/contract/migrations_vc/dev/", netDir+"/system_scripts", sudtOwnerLockArg)
-	require.NoError(t, err, "error getting deployment")
-	setup.Deployment = d
-	setup.SUDTInfo = *sudtInfo
-
-	setup.Asset = asset.NewCKBytesNervosAsset()
-
-	wallets := make([]*ckbwallettest.TestEphemeralWallet, 2)
-	setup.EphemeralWallets = wallets
-
-	keyAlice, err := GetKey(netDir + "/accounts/alice.pk")
-	require.NoError(t, err, "error getting alice's private key")
-
-	keyBob, err := GetKey(netDir + "/accounts/bob.pk")
-	require.NoError(t, err, "error getting bob's private key")
-
-	aliceAccount := wallet.NewAccountFromPrivateKey(keyAlice, types.Hash{}, true)
-	bobAccount := wallet.NewAccountFromPrivateKey(keyBob, types.Hash{}, true)
-
-	wallets[0] = ckbwallettest.NewTestEphemeralWallet(aliceAccount)
-	err = wallets[0].AddAccount(aliceAccount)
-	require.NoError(t, err, "error adding alice's account")
-
-	wallets[1] = ckbwallettest.NewTestEphemeralWallet(bobAccount)
-	err = wallets[1].AddAccount(bobAccount)
-	require.NoError(t, err, "error adding bob's account")
-
-	setup.WalletAccs = []*wallet.Account{aliceAccount, bobAccount}
-	setup.AccKeys = []secp256k1.PrivateKey{*keyAlice, *keyBob}
-
-	funders, adjs := createFundersAndAdjudicators(t, setup.WalletAccs, setup.AccKeys, d, rpcURL, false, nil)
-	setup.Funders = funders
-	setup.Adjs = adjs
-
-	return setup
-}
-
 func newVirtualChannelSetupForNetwork(t *testing.T, rng *rand.Rand, netDir, rpcURL string) *Setup {
 	setup := &Setup{}
 	setup.t = t

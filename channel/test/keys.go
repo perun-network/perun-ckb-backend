@@ -34,7 +34,7 @@ func GetKey(path string) (*secp256k1.PrivateKey, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer keyFile.Close()
+	defer func() { _ = keyFile.Close() }()
 
 	rawBytes, err := io.ReadAll(keyFile)
 	if err != nil {

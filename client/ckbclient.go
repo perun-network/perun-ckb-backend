@@ -122,10 +122,9 @@ type Client struct {
 	signer     backend.Signer
 	deployment backend.Deployment
 
-	psh           *transaction.PerunScriptHandler
-	cache         StableScriptCache
-	vccache       StableScriptCache
-	ownScriptHash types.Hash
+	psh     *transaction.PerunScriptHandler
+	cache   StableScriptCache
+	vccache StableScriptCache
 }
 
 func NewClient(rpcClient rpc.Client, signer backend.Signer, deployment backend.Deployment) (*Client, error) {
@@ -155,7 +154,7 @@ func (c Client) Start(ctx context.Context, params *channel.Params, state *channe
 	}
 	cid, _ := ckbchannel.Backend.CalcID(params)
 	oi := transaction.NewOpenInfo(cid, channelToken, params, state)
-	log.Println("Open Information: ", oi.ChannelToken.Token, oi.State.Assets[0].Address(), oi.State.Balances)
+	log.Printf("Open Information: token=%v address=%v balances=%v", oi.ChannelToken.Token, oi.State.Assets[0].Address(), oi.State.Balances)
 	zeroHash := types.Hash{}
 	builder, err := c.newPerunTransactionBuilder(map[types.Hash]collector.CellIterator{zeroHash: iter})
 	if err != nil {
@@ -1215,7 +1214,7 @@ func updateState(state *channel.State, newState *molecule.ChannelState) (*channe
 
 	for sudtIndex, pAsset := range state.Assets {
 		a, ckb := asset.IsCompatibleAsset(pAsset)
-		if ckb != true {
+		if !ckb {
 			continue
 		}
 		if a.IsInvalid() {

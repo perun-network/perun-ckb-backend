@@ -118,7 +118,7 @@ func (id ChainID) MarshalBinary() (data []byte, err error) {
 
 // MapKey returns the asset's map key representation.
 func (id ChainID) MapKey() multi.LedgerIDMapKey {
-	return multi.LedgerIDMapKey(id.Int.String())
+	return multi.LedgerIDMapKey(id.String())
 }
 
 type (

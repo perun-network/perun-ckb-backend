@@ -34,10 +34,10 @@ const EthBackendID = 1
 
 // ToEthState converts a channel.State to a ChannelState struct.
 func ToEthState(s *channel.State) EthChannelState {
-	numAssets := len(s.Allocation.Assets)
+	numAssets := len(s.Assets)
 	backends := make([]*big.Int, numAssets)
-	for i := range s.Allocation.Assets {
-		backends[i] = big.NewInt(int64(s.Allocation.Backends[i]))
+	for i := range s.Assets {
+		backends[i] = big.NewInt(int64(s.Backends[i]))
 	}
 	locked := make([]ChannelSubAlloc, len(s.Locked))
 	for i, sub := range s.Locked {
@@ -58,13 +58,13 @@ func ToEthState(s *channel.State) EthChannelState {
 
 	assets := make([]ChannelAsset, numAssets)
 
-	for i, backendID := range s.Allocation.Backends {
+	for i, backendID := range s.Backends {
 		switch backendID {
 		case EthBackendID:
-			assets[i] = assetToEthAsset(s.Allocation.Assets[i])
+			assets[i] = assetToEthAsset(s.Assets[i])
 
 		case CKBBackendID:
-			assets[i] = assetToCKBAsset(s.Allocation.Assets[i])
+			assets[i] = assetToCKBAsset(s.Assets[i])
 
 		default:
 			log.Panicf("wrong backend ID: %d", backendID)

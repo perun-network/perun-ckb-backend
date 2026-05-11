@@ -85,6 +85,9 @@ func (m Migration) MakeDeployment(systemScripts SystemScripts, sudtOwnerLockArg 
 	hexString = strings.ReplaceAll(hexString, "\r", "")
 	hexString = strings.ReplaceAll(hexString, " ", "")
 	byteString, err := hex.DecodeString(hexString)
+	if err != nil {
+		return backend.Deployment{}, nil, fmt.Errorf("decoding sudt owner lock arg: %w", err)
+	}
 	sUDTInfo := &SUDTInfo{
 		Script: &types.Script{
 			CodeHash: sudtInfo.Script.CodeHash,
@@ -95,7 +98,7 @@ func (m Migration) MakeDeployment(systemScripts SystemScripts, sudtOwnerLockArg 
 		MaxCapacity: sudtInfo.MaxCapacity,
 	}
 
-	log.Println("Using SUDT owner lock args:", sUDTInfo.Script.Args, "for SUDT:", sUDTInfo.Script.Hash())
+	log.Println("Using SUDT owner lock args:", hex.EncodeToString(sUDTInfo.Script.Args), "for SUDT:", sUDTInfo.Script.Hash())
 	return backend.Deployment{
 		Network: types.NetworkTest,
 		PCTSDep: types.CellDep{

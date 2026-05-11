@@ -71,6 +71,7 @@ jobs:
           sudo cp ckb-cli_v1.13.0_x86_64-unknown-linux-gnu/ckb-cli /usr/local/bin/
           wget http://archive.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.0g-2ubuntu4_amd64.deb
           sudo dpkg -i libssl1.1_1.1.0g-2ubuntu4_amd64.deb
+          sudo npm install -g @offckb/cli
 
           git submodule update --init --recursive
           cd ./devnet

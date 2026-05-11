@@ -142,8 +142,7 @@ func MakeRoleSetupsCross(rng *rand.Rand, s *test.SetupCross, names []string) []c
 func MakePaymentChannelSetup(t *testing.T, rng *rand.Rand) clienttest.PaymentChannelSetup {
 	t.Helper()
 	name := [2]string{"Alice", "Bob"}
-	var setup *test.Setup
-	setup = test.NewDevnetVirtualChannelSetup(t, rng)
+	setup := test.NewDevnetVirtualChannelSetup(t, rng)
 	roleSetup := MakeRoleSetups(rng, setup, name[:])
 
 	return clienttest.PaymentChannelSetup{
@@ -165,8 +164,7 @@ func MakePaymentChannelSetup(t *testing.T, rng *rand.Rand) clienttest.PaymentCha
 func MakeVirtualChannelSetup(t *testing.T, rng *rand.Rand) clienttest.VirtualChannelSetup {
 	t.Helper()
 	name := [3]string{"Alice", "Bob", "Ingrid"}
-	var setup *test.Setup
-	setup = test.NewDevnetVirtualChannelSetup(t, rng)
+	setup := test.NewDevnetVirtualChannelSetup(t, rng)
 
 	roleSetup := MakeRoleSetups(rng, setup, name[:])
 
