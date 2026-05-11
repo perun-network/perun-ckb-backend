@@ -75,15 +75,16 @@ jobs:
 
           git submodule update --init --recursive
           cd ./devnet
-          chmod +x setup-devnet.sh print_accounts.sh deploy_contracts.sh sudt_helper.sh 
+          chmod +x setup-devnet.sh print_accounts.sh deploy_contracts.sh sudt_helper.sh fund_omni_accounts.sh
           ./setup-devnet.sh
           ckb run > /dev/null 2>&1 &
           sleep 3
           ckb miner > /dev/null 2>&1 &
           sleep 3
           ./print_accounts.sh
+          go run -tags getaddress ../cmd/get_address.go
           sleep 6
-          expect fund_accounts.expect
+          ./fund_omni_accounts.sh
           sleep 10
           ./deploy_contracts.sh
           sleep 15
