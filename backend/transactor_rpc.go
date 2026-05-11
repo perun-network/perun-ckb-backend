@@ -82,10 +82,12 @@ func sendAndAwait(ctx context.Context, rpcClient rpc.Client, tx *types.Transacti
 		case <-ctx.Done():
 			return types.Hash{}, fmt.Errorf("context done: %w", ctx.Err())
 		case <-ticker.C:
-			_, err := rpcClient.GetTransaction(ctx, *txHash)
+			var err error
+			txWithStatus, err = rpcClient.GetTransaction(ctx, *txHash)
 			if err != nil {
 				return types.Hash{}, fmt.Errorf("polling transaction: %w", err)
 			}
+			log.Println("Transaction status:", txWithStatus.TxStatus.Status)
 		}
 	}
 

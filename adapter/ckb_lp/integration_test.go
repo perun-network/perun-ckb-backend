@@ -6,20 +6,17 @@ package ckblp
 import (
 	"context"
 	"encoding/json"
-	"fmt"
+	"math/big"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/Pilatuz/bigz/uint128"
-	ckbbuilder "github.com/nervosnetwork/ckb-sdk-go/v2/collector/builder"
-	"github.com/nervosnetwork/ckb-sdk-go/v2/indexer"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/rpc"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types"
 	"github.com/stretchr/testify/require"
 	"perun.network/perun-ckb-backend/backend"
 	ckbtest "perun.network/perun-ckb-backend/channel/test"
-	"perun.network/perun-ckb-backend/transaction"
 	ckbaddress "perun.network/perun-ckb-backend/wallet/address"
 )
 
@@ -50,8 +47,9 @@ type lpCellSpec struct {
 }
 
 func TestDiscoverLPCellsDevnet(t *testing.T) {
-	t.Skip("devnet E2E test: requires proper transaction signing setup")
-	operatorLockHash := getOperatorLockHash(t)
+	if os.Getenv("RUN_DEVNET_TESTS") == "" {
+		t.Skip("devnet E2E test: requires proper transaction signing setup")
+	}
 	lpDeployment, ok := loadLPDeploymentFromDevnet(t)
 	if !ok {
 		return
@@ -61,8 +59,12 @@ func TestDiscoverLPCellsDevnet(t *testing.T) {
 	require.NoError(t, err)
 	ensureLPDeploymentOnChain(t, rpcClient, lpDeployment)
 
-	operatorHash := mustParseHash32(t, operatorLockHash)
-	adapter := NewAdapter(rpcClient, nil, nil, backend.Deployment{}, lpDeployment)
+	deployment := loadDevnetDeployment(t)
+	signer := newBobSigner(t, deployment.Network)
+	transactor := backend.NewRPCTransactor(rpcClient, signer)
+	adapter := NewAdapter(rpcClient, signer, transactor, deployment, lpDeployment)
+
+	operatorHash := signer.Address().Script.Hash()
 	cells, err := adapter.DiscoverLPCells(context.Background(), operatorHash)
 	require.NoError(t, err)
 	if len(cells) == 0 {
@@ -70,10 +72,7 @@ func TestDiscoverLPCellsDevnet(t *testing.T) {
 		if !ok {
 			return
 		}
-		deployment := loadDevnetDeployment(t)
-		signer := newBobSigner(t, deployment.Network)
-		transactor := backend.NewRPCTransactor(rpcClient, signer)
-		_, err := buildAndSubmitLPDeposit(context.Background(), rpcClient, signer, transactor, deployment, lpDeployment, lpCell)
+		_, err := adapter.BuildLPDepositTx(context.Background(), lpCell)
 		require.NoError(t, err)
 
 		cells, err = adapter.DiscoverLPCells(context.Background(), operatorHash)
@@ -83,7 +82,9 @@ func TestDiscoverLPCellsDevnet(t *testing.T) {
 }
 
 func TestGetLPCellDevnet(t *testing.T) {
-	t.Skip("devnet E2E test: requires proper transaction signing setup")
+	if os.Getenv("RUN_DEVNET_TESTS") == "" {
+		t.Skip("devnet E2E test: requires proper transaction signing setup")
+	}
 	lpCellID := os.Getenv("PERUN_LP_CELL_ID")
 	poolID := os.Getenv("PERUN_LP_POOL_ID")
 	lpDeployment, ok := loadLPDeploymentFromDevnet(t)
@@ -95,10 +96,12 @@ func TestGetLPCellDevnet(t *testing.T) {
 	require.NoError(t, err)
 	ensureLPDeploymentOnChain(t, rpcClient, lpDeployment)
 
-	adapter := NewAdapter(rpcClient, nil, nil, backend.Deployment{}, lpDeployment)
+	deployment := loadDevnetDeployment(t)
+	signer := newBobSigner(t, deployment.Network)
+	transactor := backend.NewRPCTransactor(rpcClient, signer)
+	adapter := NewAdapter(rpcClient, signer, transactor, deployment, lpDeployment)
 	if lpCellID == "" {
-		operatorLockHash := getOperatorLockHash(t)
-		operatorHash := mustParseHash32(t, operatorLockHash)
+		operatorHash := signer.Address().Script.Hash()
 		cells, err := adapter.DiscoverLPCells(context.Background(), operatorHash)
 		require.NoError(t, err)
 		if len(cells) == 0 {
@@ -106,10 +109,7 @@ func TestGetLPCellDevnet(t *testing.T) {
 			if !ok {
 				return
 			}
-			deployment := loadDevnetDeployment(t)
-			signer := newBobSigner(t, deployment.Network)
-			transactor := backend.NewRPCTransactor(rpcClient, signer)
-			lpCellID, err = buildAndSubmitLPDeposit(context.Background(), rpcClient, signer, transactor, deployment, lpDeployment, lpCell)
+			lpCellID, err = adapter.BuildLPDepositTx(context.Background(), lpCell)
 			require.NoError(t, err)
 		} else {
 			lpCellID = cells[0].OutPointHex
@@ -125,13 +125,55 @@ func TestGetLPCellDevnet(t *testing.T) {
 }
 
 func TestBobCreatesLPCellAndWithdrawDevnet(t *testing.T) {
-	t.Skip("devnet E2E test: requires proper transaction signing setup")
+	if os.Getenv("RUN_DEVNET_TESTS") == "" {
+		t.Skip("devnet E2E test: requires proper transaction signing setup")
+	}
 	lpDeployment, ok := loadLPDeploymentFromDevnet(t)
 	if !ok {
 		return
 	}
 
 	lpCell, ok := loadLPCellSpecFromDevnet(t)
+	if !ok {
+		return
+	}
+
+	rpcClient, err := rpc.Dial(ckbtest.DevnetRpcNodeURL)
+	require.NoError(t, err)
+	ensureLPDeploymentOnChain(t, rpcClient, lpDeployment)
+
+	deployment := loadDevnetDeployment(t)
+	signer := newBobSigner(t, deployment.Network)
+	transactor := backend.NewRPCTransactor(rpcClient, signer)
+
+	ctx := context.Background()
+
+	adapter := NewAdapter(rpcClient, signer, transactor, deployment, lpDeployment)
+	lpCellID, err := adapter.BuildLPDepositTx(ctx, lpCell)
+	require.NoError(t, err)
+	info, err := adapter.GetLPCell(ctx, lpCellID)
+	require.NoError(t, err)
+
+	withdrawAmount := uint64(100_000_000)
+	if withdrawAmount > info.Cell.AvailableCKB {
+		withdrawAmount = info.Cell.AvailableCKB
+	}
+	require.NotZero(t, withdrawAmount)
+
+	_, err = adapter.BuildLPWithdrawTx(ctx, info.OutPointHex, withdrawAmount)
+	require.NoError(t, err)
+}
+
+func TestLPFundAndSettleChannelDevnet(t *testing.T) {
+	if os.Getenv("RUN_DEVNET_TESTS") == "" {
+		t.Skip("devnet E2E test: requires proper transaction signing setup")
+	}
+	channelID := os.Getenv("PERUN_CHANNEL_ID")
+	if channelID == "" {
+		t.Skip("missing PERUN_CHANNEL_ID; set to an existing channel id")
+	}
+
+	lpDeployment, ok := loadLPDeploymentFromDevnet(t)
 	if !ok {
 		return
 	}
@@ -144,24 +186,42 @@ func TestBobCreatesLPCellAndWithdrawDevnet(t *testing.T) {
 
 	signer := newBobSigner(t, deployment.Network)
 	transactor := backend.NewRPCTransactor(rpcClient, signer)
+	adapter := NewAdapter(rpcClient, signer, transactor, deployment, lpDeployment)
 
 	ctx := context.Background()
 
-	lpCellID, err := buildAndSubmitLPDeposit(ctx, rpcClient, signer, transactor, deployment, lpDeployment, lpCell)
+	operatorHash := signer.Address().Script.Hash()
+	cells, err := adapter.DiscoverLPCells(ctx, operatorHash)
 	require.NoError(t, err)
 
-	adapter := NewAdapter(rpcClient, signer, transactor, deployment, lpDeployment)
-	info, err := adapter.GetLPCell(ctx, lpCellID)
-	require.NoError(t, err)
-
-	withdrawAmount := uint64(100_000_000)
-	if withdrawAmount > info.Cell.AvailableCKB {
-		withdrawAmount = info.Cell.AvailableCKB
+	var lpCellID string
+	if len(cells) == 0 {
+		lpCell, ok := loadLPCellSpecFromDevnet(t)
+		if !ok {
+			return
+		}
+		lpCellID, err = adapter.BuildLPDepositTx(ctx, lpCell)
+		require.NoError(t, err)
+	} else {
+		lpCellID = cells[0].OutPointHex
 	}
-	require.NotZero(t, withdrawAmount)
 
-	_, err = buildAndSubmitLPWithdraw(ctx, rpcClient, signer, transactor, deployment, lpDeployment, info.OutPointHex, withdrawAmount)
+	channelHash, err := parseHash32(channelID)
 	require.NoError(t, err)
+	if isZeroHash(channelHash) {
+		t.Skip("PERUN_CHANNEL_ID must be non-zero")
+	}
+	if _, err := adapter.findChannelCellByID(ctx, channelHash); err != nil {
+		t.Skipf("channel cell not found for %s; create a live channel first", channelID)
+	}
+
+	amount := uint64(1_000_000_000)
+	require.NoError(t, adapter.BuildFundChannelTx(ctx, channelID, lpCellID, amount))
+
+	principal := amount
+	fee := uint64(100_000_000)
+	priceX64 := uint128.FromBig(big.NewInt(1))
+	require.NoError(t, adapter.BuildSettleChannelInsertTx(ctx, channelID, channelID, lpCellID, principal, fee, priceX64))
 }
 
 func ensureLPDeploymentOnChain(t *testing.T, rpcClient rpc.Client, lpDeployment LPDeployment) {
@@ -261,27 +321,6 @@ func findLPRecipes(migration lpMigration) (*lpRecipe, *lpRecipe) {
 	return lpts, lpls
 }
 
-func requireEnv(t *testing.T, key string) string {
-	value := os.Getenv(key)
-	if value == "" {
-		t.Skipf("missing env %s", key)
-	}
-	return value
-}
-
-func getOperatorLockHash(t *testing.T) string {
-	if value := os.Getenv("PERUN_LP_OPERATOR_LOCK_HASH"); value != "" {
-		return value
-	}
-
-	cell, ok := loadLPCellSpecFromDevnet(t)
-	if !ok {
-		return ""
-	}
-
-	return fmt.Sprintf("0x%x", cell.OperatorLockHash)
-}
-
 func mustParseHash32(t *testing.T, value string) [32]byte {
 	hash, err := parseHash32(value)
 	require.NoError(t, err)
@@ -325,18 +364,13 @@ func loadLPCellSpecFromDevnet(t *testing.T) (LPCell, bool) {
 }
 
 func loadDefaultLPCellSpecFromDevnet(t *testing.T) (LPCell, bool) {
-	keyAlice, err := ckbtest.GetKey(filepath.Join("..", "..", "devnet", "accounts", "alice.pk"))
-	require.NoError(t, err)
 	keyBob, err := ckbtest.GetKey(filepath.Join("..", "..", "devnet", "accounts", "bob.pk"))
-	require.NoError(t, err)
-
-	alice, err := ckbaddress.NewDefaultParticipant(keyAlice.PubKey())
 	require.NoError(t, err)
 	bob, err := ckbaddress.NewDefaultParticipant(keyBob.PubKey())
 	require.NoError(t, err)
 
 	ownerHash := bob.ToCKBAddress(types.NetworkTest).Script.Hash()
-	operatorHash := alice.ToCKBAddress(types.NetworkTest).Script.Hash()
+	operatorHash := bob.ToCKBAddress(types.NetworkTest).Script.Hash()
 
 	poolID := [32]byte{0x11}
 
@@ -394,216 +428,4 @@ func newBobSigner(t *testing.T, network types.Network) backend.Signer {
 
 	addr := participant.ToCKBAddress(network)
 	return backend.NewSignerInstance(addr, *keyBob, network)
-}
-
-func buildAndSubmitLPDeposit(
-	ctx context.Context,
-	rpcClient rpc.Client,
-	signer backend.Signer,
-	transactor backend.Transactor,
-	deployment backend.Deployment,
-	lpDeployment LPDeployment,
-	lpCell LPCell,
-) (string, error) {
-	inputCell, err := selectLargestCKBCell(ctx, rpcClient, signer.Address().Script, nil)
-	if err != nil {
-		return "", err
-	}
-
-	if inputCell.Output == nil {
-		return "", Deterministic(ErrInvalidLPCell)
-	}
-
-	data, err := EncodeLPCell(lpCell)
-	if err != nil {
-		return "", err
-	}
-
-	fee := transaction.DefaultFeeShannon
-	if inputCell.Output.Capacity <= lpCell.AvailableCKB+fee {
-		return "", Deterministic(ErrInsufficientOperatorFunds)
-	}
-	change := inputCell.Output.Capacity - lpCell.AvailableCKB - fee
-
-	lockScript, typeScript, err := buildLPScripts(lpDeployment, lpCell.PoolID)
-	if err != nil {
-		return "", err
-	}
-
-	builder := newSimpleBuilderWithDeps(signer, deployment)
-	builder.AddCellDep(&lpDeployment.TypeScriptDep)
-	builder.AddCellDep(&lpDeployment.LockScriptDep)
-
-	builder.AddInput(&types.CellInput{PreviousOutput: inputCell.OutPoint})
-
-	builder.AddOutput(&types.CellOutput{
-		Capacity: lpCell.AvailableCKB,
-		Lock:     &lockScript,
-		Type:     &typeScript,
-	}, data)
-
-	builder.AddOutput(&types.CellOutput{
-		Capacity: change,
-		Lock:     inputCell.Output.Lock,
-		Type:     nil,
-	}, []byte{})
-
-	tx, err := builder.Build()
-	if err != nil {
-		return "", err
-	}
-
-	txHash, err := transactor.SubmitTransaction(ctx, tx)
-	if err != nil {
-		return "", err
-	}
-
-	return fmt.Sprintf("%s:%d", txHash.String(), 0), nil
-}
-
-func buildAndSubmitLPWithdraw(
-	ctx context.Context,
-	rpcClient rpc.Client,
-	signer backend.Signer,
-	transactor backend.Transactor,
-	deployment backend.Deployment,
-	lpDeployment LPDeployment,
-	lpCellID string,
-	ckbOut uint64,
-) (types.Hash, error) {
-	if ckbOut == 0 {
-		return types.Hash{}, Deterministic(ErrInvalidLPCellArg)
-	}
-	outPoint, err := parseOutPoint(lpCellID)
-	if err != nil {
-		return types.Hash{}, err
-	}
-	lpCellWithStatus, err := rpcClient.GetLiveCell(ctx, outPoint, true)
-	if err != nil {
-		return types.Hash{}, err
-	}
-	if lpCellWithStatus == nil || lpCellWithStatus.Cell == nil || lpCellWithStatus.Cell.Output == nil || lpCellWithStatus.Cell.Data == nil {
-		return types.Hash{}, Deterministic(ErrInvalidLPCell)
-	}
-	inputLPData := lpCellWithStatus.Cell.Data.Content
-	inputLP, err := DecodeLPCell(inputLPData)
-	if err != nil {
-		return types.Hash{}, err
-	}
-	if ckbOut > inputLP.AvailableCKB {
-		return types.Hash{}, Deterministic(ErrInvalidLPCellArg)
-	}
-
-	updatedLP := inputLP
-	updatedLP.AvailableCKB -= ckbOut
-	updatedLP.Nonce += 1
-	updatedLPData, err := EncodeLPCell(updatedLP)
-	if err != nil {
-		return types.Hash{}, err
-	}
-
-	ownerCell, err := selectLargestCKBCell(ctx, rpcClient, signer.Address().Script, outPoint)
-	if err != nil {
-		return types.Hash{}, err
-	}
-	if ownerCell.Output == nil {
-		return types.Hash{}, Deterministic(ErrInvalidLPCell)
-	}
-
-	fee := transaction.DefaultFeeShannon
-	if ownerCell.Output.Capacity <= fee {
-		return types.Hash{}, Deterministic(ErrInsufficientOperatorFunds)
-	}
-	change := ownerCell.Output.Capacity + ckbOut - fee
-
-	builder := newSimpleBuilderWithDeps(signer, deployment)
-	builder.AddCellDep(&lpDeployment.TypeScriptDep)
-	builder.AddCellDep(&lpDeployment.LockScriptDep)
-
-	builder.AddInput(&types.CellInput{PreviousOutput: outPoint})
-
-	builder.AddInput(&types.CellInput{PreviousOutput: ownerCell.OutPoint})
-
-	builder.AddOutput(&types.CellOutput{
-		Capacity: lpCellWithStatus.Cell.Output.Capacity - ckbOut,
-		Lock:     lpCellWithStatus.Cell.Output.Lock,
-		Type:     lpCellWithStatus.Cell.Output.Type,
-	}, updatedLPData)
-
-	builder.AddOutput(&types.CellOutput{
-		Capacity: change,
-		Lock:     ownerCell.Output.Lock,
-		Type:     nil,
-	}, []byte{})
-
-	tx, err := builder.Build()
-	if err != nil {
-		return types.Hash{}, err
-	}
-
-	txHash, err := transactor.SubmitTransaction(ctx, tx)
-	if err != nil {
-		return types.Hash{}, err
-	}
-	return txHash, nil
-}
-
-func newSimpleBuilderWithDeps(signer backend.Signer, deployment backend.Deployment) *ckbbuilder.SimpleTransactionBuilder {
-	builder := transaction.NewSimpleTransactionBuilder(signer.Address().Script.CodeHash, deployment.DefaultLockScriptDep, false)
-	if signer.Address().Script.CodeHash != deployment.DefaultLockScript.CodeHash && len(deployment.OmniLockScriptDep) >= 2 {
-		builder = transaction.NewSimpleTransactionBuilder(deployment.OmniLockScript.CodeHash, deployment.OmniLockScriptDep[1], true)
-		builder.AddCellDep(&deployment.OmniLockScriptDep[0])
-		builder.AddCellDep(&deployment.OmniLockScriptDep[1])
-	} else {
-		builder.AddCellDep(&deployment.DefaultLockScriptDep)
-	}
-	return builder
-}
-
-func buildLPScripts(lpDeployment LPDeployment, poolID [32]byte) (types.Script, types.Script, error) {
-	typeScript := types.Script{
-		CodeHash: lpDeployment.TypeScriptCodeHash,
-		HashType: lpDeployment.TypeScriptHashType,
-		Args:     poolID[:],
-	}
-	tsHash := typeScript.Hash()
-	lockArgs := tsHash[:]
-	lockScript := types.Script{
-		CodeHash: lpDeployment.LockScriptCodeHash,
-		HashType: lpDeployment.LockScriptHashType,
-		Args:     lockArgs,
-	}
-	return lockScript, typeScript, nil
-}
-
-func selectLargestCKBCell(ctx context.Context, rpcClient rpc.Client, lockScript *types.Script, exclude *types.OutPoint) (*indexer.LiveCell, error) {
-	searchKey := &indexer.SearchKey{
-		Script:           lockScript,
-		ScriptType:       types.ScriptTypeLock,
-		ScriptSearchMode: types.ScriptSearchModeExact,
-		WithData:         true,
-	}
-	resp, err := rpcClient.GetCells(ctx, searchKey, indexer.SearchOrderDesc, 100, "")
-	if err != nil {
-		return nil, err
-	}
-	var best *indexer.LiveCell
-	for _, cell := range resp.Objects {
-		if cell.Output == nil || cell.Output.Type != nil {
-			continue
-		}
-		if exclude != nil && cell.OutPoint != nil && cell.OutPoint.TxHash == exclude.TxHash && cell.OutPoint.Index == exclude.Index {
-			continue
-		}
-		if IsLPCell(cell.OutputData) {
-			continue
-		}
-		if best == nil || cell.Output.Capacity > best.Output.Capacity {
-			best = cell
-		}
-	}
-	if best == nil {
-		return nil, Deterministic(ErrInsufficientOperatorFunds)
-	}
-	return best, nil
 }

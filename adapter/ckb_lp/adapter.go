@@ -2,6 +2,7 @@ package ckblp
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/Pilatuz/bigz/uint128"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/indexer"
@@ -37,6 +38,174 @@ func NewAdapter(
 		deployment:   deployment,
 		lpDeployment: lpDeployment,
 	}
+}
+
+// BuildLPDepositTx builds and submits an LP deposit (creation/top-up) transaction.
+func (a *Adapter) BuildLPDepositTx(ctx context.Context, lpCell LPCell) (string, error) {
+	if lpCell.AvailableCKB == 0 {
+		return "", Deterministic(ErrInvalidLPCellArg)
+	}
+	operatorCell, err := a.selectLargestOperatorCell(ctx)
+	if err != nil {
+		return "", err
+	}
+	if operatorCell.Output == nil {
+		return "", Deterministic(ErrInvalidLPCell)
+	}
+
+	signerHash := a.signer.Address().Script.Hash()
+	lpCell.OwnerLockHash = signerHash
+	lpCell.OperatorLockHash = signerHash
+	lpCell.ReservedCKB = 0
+	lpCell.CumulativeFeesEarnedCKB = 0
+	lpCell.Nonce = 0
+	lpCell.Active = true
+
+	data, err := EncodeLPCell(lpCell)
+	if err != nil {
+		return "", Deterministic(ErrInvalidLPCell)
+	}
+
+	fee := transaction.DefaultFeeShannon
+	if operatorCell.Output.Capacity <= lpCell.AvailableCKB+fee {
+		return "", Deterministic(ErrInsufficientOperatorFunds)
+	}
+	change := operatorCell.Output.Capacity - lpCell.AvailableCKB - fee
+
+	lockScript, typeScript := buildLPScriptsFromDeployment(a.lpDeployment, lpCell.PoolID)
+
+	builder := transaction.NewSimpleTransactionBuilder(a.signer.Address().Script.CodeHash, a.deployment.DefaultLockScriptDep, false)
+	if a.signer.Address().Script.CodeHash != a.deployment.DefaultLockScript.CodeHash && len(a.deployment.OmniLockScriptDep) >= 2 {
+		builder = transaction.NewSimpleTransactionBuilder(a.deployment.OmniLockScript.CodeHash, a.deployment.OmniLockScriptDep[1], true)
+		builder.AddCellDep(&a.deployment.OmniLockScriptDep[0])
+		builder.AddCellDep(&a.deployment.OmniLockScriptDep[1])
+	} else {
+		builder.AddCellDep(&a.deployment.DefaultLockScriptDep)
+	}
+	builder.AddCellDep(&a.lpDeployment.TypeScriptDep)
+	builder.AddCellDep(&a.lpDeployment.LockScriptDep)
+
+	builder.AddInput(&types.CellInput{PreviousOutput: operatorCell.OutPoint})
+	initLockWitnessPlaceholder(builder, 0)
+	if err := builder.SetWitness(0, types.WitnessTypeInputType, EncodeLPDepositWitness()); err != nil {
+		return "", Deterministic(ErrInvalidWitness)
+	}
+
+	builder.AddOutput(&types.CellOutput{
+		Capacity: lpCell.AvailableCKB,
+		Lock:     &lockScript,
+		Type:     &typeScript,
+	}, data)
+
+	builder.AddOutput(&types.CellOutput{
+		Capacity: change,
+		Lock:     operatorCell.Output.Lock,
+		Type:     nil,
+	}, []byte{})
+
+	addInputLockScriptGroup(builder, 0, operatorCell.Output.Lock)
+
+	tx, err := builder.Build()
+	if err != nil {
+		return "", Deterministic(err)
+	}
+
+	txHash, err := a.transactor.SubmitTransaction(ctx, tx)
+	if err != nil {
+		return "", Retriable(err)
+	}
+	return fmt.Sprintf("%s:%d", txHash.String(), 0), nil
+}
+
+// BuildLPWithdrawTx builds and submits an LP withdraw transaction.
+func (a *Adapter) BuildLPWithdrawTx(ctx context.Context, lpCellID string, ckbOut uint64) (types.Hash, error) {
+	if ckbOut == 0 {
+		return types.Hash{}, Deterministic(ErrInvalidLPCellArg)
+	}
+	outPoint, err := parseOutPoint(lpCellID)
+	if err != nil {
+		return types.Hash{}, Deterministic(err)
+	}
+	cell, err := a.rpcClient.GetLiveCell(ctx, outPoint, true)
+	if err != nil {
+		return types.Hash{}, Retriable(err)
+	}
+	if cell == nil || cell.Cell == nil || cell.Cell.Output == nil || cell.Cell.Data == nil {
+		return types.Hash{}, Deterministic(ErrInvalidLPCell)
+	}
+	inputLP, err := DecodeLPCell(cell.Cell.Data.Content)
+	if err != nil {
+		return types.Hash{}, Deterministic(ErrInvalidLPCell)
+	}
+
+	fee := transaction.DefaultFeeShannon
+	if ckbOut+fee > inputLP.AvailableCKB {
+		return types.Hash{}, Deterministic(ErrInvalidLPCellArg)
+	}
+
+	updatedLP := inputLP
+	updatedLP.AvailableCKB -= ckbOut + fee
+	updatedLP.Nonce += 1
+	updatedLPData, err := EncodeLPCell(updatedLP)
+	if err != nil {
+		return types.Hash{}, Deterministic(ErrInvalidLPCell)
+	}
+
+	ownerCell, err := a.selectLargestOperatorCell(ctx)
+	if err != nil {
+		return types.Hash{}, err
+	}
+	if ownerCell.Output == nil {
+		return types.Hash{}, Deterministic(ErrInvalidLPCell)
+	}
+	change := ownerCell.Output.Capacity + ckbOut
+
+	builder := transaction.NewSimpleTransactionBuilder(a.signer.Address().Script.CodeHash, a.deployment.DefaultLockScriptDep, false)
+	if a.signer.Address().Script.CodeHash != a.deployment.DefaultLockScript.CodeHash && len(a.deployment.OmniLockScriptDep) >= 2 {
+		builder = transaction.NewSimpleTransactionBuilder(a.deployment.OmniLockScript.CodeHash, a.deployment.OmniLockScriptDep[1], true)
+		builder.AddCellDep(&a.deployment.OmniLockScriptDep[0])
+		builder.AddCellDep(&a.deployment.OmniLockScriptDep[1])
+	} else {
+		builder.AddCellDep(&a.deployment.DefaultLockScriptDep)
+	}
+	builder.AddCellDep(&a.lpDeployment.TypeScriptDep)
+	builder.AddCellDep(&a.lpDeployment.LockScriptDep)
+
+	inputs := []*types.CellInput{
+		{PreviousOutput: outPoint},
+		{PreviousOutput: ownerCell.OutPoint},
+	}
+	for _, input := range inputs {
+		builder.AddInput(input)
+	}
+	initLockWitnessPlaceholder(builder, 1)
+	if err := builder.SetWitness(0, types.WitnessTypeInputType, EncodeLPWithdrawWitness(ckbOut)); err != nil {
+		return types.Hash{}, Deterministic(ErrInvalidWitness)
+	}
+
+	builder.AddOutput(&types.CellOutput{
+		Capacity: cell.Cell.Output.Capacity - ckbOut - fee,
+		Lock:     cell.Cell.Output.Lock,
+		Type:     cell.Cell.Output.Type,
+	}, updatedLPData)
+
+	builder.AddOutput(&types.CellOutput{
+		Capacity: change,
+		Lock:     ownerCell.Output.Lock,
+		Type:     nil,
+	}, []byte{})
+
+	addInputLockScriptGroup(builder, 1, ownerCell.Output.Lock)
+
+	tx, err := builder.Build()
+	if err != nil {
+		return types.Hash{}, Deterministic(err)
+	}
+	txHash, err := a.transactor.SubmitTransaction(ctx, tx)
+	if err != nil {
+		return types.Hash{}, Retriable(err)
+	}
+	return txHash, nil
 }
 
 // BuildFundChannelTx builds a FundChannelExtract transaction (not implemented yet).
@@ -127,8 +296,8 @@ func (a *Adapter) BuildFundChannelTx(
 	}
 	for _, input := range inputs {
 		builder.AddInput(input)
-		builder.Witnesses = append(builder.Witnesses, []byte{})
 	}
+	initLockWitnessPlaceholder(builder, 2)
 
 	updatedLPOutput := &types.CellOutput{
 		Capacity: updatedLPCap,
@@ -158,6 +327,8 @@ func (a *Adapter) BuildFundChannelTx(
 	if err := builder.SetWitness(0, types.WitnessTypeInputType, witness); err != nil {
 		return Deterministic(ErrInvalidWitness)
 	}
+
+	addInputLockScriptGroup(builder, 2, operatorCell.Output.Lock)
 
 	tx, err := builder.Build()
 	if err != nil {
@@ -270,8 +441,8 @@ func (a *Adapter) BuildSettleChannelInsertTx(
 	}
 	for _, input := range inputs {
 		builder.AddInput(input)
-		builder.Witnesses = append(builder.Witnesses, []byte{})
 	}
+	initLockWitnessPlaceholder(builder, 1)
 
 	updatedLPOutput := &types.CellOutput{
 		Capacity: updatedLPCap,
@@ -296,6 +467,8 @@ func (a *Adapter) BuildSettleChannelInsertTx(
 	if err := builder.SetWitness(0, types.WitnessTypeInputType, witness); err != nil {
 		return Deterministic(ErrInvalidWitness)
 	}
+
+	addInputLockScriptGroup(builder, 1, operatorCell.Output.Lock)
 
 	tx, err := builder.Build()
 	if err != nil {
@@ -366,4 +539,19 @@ func (a *Adapter) selectLargestOperatorCell(ctx context.Context) (*indexer.LiveC
 		return nil, Deterministic(ErrInsufficientOperatorFunds)
 	}
 	return best, nil
+}
+
+func buildLPScriptsFromDeployment(lpDeployment LPDeployment, poolID [32]byte) (types.Script, types.Script) {
+	typeScript := types.Script{
+		CodeHash: lpDeployment.TypeScriptCodeHash,
+		HashType: lpDeployment.TypeScriptHashType,
+		Args:     poolID[:],
+	}
+	tsHash := typeScript.Hash()
+	lockScript := types.Script{
+		CodeHash: lpDeployment.LockScriptCodeHash,
+		HashType: lpDeployment.LockScriptHashType,
+		Args:     tsHash[:],
+	}
+	return lockScript, typeScript
 }
