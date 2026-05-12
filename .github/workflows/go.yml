@@ -77,37 +77,26 @@ jobs:
           cd ./devnet
           chmod +x setup-devnet.sh print_accounts.sh deploy_contracts.sh sudt_helper.sh fund_omni_accounts.sh
           ./setup-devnet.sh
-          ckb run > /dev/null 2>&1 &
-          sleep 3
-          ckb miner > /dev/null 2>&1 &
-          sleep 3
+          offckb node > /dev/null 2>&1 &
+          sleep 12
           ./print_accounts.sh
           env -u C_INCLUDE_PATH -u CFLAGS -u TARGET_CFLAGS \
-              go run -tags getaddress ../cmd/get_address.go
+              go run ../cmd/get_address.go
           sleep 6
           ./fund_omni_accounts.sh
           sleep 10
           ./deploy_contracts.sh
           sleep 15
           ./sudt_helper.sh fund
+          sleep 15
+          env -u C_INCLUDE_PATH -u CFLAGS -u TARGET_CFLAGS \
+              go run ../cmd/fund_sudt.go
           sleep 10
           ./sudt_helper.sh balances
           cd ../..
     
     - name: Wait for devnet to initialize
       run: sleep 30
-
-    - name: Debug migration dir contents
-      run: |
-          for d in devnet/contract/migrations_0/dev devnet/contract/migrations_1/dev devnet/contract/migrations_vc/dev; do
-            echo "--- $d ---"
-            ls -la "$d"
-            for f in "$d"/*; do
-              [ -e "$f" ] || continue
-              echo "  ===== $f (first 300 bytes) ====="
-              head -c 300 "$f"; echo
-            done
-          done
 
     - name: Build
       run: go build -v ./...

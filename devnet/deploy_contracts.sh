@@ -161,9 +161,9 @@ PY
 
 # Run phases sequentially
 run_deploy_phase "normal-0" "./deployment/dev/deployment_0.toml" "./$MIGRATION_0" "$DEVNET_DIR/$DEPLOYMENT_INFO_0.json" "$GENESIS_PRIVKEY" "$MINER_PRIVKEY" || { echo "phase normal-0 failed"; exit 1; }
-sleep 10
+sleep 25
 run_deploy_phase "normal-1" "./deployment/dev/deployment_1.toml" "./$MIGRATION_1" "$DEVNET_DIR/$DEPLOYMENT_INFO_1.json" "$GENESIS_PRIVKEY" "$MINER_PRIVKEY" || { echo "phase normal-1 failed"; exit 1; }
-sleep 10
+sleep 25
 run_deploy_phase "vc" "./deployment/dev/deployment_vc.toml" "./$MIGRATION_VC" "$DEVNET_DIR/$DEPLOYMENT_INFO_VC.json" "$GENESIS_PRIVKEY" "$MINER_PRIVKEY" || { echo "phase vc failed"; exit 1; }
 
 # Move info files to devnet root (they are already created there) — keep as artifacts
@@ -177,7 +177,7 @@ cd "$DEVNET_DIR"
 echo "Fetching default contracts..."
 rm -rf "$SYSTEM_SCRIPTS_DIR"
 mkdir -p "$SYSTEM_SCRIPTS_DIR"
-offckb system-scripts --export-style ccc | tail -n +2 > "$SYSTEM_SCRIPTS_DIR/default_scripts.json"
+offckb system-scripts --export-style ccc | sed -n '/^{/,$p' > "$SYSTEM_SCRIPTS_DIR/default_scripts.json"
 echo "Fetching default contracts done."
 
 echo "Preparing sudt celldep..."
