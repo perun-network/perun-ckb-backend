@@ -76,6 +76,20 @@ jobs:
           git submodule update --init --recursive
           cd ./devnet
           chmod +x setup-devnet.sh print_accounts.sh deploy_contracts.sh sudt_helper.sh fund_omni_accounts.sh
+
+          # Bootstrap offckb so its config files exist, then patch the miner
+          # to 1s blocks. Default is 5s, which is too slow for the dispute
+          # tests: TestPaymentChannelDispute waits only WaitWatcherTimeout=1s
+          # between Register and Settle, so with 5s blocks no new block is
+          # mined in between and the Withdraw tx's HeaderDep tip timestamp
+          # equals the dispute block's timestamp, triggering the contract's
+          # TimeLockNotExpired check (PCTS error 69).
+          offckb node > /dev/null 2>&1 &
+          sleep 8
+          sudo pkill -f "offckb-nodejs/bins.*/ckb" || true
+          sleep 3
+          sed -i 's/^value = 5000/value = 1000/' ~/.local/share/offckb-nodejs/devnet/ckb-miner.toml
+
           ./setup-devnet.sh
           offckb node > /dev/null 2>&1 &
           sleep 12
