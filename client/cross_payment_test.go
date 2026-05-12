@@ -14,25 +14,22 @@
 package client_test
 
 import (
-	"context"
-	"github.com/sirupsen/logrus"
 	"math/big"
-	"math/rand"
+	"testing"
+	"time"
+
+	"github.com/sirupsen/logrus"
 	"perun.network/go-perun/channel"
 	"perun.network/go-perun/client"
+	clienttest "perun.network/go-perun/client/test"
 	"perun.network/go-perun/log"
 	"perun.network/go-perun/wallet"
 	"perun.network/go-perun/wire"
 	"perun.network/perun-ckb-backend/channel/asset"
 	btest "perun.network/perun-ckb-backend/channel/test"
 	ctest "perun.network/perun-ckb-backend/client/test"
-	"perun.network/perun-ckb-backend/transaction"
 	"polycry.pt/poly-go/sync"
 	pkgtest "polycry.pt/poly-go/test"
-	"testing"
-	"time"
-
-	clienttest "perun.network/go-perun/client/test"
 )
 
 const (
@@ -107,41 +104,6 @@ func TestCrossPaymentHappy(t *testing.T) {
 	logrus.Info("Happy test done")
 }
 
-// TestCrossPaymentDispute tests the payment dispute scenario.
-// It creates a payment channel between Alice and Bob, and then disputes the
-// channel state. The test checks if the dispute is resolved correctly and the final balances
-// are as expected.
-func TestCrossPaymentDispute(t *testing.T) {
-	log.Info("Starting payment dispute test")
-	rng := pkgtest.Prng(t)
-
-	ctx, cancel := context.WithTimeout(context.Background(), testDuration)
-	defer cancel()
-
-	setup := makeCrossPaymentChannelSetup(t, rng)
-	clienttest.TestPaymentChannelDispute(ctx, t, setup)
-	log.Info("Payment dispute test done")
-}
-
-func makeCrossPaymentChannelSetup(t *testing.T, rng *rand.Rand) clienttest.PaymentChannelSetup {
-	t.Helper()
-	name := [2]string{"Alice", "Bob"}
-	setup := btest.NewCrossSetup(t, rng, false)
-
-	roleSetup := ctest.MakeRoleSetupsCross(rng, setup, name[:])
-
-	return clienttest.PaymentChannelSetup{
-		Clients:           [2]clienttest.RoleSetup(roleSetup),
-		ChallengeDuration: roleSetup[0].ChallengeDuration,
-		Asset:             setup.CkbAsset,
-		Balances: clienttest.PaymentChannelBalances{
-			InitBalsAliceBob: []*big.Int{asset.CKByteToShannon(big.NewFloat(100)), asset.CKByteToShannon(big.NewFloat(100))},
-			BalsUpdated:      []*big.Int{asset.CKByteToShannon(big.NewFloat(70)), asset.CKByteToShannon(big.NewFloat(130))},
-			FinalBals:        []*big.Int{asset.CKByteToShannon(big.NewFloat(70)), asset.CKByteToShannon(big.NewFloat(130))},
-		},
-		BalanceDelta:       big.NewInt(int64(3 * transaction.DefaultFeeShannon)), // Max Fee: (Open + Dispute + Close) * 1 CKB
-		Rng:                rng,
-		WaitWatcherTimeout: 1 * time.Second,
-		IsUTXO:             true,
-	}
-}
+// TestCrossPaymentDispute and its setup helper live in
+// cross_payment_dispute_test.go and are excluded from `go test -race` runs
+// (see that file for the rationale).
