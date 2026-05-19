@@ -12,6 +12,11 @@ var (
 	ErrInvalidContributionID     = errors.New("invalid contribution id")
 	ErrScriptHashMismatch        = errors.New("script hash mismatch")
 	ErrInsufficientOperatorFunds = errors.New("insufficient operator funding")
+	ErrFeatureDisabled           = errors.New("lp orchestration disabled")
+	ErrChannelStillLive          = errors.New("channel still live")
+	ErrChannelNotFound           = errors.New("channel not found")
+	ErrNoOp                      = errors.New("no-op")
+	ErrUnexpectedState           = errors.New("unexpected lp or channel state")
 )
 
 // ErrorKind classifies adapter errors for hub cleanup behavior.

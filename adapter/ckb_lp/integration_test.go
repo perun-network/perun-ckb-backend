@@ -6,9 +6,11 @@ package ckblp
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"math/big"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 
 	"github.com/Pilatuz/bigz/uint128"
@@ -216,12 +218,114 @@ func TestLPFundAndSettleChannelDevnet(t *testing.T) {
 	}
 
 	amount := uint64(1_000_000_000)
-	require.NoError(t, adapter.BuildFundChannelTx(ctx, channelID, lpCellID, amount))
+	fundHash, err := adapter.BuildFundChannelTx(ctx, channelID, lpCellID, amount, "")
+	require.NoError(t, err)
+
+	// The fund tx spends lpCellID (input 0) and produces the updated LP cell at output 0.
+	newLPCellID := fmt.Sprintf("%s:0", fundHash.String())
 
 	principal := amount
 	fee := uint64(100_000_000)
 	priceX64 := uint128.FromBig(big.NewInt(1))
-	require.NoError(t, adapter.BuildSettleChannelInsertTx(ctx, channelID, channelID, lpCellID, principal, fee, priceX64))
+	_, err = adapter.BuildSettleChannelInsertTx(ctx, channelID, channelID, newLPCellID, principal, fee, priceX64)
+	require.NoError(t, err)
+}
+
+func TestLPFundingFirstScenarioDevnet(t *testing.T) {
+	if os.Getenv("RUN_DEVNET_TESTS") == "" {
+		t.Skip("devnet E2E test: requires proper transaction signing setup")
+	}
+	if os.Getenv("PERUN_LP_ORCHESTRATION") == "" {
+		t.Skip("LP orchestration disabled; set PERUN_LP_ORCHESTRATION=1")
+	}
+	channelID := os.Getenv("PERUN_CHANNEL_ID")
+	if channelID == "" {
+		t.Skip("missing PERUN_CHANNEL_ID; set to an existing channel id")
+	}
+
+	lpDeployment, ok := loadLPDeploymentFromDevnet(t)
+	if !ok {
+		return
+	}
+	deployment := loadDevnetDeployment(t)
+
+	rpcClient, err := rpc.Dial(ckbtest.DevnetRpcNodeURL)
+	require.NoError(t, err)
+	ensureLPDeploymentOnChain(t, rpcClient, lpDeployment)
+
+	signer := newBobSigner(t, deployment.Network)
+	transactor := backend.NewRPCTransactor(rpcClient, signer)
+	adapter := NewAdapter(rpcClient, signer, transactor, deployment, lpDeployment)
+	ctx := context.Background()
+
+	operatorHash := signer.Address().Script.Hash()
+	cells, err := adapter.DiscoverLPCells(ctx, operatorHash)
+	require.NoError(t, err)
+
+	var lpCellID string
+	if len(cells) == 0 {
+		lpCell, ok := loadLPCellSpecFromDevnet(t)
+		if !ok {
+			return
+		}
+		lpCellID, err = adapter.BuildLPDepositTx(ctx, lpCell)
+		require.NoError(t, err)
+	} else {
+		lpCellID = cells[0].OutPointHex
+	}
+
+	amount := envUint64("PERUN_LP_FUND_AMOUNT", 1_000_000_000)
+	preLP, err := adapter.GetLPCell(ctx, lpCellID)
+	require.NoError(t, err)
+
+	fundHash, err := adapter.FundChannelWithLP(ctx, channelID, lpCellID, amount)
+	require.NoError(t, err)
+
+	// The fund tx spends lpCellID and creates the updated LP cell at output 0.
+	lpCellIDAfterFund := fmt.Sprintf("%s:0", fundHash.String())
+	postLP, err := adapter.GetLPCell(ctx, lpCellIDAfterFund)
+	require.NoError(t, err)
+	require.Equal(t, preLP.Cell.AvailableCKB-amount, postLP.Cell.AvailableCKB)
+	require.Equal(t, preLP.Cell.ReservedCKB+amount, postLP.Cell.ReservedCKB)
+	require.Equal(t, preLP.Cell.Nonce+1, postLP.Cell.Nonce)
+
+	principal := envUint64("PERUN_LP_SETTLE_PRINCIPAL", amount)
+	fee := envUint64("PERUN_LP_SETTLE_FEE", 100_000_000)
+	priceX64 := uint128.FromBig(big.NewInt(1))
+	if priceRaw := os.Getenv("PERUN_LP_SETTLE_PRICE_X64"); priceRaw != "" {
+		parsed, parseErr := strconv.ParseUint(priceRaw, 10, 64)
+		require.NoError(t, parseErr)
+		priceX64 = uint128.FromBig(new(big.Int).SetUint64(parsed))
+	}
+
+	channelHash, err := parseHash32(channelID)
+	require.NoError(t, err)
+	if _, err = adapter.findChannelCellByID(ctx, channelHash); err == nil {
+		t.Skip("channel still live; close channel before running settle portion of this test")
+	}
+
+	settleHash, err := adapter.SettleChannelWithLP(ctx, channelID, lpCellIDAfterFund, principal, fee, priceX64)
+	require.NoError(t, err)
+
+	// The settle tx spends lpCellIDAfterFund and creates the updated LP cell at output 0.
+	lpCellIDAfterSettle := fmt.Sprintf("%s:0", settleHash.String())
+	settledLP, err := adapter.GetLPCell(ctx, lpCellIDAfterSettle)
+	require.NoError(t, err)
+	require.Equal(t, postLP.Cell.ReservedCKB-principal, settledLP.Cell.ReservedCKB)
+	require.Equal(t, postLP.Cell.AvailableCKB+principal+fee, settledLP.Cell.AvailableCKB)
+	require.Equal(t, postLP.Cell.CumulativeFeesEarnedCKB+fee, settledLP.Cell.CumulativeFeesEarnedCKB)
+}
+
+func envUint64(key string, fallback uint64) uint64 {
+	value := os.Getenv(key)
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.ParseUint(value, 10, 64)
+	if err != nil {
+		return fallback
+	}
+	return parsed
 }
 
 func ensureLPDeploymentOnChain(t *testing.T, rpcClient rpc.Client, lpDeployment LPDeployment) {

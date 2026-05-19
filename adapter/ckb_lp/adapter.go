@@ -3,6 +3,8 @@ package ckblp
 import (
 	"context"
 	"fmt"
+	"log"
+	"sync"
 
 	"github.com/Pilatuz/bigz/uint128"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/indexer"
@@ -21,6 +23,10 @@ type Adapter struct {
 	transactor   backend.Transactor
 	deployment   backend.Deployment
 	lpDeployment LPDeployment
+
+	lpOrchestrationEnabled bool
+	contribMu              sync.Mutex
+	contribSeen            map[types.Hash]struct{}
 }
 
 // NewAdapter creates a new LP adapter with the provided dependencies.
@@ -32,11 +38,13 @@ func NewAdapter(
 	lpDeployment LPDeployment,
 ) *Adapter {
 	return &Adapter{
-		rpcClient:    rpcClient,
-		signer:       signer,
-		transactor:   transactor,
-		deployment:   deployment,
-		lpDeployment: lpDeployment,
+		rpcClient:              rpcClient,
+		signer:                 signer,
+		transactor:             transactor,
+		deployment:             deployment,
+		lpDeployment:           lpDeployment,
+		lpOrchestrationEnabled: isLPOrchestrationEnabled(),
+		contribSeen:            make(map[types.Hash]struct{}),
 	}
 }
 
@@ -208,54 +216,66 @@ func (a *Adapter) BuildLPWithdrawTx(ctx context.Context, lpCellID string, ckbOut
 	return txHash, nil
 }
 
-// BuildFundChannelTx builds a FundChannelExtract transaction (not implemented yet).
+// BuildFundChannelTx builds a FundChannelExtract transaction.
+// It creates a proxy channel output (operator lock, no type script) with capacity
+// equal to extract_ckb. The real Perun channel cell is NOT consumed — only the LP
+// cell and an operator fee cell are inputs — so the perun-channel-lockscript never
+// runs and no participant signature is required. The LP typescript validates all
+// capacity accounting against the proxy channel output's data and capacity.
 func (a *Adapter) BuildFundChannelTx(
 	ctx context.Context,
 	channelID string,
 	lpCellID string,
 	amount uint64,
-) error {
+	contributionID string,
+) (types.Hash, error) {
 	if amount == 0 {
-		return Deterministic(ErrInvalidWitness)
+		return types.Hash{}, Deterministic(ErrInvalidWitness)
 	}
 	channelHash, err := parseHash32(channelID)
 	if err != nil {
-		return Deterministic(err)
+		return types.Hash{}, Deterministic(err)
 	}
 	if isZeroHash(channelHash) {
-		return Deterministic(ErrInvalidChannelID)
+		return types.Hash{}, Deterministic(ErrInvalidChannelID)
+	}
+	contribHash := channelHash
+	if contributionID != "" {
+		contribHash, err = parseHash32(contributionID)
+		if err != nil {
+			return types.Hash{}, Deterministic(err)
+		}
+		if isZeroHash(contribHash) {
+			return types.Hash{}, Deterministic(ErrInvalidContributionID)
+		}
 	}
 	outPoint, err := parseOutPoint(lpCellID)
 	if err != nil {
-		return Deterministic(err)
+		return types.Hash{}, Deterministic(err)
 	}
 	cell, err := a.rpcClient.GetLiveCell(ctx, outPoint, true)
 	if err != nil {
-		return Retriable(err)
+		return types.Hash{}, Retriable(err)
 	}
 	if cell == nil || cell.Cell == nil || cell.Cell.Output == nil || cell.Cell.Data == nil {
-		return Deterministic(ErrInvalidLPCell)
+		return types.Hash{}, Deterministic(ErrInvalidLPCell)
 	}
 	inputLPData := cell.Cell.Data.Content
 	inputLP, err := DecodeLPCell(inputLPData)
 	if err != nil {
-		return Deterministic(ErrInvalidLPCell)
+		return types.Hash{}, Deterministic(ErrInvalidLPCell)
 	}
 	operatorLockHash := a.signer.Address().Script.Hash()
 	if inputLP.OperatorLockHash != operatorLockHash {
-		return Deterministic(ErrScriptHashMismatch)
+		return types.Hash{}, Deterministic(ErrScriptHashMismatch)
 	}
 	if amount > inputLP.AvailableCKB {
-		return Deterministic(ErrInvalidLPCellArg)
+		return types.Hash{}, Deterministic(ErrInvalidLPCellArg)
 	}
 
-	channelCell, err := a.findChannelCellByID(ctx, channelHash)
-	if err != nil {
-		return err
-	}
 	operatorCell, err := a.selectLargestOperatorCell(ctx)
 	if err != nil {
-		return err
+		return types.Hash{}, err
 	}
 
 	updatedLP := inputLP
@@ -264,19 +284,18 @@ func (a *Adapter) BuildFundChannelTx(
 	updatedLP.Nonce += 1
 	updatedLPData, err := EncodeLPCell(updatedLP)
 	if err != nil {
-		return Deterministic(ErrInvalidLPCell)
+		return types.Hash{}, Deterministic(ErrInvalidLPCell)
 	}
 
 	fee := transaction.DefaultFeeShannon
 	if operatorCell.Output.Capacity <= fee {
-		return Deterministic(ErrInsufficientOperatorFunds)
+		return types.Hash{}, Deterministic(ErrInsufficientOperatorFunds)
 	}
 	operatorChange := operatorCell.Output.Capacity - fee
 	if cell.Cell.Output.Capacity < amount {
-		return Deterministic(ErrInvalidLPCellArg)
+		return types.Hash{}, Deterministic(ErrInvalidLPCellArg)
 	}
 	updatedLPCap := cell.Cell.Output.Capacity - amount
-	updatedChannelCap := channelCell.Output.Capacity + amount
 
 	builder := transaction.NewSimpleTransactionBuilder(a.signer.Address().Script.CodeHash, a.deployment.DefaultLockScriptDep, false)
 	if a.signer.Address().Script.CodeHash != a.deployment.DefaultLockScript.CodeHash && len(a.deployment.OmniLockScriptDep) >= 2 {
@@ -289,25 +308,29 @@ func (a *Adapter) BuildFundChannelTx(
 	builder.AddCellDep(&a.lpDeployment.TypeScriptDep)
 	builder.AddCellDep(&a.lpDeployment.LockScriptDep)
 
+	// Input 0: LP cell; Input 1: operator fee cell.
+	// The real Perun channel cell is intentionally excluded so the
+	// perun-channel-lockscript never runs (it would require participant signatures).
 	inputs := []*types.CellInput{
 		{PreviousOutput: outPoint},
-		{PreviousOutput: channelCell.OutPoint},
 		{PreviousOutput: operatorCell.OutPoint},
 	}
 	for _, input := range inputs {
 		builder.AddInput(input)
 	}
-	initLockWitnessPlaceholder(builder, 2)
+	initLockWitnessPlaceholder(builder, 1)
 
 	updatedLPOutput := &types.CellOutput{
 		Capacity: updatedLPCap,
 		Lock:     cell.Cell.Output.Lock,
 		Type:     cell.Cell.Output.Type,
 	}
-	updatedChannelOutput := &types.CellOutput{
-		Capacity: updatedChannelCap,
-		Lock:     channelCell.Output.Lock,
-		Type:     channelCell.Output.Type,
+	// Proxy channel: operator-locked plain cell carrying minimal ChannelStatus data.
+	// The LP typescript reads channel_id from the data and verifies capacity delta.
+	proxyChannelOutput := &types.CellOutput{
+		Capacity: amount,
+		Lock:     operatorCell.Output.Lock,
+		Type:     nil,
 	}
 	operatorChangeOutput := &types.CellOutput{
 		Capacity: operatorChange,
@@ -316,28 +339,29 @@ func (a *Adapter) BuildFundChannelTx(
 	}
 
 	builder.AddOutput(updatedLPOutput, updatedLPData)
-	builder.AddOutput(updatedChannelOutput, channelCell.OutputData)
+	builder.AddOutput(proxyChannelOutput, buildProxyChannelData(channelHash))
 	builder.AddOutput(operatorChangeOutput, []byte{})
 
 	witness := EncodeFundChannelExtractWitness(FundChannelExtractWitness{
 		ChannelID:      channelHash,
-		ContributionID: channelHash,
+		ContributionID: contribHash,
 		ExtractCKB:     amount,
 	})
 	if err := builder.SetWitness(0, types.WitnessTypeInputType, witness); err != nil {
-		return Deterministic(ErrInvalidWitness)
+		return types.Hash{}, Deterministic(ErrInvalidWitness)
 	}
 
-	addInputLockScriptGroup(builder, 2, operatorCell.Output.Lock)
+	addInputLockScriptGroup(builder, 1, operatorCell.Output.Lock)
 
 	tx, err := builder.Build()
 	if err != nil {
-		return Deterministic(err)
+		return types.Hash{}, Deterministic(err)
 	}
-	if _, err := a.transactor.SubmitTransaction(ctx, tx); err != nil {
-		return Retriable(err)
+	txHash, err := a.transactor.SubmitTransaction(ctx, tx)
+	if err != nil {
+		return types.Hash{}, Retriable(err)
 	}
-	return nil
+	return txHash, nil
 }
 
 // BuildSettleChannelInsertTx builds a SettleChannelInsert transaction (not implemented yet).
@@ -349,62 +373,62 @@ func (a *Adapter) BuildSettleChannelInsertTx(
 	principal uint64,
 	feeCKB uint64,
 	priceX64 uint128.Uint128,
-) error {
+) (types.Hash, error) {
 	if priceX64 == (uint128.Uint128{}) {
-		return Deterministic(ErrZeroPrice)
+		return types.Hash{}, Deterministic(ErrZeroPrice)
 	}
 	channelHash, err := parseHash32(channelID)
 	if err != nil {
-		return Deterministic(err)
+		return types.Hash{}, Deterministic(err)
 	}
 	if isZeroHash(channelHash) {
-		return Deterministic(ErrInvalidChannelID)
+		return types.Hash{}, Deterministic(ErrInvalidChannelID)
 	}
 	contribHash := channelHash
 	if contributionID != "" {
 		contribHash, err = parseHash32(contributionID)
 		if err != nil {
-			return Deterministic(err)
+			return types.Hash{}, Deterministic(err)
 		}
 		if isZeroHash(contribHash) {
-			return Deterministic(ErrInvalidContributionID)
+			return types.Hash{}, Deterministic(ErrInvalidContributionID)
 		}
 	}
 	outPoint, err := parseOutPoint(lpCellID)
 	if err != nil {
-		return Deterministic(err)
+		return types.Hash{}, Deterministic(err)
 	}
 	cell, err := a.rpcClient.GetLiveCell(ctx, outPoint, true)
 	if err != nil {
-		return Retriable(err)
+		return types.Hash{}, Retriable(err)
 	}
 	if cell == nil || cell.Cell == nil || cell.Cell.Output == nil || cell.Cell.Data == nil {
-		return Deterministic(ErrInvalidLPCell)
+		return types.Hash{}, Deterministic(ErrInvalidLPCell)
 	}
 	inputLPData := cell.Cell.Data.Content
 	inputLP, err := DecodeLPCell(inputLPData)
 	if err != nil {
-		return Deterministic(ErrInvalidLPCell)
+		return types.Hash{}, Deterministic(ErrInvalidLPCell)
 	}
 	operatorLockHash := a.signer.Address().Script.Hash()
 	if inputLP.OperatorLockHash != operatorLockHash {
-		return Deterministic(ErrScriptHashMismatch)
+		return types.Hash{}, Deterministic(ErrScriptHashMismatch)
 	}
 	if principal > inputLP.ReservedCKB {
-		return Deterministic(ErrInvalidLPCellArg)
+		return types.Hash{}, Deterministic(ErrInvalidLPCellArg)
 	}
 	if (inputLP.Policy.PolicyFlags&policyFlagRequirePrice) != 0 && priceX64 == (uint128.Uint128{}) {
-		return Deterministic(ErrZeroPrice)
+		return types.Hash{}, Deterministic(ErrZeroPrice)
 	}
 	if (inputLP.Policy.PolicyFlags & policyFlagSafePrice) != 0 {
 		if priceX64.Cmp(inputLP.Policy.SafePriceMinX64) < 0 || priceX64.Cmp(inputLP.Policy.SafePriceMaxX64) > 0 {
-			return Deterministic(ErrInvalidLPCellArg)
+			return types.Hash{}, Deterministic(ErrInvalidLPCellArg)
 		}
 	}
 
 	operatorCell, err := a.selectLargestOperatorCell(ctx)
 	if err != nil {
-		return err
+		return types.Hash{}, err
 	}
 	updatedLP := inputLP
 	updatedLP.AvailableCKB += principal + feeCKB
@@ -413,13 +437,13 @@ func (a *Adapter) BuildSettleChannelInsertTx(
 	updatedLP.Nonce += 1
 	updatedLPData, err := EncodeLPCell(updatedLP)
 	if err != nil {
-		return Deterministic(ErrInvalidLPCell)
+		return types.Hash{}, Deterministic(ErrInvalidLPCell)
 	}
 
 	fee := transaction.DefaultFeeShannon
 	totalReturn := principal + feeCKB
 	if operatorCell.Output.Capacity <= totalReturn+fee {
-		return Deterministic(ErrInsufficientOperatorFunds)
+		return types.Hash{}, Deterministic(ErrInsufficientOperatorFunds)
 	}
 	operatorChange := operatorCell.Output.Capacity - totalReturn - fee
 	updatedLPCap := cell.Cell.Output.Capacity + totalReturn
@@ -465,19 +489,168 @@ func (a *Adapter) BuildSettleChannelInsertTx(
 		PriceX64:          priceX64,
 	})
 	if err := builder.SetWitness(0, types.WitnessTypeInputType, witness); err != nil {
-		return Deterministic(ErrInvalidWitness)
+		return types.Hash{}, Deterministic(ErrInvalidWitness)
 	}
 
 	addInputLockScriptGroup(builder, 1, operatorCell.Output.Lock)
 
 	tx, err := builder.Build()
 	if err != nil {
-		return Deterministic(err)
+		return types.Hash{}, Deterministic(err)
 	}
-	if _, err := a.transactor.SubmitTransaction(ctx, tx); err != nil {
-		return Retriable(err)
+	txHash, err := a.transactor.SubmitTransaction(ctx, tx)
+	if err != nil {
+		return types.Hash{}, Retriable(err)
 	}
-	return nil
+	return txHash, nil
+}
+
+func (a *Adapter) FundChannelWithLP(
+	ctx context.Context,
+	channelID string,
+	lpCellID string,
+	amount uint64,
+) (types.Hash, error) {
+	if !a.lpOrchestrationEnabled {
+		return types.Hash{}, Deterministic(ErrFeatureDisabled)
+	}
+	if amount == 0 {
+		return types.Hash{}, Deterministic(ErrInvalidWitness)
+	}
+	channelHash, err := parseHash32(channelID)
+	if err != nil {
+		return types.Hash{}, Deterministic(err)
+	}
+	if isZeroHash(channelHash) {
+		return types.Hash{}, Deterministic(ErrInvalidChannelID)
+	}
+
+	contribHash := deriveContributionID("lp_fund", channelHash, amount, 0)
+	if a.contributionSeen(contribHash) {
+		log.Printf("lp_fund_noop channel_id=%s contribution_id=%s lp_cell_id=%s reason=duplicate", channelID, contribHash.String(), lpCellID)
+		return types.Hash{}, Deterministic(ErrNoOp)
+	}
+
+	preLP, err := a.GetLPCell(ctx, lpCellID)
+	if err != nil {
+		return types.Hash{}, err
+	}
+	if preLP.Cell.ReservedCKB >= amount {
+		log.Printf("lp_fund_noop channel_id=%s contribution_id=%s lp_cell_id=%s reason=reserved_already", channelID, contribHash.String(), lpCellID)
+		return types.Hash{}, Deterministic(ErrNoOp)
+	}
+
+	if _, err := a.findChannelCellByID(ctx, channelHash); err != nil {
+		if IsRetriable(err) {
+			return types.Hash{}, err
+		}
+		return types.Hash{}, Deterministic(ErrChannelNotFound)
+	}
+
+	txHash, err := a.BuildFundChannelTx(ctx, channelID, lpCellID, amount, contribHash.String())
+	if err != nil {
+		return types.Hash{}, err
+	}
+	a.markContribution(contribHash)
+
+	// The fund tx spends the old LP cell (input 0) and creates a new one at output 0.
+	newLPCellID := fmt.Sprintf("%s:0", txHash.String())
+	postLP, err := a.GetLPCell(ctx, newLPCellID)
+	if err != nil {
+		return txHash, err
+	}
+	if postLP.Cell.ReservedCKB != preLP.Cell.ReservedCKB+amount ||
+		postLP.Cell.AvailableCKB != preLP.Cell.AvailableCKB-amount ||
+		postLP.Cell.Nonce != preLP.Cell.Nonce+1 ||
+		postLP.Capacity != preLP.Capacity-amount {
+		return txHash, Retriable(ErrUnexpectedState)
+	}
+
+	log.Printf("lp_fund_orchestrated channel_id=%s contribution_id=%s lp_cell_id=%s funding_tx_hash=%s", channelID, contribHash.String(), lpCellID, txHash.String())
+	return txHash, nil
+}
+
+func (a *Adapter) SettleChannelWithLP(
+	ctx context.Context,
+	channelID string,
+	lpCellID string,
+	principal uint64,
+	feeCKB uint64,
+	priceX64 uint128.Uint128,
+) (types.Hash, error) {
+	if !a.lpOrchestrationEnabled {
+		return types.Hash{}, Deterministic(ErrFeatureDisabled)
+	}
+	if priceX64 == (uint128.Uint128{}) {
+		return types.Hash{}, Deterministic(ErrZeroPrice)
+	}
+	channelHash, err := parseHash32(channelID)
+	if err != nil {
+		return types.Hash{}, Deterministic(err)
+	}
+	if isZeroHash(channelHash) {
+		return types.Hash{}, Deterministic(ErrInvalidChannelID)
+	}
+
+	channelCell, err := a.findChannelCellByID(ctx, channelHash)
+	if err == nil && channelCell != nil {
+		return types.Hash{}, Deterministic(ErrChannelStillLive)
+	}
+	if err != nil && IsRetriable(err) {
+		return types.Hash{}, err
+	}
+
+	contribHash := deriveContributionID("lp_settle", channelHash, principal, feeCKB)
+	if a.contributionSeen(contribHash) {
+		log.Printf("lp_settle_noop channel_id=%s contribution_id=%s lp_cell_id=%s reason=duplicate", channelID, contribHash.String(), lpCellID)
+		return types.Hash{}, Deterministic(ErrNoOp)
+	}
+
+	preLP, err := a.GetLPCell(ctx, lpCellID)
+	if err != nil {
+		return types.Hash{}, err
+	}
+	if preLP.Cell.ReservedCKB < principal {
+		log.Printf("lp_settle_noop channel_id=%s contribution_id=%s lp_cell_id=%s reason=principal_already_returned", channelID, contribHash.String(), lpCellID)
+		return types.Hash{}, Deterministic(ErrNoOp)
+	}
+
+	totalReturn := principal + feeCKB
+	txHash, err := a.BuildSettleChannelInsertTx(ctx, channelID, contribHash.String(), lpCellID, principal, feeCKB, priceX64)
+	if err != nil {
+		return types.Hash{}, err
+	}
+	a.markContribution(contribHash)
+
+	// The settle tx spends the old LP cell (input 0) and creates a new one at output 0.
+	newLPCellID := fmt.Sprintf("%s:0", txHash.String())
+	postLP, err := a.GetLPCell(ctx, newLPCellID)
+	if err != nil {
+		return txHash, err
+	}
+	if postLP.Cell.ReservedCKB != preLP.Cell.ReservedCKB-principal ||
+		postLP.Cell.AvailableCKB != preLP.Cell.AvailableCKB+totalReturn ||
+		postLP.Cell.CumulativeFeesEarnedCKB != preLP.Cell.CumulativeFeesEarnedCKB+feeCKB ||
+		postLP.Cell.Nonce != preLP.Cell.Nonce+1 ||
+		postLP.Capacity != preLP.Capacity+totalReturn {
+		return txHash, Retriable(ErrUnexpectedState)
+	}
+
+	log.Printf("lp_settle_orchestrated channel_id=%s contribution_id=%s lp_cell_id=%s settle_tx_hash=%s", channelID, contribHash.String(), lpCellID, txHash.String())
+	return txHash, nil
+}
+
+func (a *Adapter) contributionSeen(contribHash types.Hash) bool {
+	a.contribMu.Lock()
+	defer a.contribMu.Unlock()
+	_, ok := a.contribSeen[contribHash]
+	return ok
+}
+
+func (a *Adapter) markContribution(contribHash types.Hash) {
+	a.contribMu.Lock()
+	defer a.contribMu.Unlock()
+	a.contribSeen[contribHash] = struct{}{}
 }
 
 // findChannelCellByID locates a channel cell by channel ID.
@@ -508,7 +681,7 @@ func (a *Adapter) findChannelCellByID(ctx context.Context, channelID types.Hash)
 			return cell, nil
 		}
 	}
-	return nil, Deterministic(ErrInvalidLPCellArg)
+	return nil, Deterministic(ErrChannelNotFound)
 }
 
 func (a *Adapter) selectLargestOperatorCell(ctx context.Context) (*indexer.LiveCell, error) {

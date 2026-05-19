@@ -7,13 +7,16 @@ import (
 	"testing"
 
 	"github.com/Pilatuz/bigz/uint128"
+	"github.com/nervosnetwork/ckb-sdk-go/v2/types"
+	"github.com/nervosnetwork/ckb-sdk-go/v2/types/molecule"
 	"github.com/stretchr/testify/require"
+	ckbencoding "perun.network/perun-ckb-backend/encoding"
 )
 
 func TestBuildSettleChannelInsertTxRejectsZeroPrice(t *testing.T) {
 	adapter := &Adapter{}
 
-	err := adapter.BuildSettleChannelInsertTx(
+	_, err := adapter.BuildSettleChannelInsertTx(
 		context.Background(),
 		"",
 		"",
@@ -31,11 +34,12 @@ func TestBuildFundChannelTxRejectsZeroChannelID(t *testing.T) {
 	adapter := &Adapter{}
 	zeroHash := "0x" + strings.Repeat("00", 32)
 
-	err := adapter.BuildFundChannelTx(
+	_, err := adapter.BuildFundChannelTx(
 		context.Background(),
 		zeroHash,
 		"0x"+strings.Repeat("11", 32)+":0",
 		1,
+		"",
 	)
 
 	require.ErrorIs(t, err, ErrInvalidChannelID)
@@ -47,7 +51,7 @@ func TestBuildSettleChannelInsertTxRejectsZeroContributionID(t *testing.T) {
 	channelID := "0x" + strings.Repeat("11", 32)
 	zeroContribution := "0x" + strings.Repeat("00", 32)
 
-	err := adapter.BuildSettleChannelInsertTx(
+	_, err := adapter.BuildSettleChannelInsertTx(
 		context.Background(),
 		channelID,
 		zeroContribution,
@@ -59,6 +63,18 @@ func TestBuildSettleChannelInsertTxRejectsZeroContributionID(t *testing.T) {
 
 	require.ErrorIs(t, err, ErrInvalidContributionID)
 	require.True(t, IsDeterministic(err))
+}
+
+func TestBuildProxyChannelDataEncodesChannelID(t *testing.T) {
+	var channelHash types.Hash
+	channelHash[0] = 0x12
+	channelHash[31] = 0x34
+
+	status, err := molecule.ChannelStatusFromSlice(buildProxyChannelData(channelHash), false)
+	require.NoError(t, err)
+	require.Equal(t, channelHash, types.UnpackHash(status.State().ChannelId()))
+	require.False(t, ckbencoding.ToBool(*status.Funded()))
+	require.False(t, ckbencoding.ToBool(*status.Disputed()))
 }
 
 func bigOne() *big.Int {
