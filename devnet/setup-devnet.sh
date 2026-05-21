@@ -38,6 +38,44 @@ if [ -f "default.db-options" ]; then
   rm "default.db-options"
 fi
 
+# Drop any stale readiness sentinel from a previous run.
+rm -f .devnet-ready
+
+# Patch offckb's bundled ckb-miner.toml to 1s blocks (one-time bootstrap).
+# `offckb node` runs its own miner with this toml; the default 5s block time is
+# too slow for go-perun's dispute tests (see CI commit 5e6c0db). The local
+# ckb-miner.toml created by `ckb init` below is patched separately for pane 2.
+OFFCKB_DEVNET_DIR="$HOME/.local/share/offckb-nodejs/devnet"
+OFFCKB_MINER_TOML="$OFFCKB_DEVNET_DIR/ckb-miner.toml"
+if [ ! -f "$OFFCKB_MINER_TOML" ] || ! grep -q '^value = 1000' "$OFFCKB_MINER_TOML"; then
+  echo "Bootstrapping offckb to create+patch its ckb-miner.toml..."
+  ( nohup offckb node >/tmp/offckb-bootstrap.log 2>&1 & )
+  for i in $(seq 1 30); do
+    [ -f "$OFFCKB_MINER_TOML" ] && break
+    sleep 1
+  done
+  # Graceful shutdown first (SIGINT lets ckb release the rocksdb lock), then SIGKILL fallback.
+  pkill -INT -f 'offckb-nodejs/bins.*/ckb' 2>/dev/null || true
+  pkill -INT -f 'offckb node' 2>/dev/null || true
+  sleep 5
+  pkill -KILL -f 'offckb-nodejs/bins.*/ckb' 2>/dev/null || true
+  pkill -KILL -f 'offckb node' 2>/dev/null || true
+  sleep 2
+  if [ -f "$OFFCKB_MINER_TOML" ]; then
+    sed -i 's/^value = 5000/value = 1000/' "$OFFCKB_MINER_TOML"
+    echo "Patched $OFFCKB_MINER_TOML to 1s blocks"
+  else
+    echo "offckb miner toml still missing; continuing without patch" >&2
+  fi
+fi
+
+# Always wipe offckb's chain data so pane 1's `offckb node` starts from a fresh
+# rocksdb (no stale LOCK from a prior crash/kill). Keeps the patched toml.
+if [ -d "$OFFCKB_DEVNET_DIR/data" ]; then
+  rm -rf "$OFFCKB_DEVNET_DIR/data"
+  echo "Wiped $OFFCKB_DEVNET_DIR/data for clean start"
+fi
+
 # Build all required contract for Perun.
 DEVNET=$(pwd)
 cd $PERUN_CONTRACTS_DIR

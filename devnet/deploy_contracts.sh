@@ -167,7 +167,7 @@ sleep 25
 run_deploy_phase "normal-1" "./deployment/dev/deployment_1.toml" "./$MIGRATION_1" "$DEVNET_DIR/$DEPLOYMENT_INFO_1.json" "$GENESIS_PRIVKEY" "$MINER_PRIVKEY" || { echo "phase normal-1 failed"; exit 1; }
 sleep 25
 run_deploy_phase "vc" "./deployment/dev/deployment_vc.toml" "./$MIGRATION_VC" "$DEVNET_DIR/$DEPLOYMENT_INFO_VC.json" "$GENESIS_PRIVKEY" "$MINER_PRIVKEY" || { echo "phase vc failed"; exit 1; }
-sleep 10
+sleep 25
 run_deploy_phase "lp" "./deployment/dev/deployment_lp.toml" "./$MIGRATION_LP" "$DEVNET_DIR/$DEPLOYMENT_INFO_LP.json" "$GENESIS_PRIVKEY" "$MINER_PRIVKEY" || { echo "phase lp failed"; exit 1; }
 
 ALICE_LOCK_HASH=$(awk '/^lock_hash:/ {print $2}' "$DEVNET_DIR/$ACCOUNTS_DIR/alice.txt")
