@@ -1,4 +1,4 @@
-.PHONY: dev clean-ready
+.PHONY: dev stop clean-ready
 
 SENTINEL := .devnet-ready
 READY_TIMEOUT ?= 600
@@ -20,3 +20,14 @@ dev: clean-ready
 	echo "Devnet failed to become ready in $(READY_TIMEOUT)s" >&2; \
 	tmux capture-pane -t devnet -p -S -200 || true; \
 	exit 1
+
+stop:
+	@echo "Stopping devnet..."
+	@tmux kill-session -t devnet 2>/dev/null || true
+	@pkill -INT -f 'offckb-nodejs/bins.*/ckb' 2>/dev/null || true
+	@pkill -INT -f 'offckb node' 2>/dev/null || true
+	@sleep 3
+	@pkill -KILL -f 'offckb-nodejs/bins.*/ckb' 2>/dev/null || true
+	@pkill -KILL -f 'offckb node' 2>/dev/null || true
+	@rm -f $(SENTINEL)
+	@echo "Devnet stopped."
