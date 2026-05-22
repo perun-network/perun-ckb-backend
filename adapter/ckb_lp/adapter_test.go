@@ -11,6 +11,7 @@ import (
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types/molecule"
 	"github.com/stretchr/testify/require"
 	ckbencoding "perun.network/perun-ckb-backend/encoding"
+	"perun.network/perun-ckb-backend/transaction"
 )
 
 func TestBuildSettleChannelInsertTxRejectsZeroPrice(t *testing.T) {
@@ -70,7 +71,7 @@ func TestBuildProxyChannelDataEncodesChannelID(t *testing.T) {
 	channelHash[0] = 0x12
 	channelHash[31] = 0x34
 
-	status, err := molecule.ChannelStatusFromSlice(buildProxyChannelData(channelHash), false)
+	status, err := molecule.ChannelStatusFromSlice(transaction.BuildProxyChannelData(channelHash), false)
 	require.NoError(t, err)
 	require.Equal(t, channelHash, types.UnpackHash(status.State().ChannelId()))
 	require.False(t, ckbencoding.ToBool(*status.Funded()))

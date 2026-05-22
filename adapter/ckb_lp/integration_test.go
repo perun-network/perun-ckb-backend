@@ -5,12 +5,12 @@ package ckblp
 
 import (
 	"context"
-	"encoding/json"
+	"crypto/rand"
+	"errors"
 	"fmt"
 	"math/big"
 	"os"
 	"path/filepath"
-	"strconv"
 	"testing"
 
 	"github.com/Pilatuz/bigz/uint128"
@@ -22,46 +22,62 @@ import (
 	ckbaddress "perun.network/perun-ckb-backend/wallet/address"
 )
 
-type lpMigration struct {
-	CellRecipes []struct {
-		Name     string `json:"name"`
-		TxHash   string `json:"tx_hash"`
-		Index    uint32 `json:"index"`
-		DataHash string `json:"data_hash"`
-	} `json:"cell_recipes"`
+func loadOrSkipLPDeployment(t *testing.T) (LPDeployment, bool) {
+	lpDeployment, err := LoadLPDeploymentFromDevnet()
+	if errors.Is(err, ErrFixtureUnavailable) {
+		t.Skipf("LP deployment fixture unavailable: %v", err)
+		return LPDeployment{}, false
+	}
+	require.NoError(t, err)
+	return lpDeployment, true
 }
 
-type lpCellSpec struct {
-	PoolID        string `json:"pool_id"`
-	OwnerLockHash string `json:"owner_lock_hash"`
-	OperatorLock  string `json:"operator_lock_hash"`
-	AvailableCKB  uint64 `json:"available_ckb"`
-	ReservedCKB   uint64 `json:"reserved_ckb"`
-	FeesEarnedCKB uint64 `json:"cumulative_fees_earned_ckb"`
-	Policy        struct {
-		MaxTradingVolume uint64 `json:"max_trading_volume"`
-		FeeRateBps       uint32 `json:"fee_rate_bps"`
-		PolicyFlags      uint32 `json:"policy_flags"`
-		PolicyVersion    uint32 `json:"policy_version"`
-	} `json:"policy"`
-	Nonce  uint64 `json:"nonce"`
-	Active bool   `json:"active"`
+func loadOrSkipLPCellSpec(t *testing.T) (LPCell, bool) {
+	lpCell, err := LoadLPCellSpecFromDevnet()
+	if errors.Is(err, ErrFixtureUnavailable) {
+		t.Skipf("LP cell spec fixture unavailable: %v", err)
+		return LPCell{}, false
+	}
+	require.NoError(t, err)
+	return lpCell, true
+}
+
+func loadDevnetDeploymentRequire(t *testing.T) backend.Deployment {
+	d, err := LoadDevnetDeployment()
+	require.NoError(t, err)
+	return d
+}
+
+func ensureLPDeploymentOnChainOrSkip(t *testing.T, rpcClient rpc.Client, lpDeployment LPDeployment) {
+	if err := EnsureLPDeploymentOnChain(context.Background(), rpcClient, lpDeployment); err != nil {
+		if errors.Is(err, ErrFixtureUnavailable) {
+			t.Skipf("LP deployment not live on chain: %v", err)
+			return
+		}
+		require.NoError(t, err)
+	}
+}
+
+func mustParseHash32(t *testing.T, value string) [32]byte {
+	out, err := parseHash32Fixed(value)
+	require.NoError(t, err)
+	return out
 }
 
 func TestDiscoverLPCellsDevnet(t *testing.T) {
 	if os.Getenv("RUN_DEVNET_TESTS") == "" {
 		t.Skip("devnet E2E test: requires proper transaction signing setup")
 	}
-	lpDeployment, ok := loadLPDeploymentFromDevnet(t)
+	lpDeployment, ok := loadOrSkipLPDeployment(t)
 	if !ok {
 		return
 	}
 
 	rpcClient, err := rpc.Dial(ckbtest.DevnetRpcNodeURL)
 	require.NoError(t, err)
-	ensureLPDeploymentOnChain(t, rpcClient, lpDeployment)
+	ensureLPDeploymentOnChainOrSkip(t, rpcClient, lpDeployment)
 
-	deployment := loadDevnetDeployment(t)
+	deployment := loadDevnetDeploymentRequire(t)
 	signer := newBobSigner(t, deployment.Network)
 	transactor := backend.NewRPCTransactor(rpcClient, signer)
 	adapter := NewAdapter(rpcClient, signer, transactor, deployment, lpDeployment)
@@ -70,10 +86,13 @@ func TestDiscoverLPCellsDevnet(t *testing.T) {
 	cells, err := adapter.DiscoverLPCells(context.Background(), operatorHash)
 	require.NoError(t, err)
 	if len(cells) == 0 {
-		lpCell, ok := loadLPCellSpecFromDevnet(t)
+		lpCell, ok := loadOrSkipLPCellSpec(t)
 		if !ok {
 			return
 		}
+		// The on-disk spec default (200 CKB) is below the LP cell's
+		// occupied-capacity minimum (~323 CKB). Bump to 800 CKB.
+		lpCell.AvailableCKB = 80_000_000_000
 		_, err := adapter.BuildLPDepositTx(context.Background(), lpCell)
 		require.NoError(t, err)
 
@@ -89,16 +108,16 @@ func TestGetLPCellDevnet(t *testing.T) {
 	}
 	lpCellID := os.Getenv("PERUN_LP_CELL_ID")
 	poolID := os.Getenv("PERUN_LP_POOL_ID")
-	lpDeployment, ok := loadLPDeploymentFromDevnet(t)
+	lpDeployment, ok := loadOrSkipLPDeployment(t)
 	if !ok {
 		return
 	}
 
 	rpcClient, err := rpc.Dial(ckbtest.DevnetRpcNodeURL)
 	require.NoError(t, err)
-	ensureLPDeploymentOnChain(t, rpcClient, lpDeployment)
+	ensureLPDeploymentOnChainOrSkip(t, rpcClient, lpDeployment)
 
-	deployment := loadDevnetDeployment(t)
+	deployment := loadDevnetDeploymentRequire(t)
 	signer := newBobSigner(t, deployment.Network)
 	transactor := backend.NewRPCTransactor(rpcClient, signer)
 	adapter := NewAdapter(rpcClient, signer, transactor, deployment, lpDeployment)
@@ -107,10 +126,13 @@ func TestGetLPCellDevnet(t *testing.T) {
 		cells, err := adapter.DiscoverLPCells(context.Background(), operatorHash)
 		require.NoError(t, err)
 		if len(cells) == 0 {
-			lpCell, ok := loadLPCellSpecFromDevnet(t)
+			lpCell, ok := loadOrSkipLPCellSpec(t)
 			if !ok {
 				return
 			}
+			// The on-disk spec default (200 CKB) is below the LP cell's
+			// occupied-capacity minimum (~323 CKB). Bump to 800 CKB.
+			lpCell.AvailableCKB = 80_000_000_000
 			lpCellID, err = adapter.BuildLPDepositTx(context.Background(), lpCell)
 			require.NoError(t, err)
 		} else {
@@ -130,27 +152,30 @@ func TestBobCreatesLPCellAndWithdrawDevnet(t *testing.T) {
 	if os.Getenv("RUN_DEVNET_TESTS") == "" {
 		t.Skip("devnet E2E test: requires proper transaction signing setup")
 	}
-	lpDeployment, ok := loadLPDeploymentFromDevnet(t)
+	lpDeployment, ok := loadOrSkipLPDeployment(t)
 	if !ok {
 		return
 	}
 
-	lpCell, ok := loadLPCellSpecFromDevnet(t)
+	lpCell, ok := loadOrSkipLPCellSpec(t)
 	if !ok {
 		return
 	}
 
 	rpcClient, err := rpc.Dial(ckbtest.DevnetRpcNodeURL)
 	require.NoError(t, err)
-	ensureLPDeploymentOnChain(t, rpcClient, lpDeployment)
+	ensureLPDeploymentOnChainOrSkip(t, rpcClient, lpDeployment)
 
-	deployment := loadDevnetDeployment(t)
+	deployment := loadDevnetDeploymentRequire(t)
 	signer := newBobSigner(t, deployment.Network)
 	transactor := backend.NewRPCTransactor(rpcClient, signer)
 
 	ctx := context.Background()
 
 	adapter := NewAdapter(rpcClient, signer, transactor, deployment, lpDeployment)
+	// The on-disk spec default (200 CKB) is below the LP cell's
+	// occupied-capacity minimum (~323 CKB). Bump to 800 CKB.
+	lpCell.AvailableCKB = 80_000_000_000
 	lpCellID, err := adapter.BuildLPDepositTx(ctx, lpCell)
 	require.NoError(t, err)
 	info, err := adapter.GetLPCell(ctx, lpCellID)
@@ -166,361 +191,133 @@ func TestBobCreatesLPCellAndWithdrawDevnet(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// TestLPFundAndSettleChannelDevnet is the end-to-end LP integration test.
+// It runs both halves of the two-step LP usage flow against a live devnet:
+//   - LP fund-extract creates a proxy channel cell labeled with a fresh,
+//     synthetic channel_id (matches the contract harness pattern in
+//     devnet/contract/tests/src/lp_tests.rs:154-159, which also uses synthetic
+//     channel_ids — LP semantics are decoupled from real Perun channels by
+//     design).
+//   - LP settle-insert returns principal + fee to the LP cell. Because the
+//     channel_id was never live on-chain, the settle-insert precondition
+//     "channel must not appear in inputs/outputs" is trivially satisfied.
+//
+// The test is self-contained: it does not require PERUN_CHANNEL_ID and does
+// not require an out-of-band channel to be open. The real Perun channel flow
+// (Open/Fund/Close) is exercised by TestPaymentHappy in the client package.
 func TestLPFundAndSettleChannelDevnet(t *testing.T) {
 	if os.Getenv("RUN_DEVNET_TESTS") == "" {
 		t.Skip("devnet E2E test: requires proper transaction signing setup")
 	}
-	channelID := os.Getenv("PERUN_CHANNEL_ID")
-	if channelID == "" {
-		t.Skip("missing PERUN_CHANNEL_ID; set to an existing channel id")
-	}
-
-	lpDeployment, ok := loadLPDeploymentFromDevnet(t)
+	lpDeployment, ok := loadOrSkipLPDeployment(t)
 	if !ok {
 		return
 	}
-
-	deployment := loadDevnetDeployment(t)
-
-	rpcClient, err := rpc.Dial(ckbtest.DevnetRpcNodeURL)
-	require.NoError(t, err)
-	ensureLPDeploymentOnChain(t, rpcClient, lpDeployment)
-
-	signer := newBobSigner(t, deployment.Network)
-	transactor := backend.NewRPCTransactor(rpcClient, signer)
-	adapter := NewAdapter(rpcClient, signer, transactor, deployment, lpDeployment)
-
-	ctx := context.Background()
-
-	operatorHash := signer.Address().Script.Hash()
-	cells, err := adapter.DiscoverLPCells(ctx, operatorHash)
-	require.NoError(t, err)
-
-	var lpCellID string
-	if len(cells) == 0 {
-		lpCell, ok := loadLPCellSpecFromDevnet(t)
-		if !ok {
-			return
-		}
-		lpCellID, err = adapter.BuildLPDepositTx(ctx, lpCell)
-		require.NoError(t, err)
-	} else {
-		lpCellID = cells[0].OutPointHex
-	}
-
-	channelHash, err := parseHash32(channelID)
-	require.NoError(t, err)
-	if isZeroHash(channelHash) {
-		t.Skip("PERUN_CHANNEL_ID must be non-zero")
-	}
-	if _, err := adapter.findChannelCellByID(ctx, channelHash); err != nil {
-		t.Skipf("channel cell not found for %s; create a live channel first", channelID)
-	}
-
-	amount := uint64(1_000_000_000)
-	fundHash, err := adapter.BuildFundChannelTx(ctx, channelID, lpCellID, amount, "")
-	require.NoError(t, err)
-
-	// The fund tx spends lpCellID (input 0) and produces the updated LP cell at output 0.
-	newLPCellID := fmt.Sprintf("%s:0", fundHash.String())
-
-	principal := amount
-	fee := uint64(100_000_000)
-	priceX64 := uint128.FromBig(big.NewInt(1))
-	_, err = adapter.BuildSettleChannelInsertTx(ctx, channelID, channelID, newLPCellID, principal, fee, priceX64)
-	require.NoError(t, err)
-}
-
-func TestLPFundingFirstScenarioDevnet(t *testing.T) {
-	if os.Getenv("RUN_DEVNET_TESTS") == "" {
-		t.Skip("devnet E2E test: requires proper transaction signing setup")
-	}
-	if os.Getenv("PERUN_LP_ORCHESTRATION") == "" {
-		t.Skip("LP orchestration disabled; set PERUN_LP_ORCHESTRATION=1")
-	}
-	channelID := os.Getenv("PERUN_CHANNEL_ID")
-	if channelID == "" {
-		t.Skip("missing PERUN_CHANNEL_ID; set to an existing channel id")
-	}
-
-	lpDeployment, ok := loadLPDeploymentFromDevnet(t)
-	if !ok {
-		return
-	}
-	deployment := loadDevnetDeployment(t)
+	deployment := loadDevnetDeploymentRequire(t)
 
 	rpcClient, err := rpc.Dial(ckbtest.DevnetRpcNodeURL)
 	require.NoError(t, err)
-	ensureLPDeploymentOnChain(t, rpcClient, lpDeployment)
+	ensureLPDeploymentOnChainOrSkip(t, rpcClient, lpDeployment)
 
 	signer := newBobSigner(t, deployment.Network)
 	transactor := backend.NewRPCTransactor(rpcClient, signer)
 	adapter := NewAdapter(rpcClient, signer, transactor, deployment, lpDeployment)
 	ctx := context.Background()
 
-	operatorHash := signer.Address().Script.Hash()
-	cells, err := adapter.DiscoverLPCells(ctx, operatorHash)
+	// Always deposit a fresh LP cell so the test starts from a known state.
+	// The LP cell's CKB capacity must cover both its own occupied-capacity
+	// minimum (~323 CKB: 8 capacity + 185 data + 65 lock + 65 type) AND the
+	// proxy cell's minimum (~217 CKB: 8 capacity + 65 lock + ChannelStatus
+	// data) plus headroom. Seed at 800 CKB.
+	lpSpec, ok := loadOrSkipLPCellSpec(t)
+	if !ok {
+		return
+	}
+	lpSpec.AvailableCKB = 80_000_000_000
+	lpCellID, err := adapter.BuildLPDepositTx(ctx, lpSpec)
 	require.NoError(t, err)
 
-	var lpCellID string
-	if len(cells) == 0 {
-		lpCell, ok := loadLPCellSpecFromDevnet(t)
-		if !ok {
-			return
-		}
-		lpCellID, err = adapter.BuildLPDepositTx(ctx, lpCell)
-		require.NoError(t, err)
-	} else {
-		lpCellID = cells[0].OutPointHex
-	}
-
-	amount := envUint64("PERUN_LP_FUND_AMOUNT", 1_000_000_000)
+	// Capture pre-LP state.
 	preLP, err := adapter.GetLPCell(ctx, lpCellID)
 	require.NoError(t, err)
 
-	fundHash, err := adapter.FundChannelWithLP(ctx, channelID, lpCellID, amount)
+	// Mint a fresh synthetic channel_id for this test run.
+	var channelHash types.Hash
+	_, err = rand.Read(channelHash[:])
+	require.NoError(t, err)
+	channelID := channelHash.String()
+
+	// The proxy cell created by fund-extract has lock + ChannelStatus data,
+	// requiring ~217 CKB of occupied capacity. Use 250 CKB so the proxy
+	// comfortably satisfies the rule.
+	amount := uint64(25_000_000_000)
+	require.LessOrEqual(t, amount, preLP.Cell.AvailableCKB,
+		"LP cell does not have enough available CKB for the test extract amount")
+
+	// Step 1: LP fund-extract.
+	fundHash, err := adapter.BuildFundChannelTx(ctx, channelID, lpCellID, amount, "")
 	require.NoError(t, err)
 
-	// The fund tx spends lpCellID and creates the updated LP cell at output 0.
 	lpCellIDAfterFund := fmt.Sprintf("%s:0", fundHash.String())
-	postLP, err := adapter.GetLPCell(ctx, lpCellIDAfterFund)
+	postFundLP, err := adapter.GetLPCell(ctx, lpCellIDAfterFund)
 	require.NoError(t, err)
-	require.Equal(t, preLP.Cell.AvailableCKB-amount, postLP.Cell.AvailableCKB)
-	require.Equal(t, preLP.Cell.ReservedCKB+amount, postLP.Cell.ReservedCKB)
-	require.Equal(t, preLP.Cell.Nonce+1, postLP.Cell.Nonce)
+	require.Equal(t, preLP.Cell.AvailableCKB-amount, postFundLP.Cell.AvailableCKB, "AvailableCKB should decrease by extract amount")
+	require.Equal(t, preLP.Cell.ReservedCKB+amount, postFundLP.Cell.ReservedCKB, "ReservedCKB should increase by extract amount")
+	require.Equal(t, preLP.Cell.Nonce+1, postFundLP.Cell.Nonce, "Nonce should increment by 1")
+	require.Equal(t, preLP.Capacity-amount, postFundLP.Capacity, "LP cell capacity should decrease by extract amount")
 
-	principal := envUint64("PERUN_LP_SETTLE_PRINCIPAL", amount)
-	fee := envUint64("PERUN_LP_SETTLE_FEE", 100_000_000)
+	// Step 2: LP settle-insert. The proxy cell from step 1 is operator-locked
+	// and no longer carries the channel_id (it's a regular operator cell now,
+	// having been consumed/spent), so the channel_id label is once again free
+	// of any matching cell on-chain — satisfying the settle-insert precondition.
+	principal := amount
+	feeCKB := uint64(100_000_000)
 	priceX64 := uint128.FromBig(big.NewInt(1))
-	if priceRaw := os.Getenv("PERUN_LP_SETTLE_PRICE_X64"); priceRaw != "" {
-		parsed, parseErr := strconv.ParseUint(priceRaw, 10, 64)
-		require.NoError(t, parseErr)
-		priceX64 = uint128.FromBig(new(big.Int).SetUint64(parsed))
-	}
 
-	channelHash, err := parseHash32(channelID)
-	require.NoError(t, err)
-	if _, err = adapter.findChannelCellByID(ctx, channelHash); err == nil {
-		t.Skip("channel still live; close channel before running settle portion of this test")
-	}
-
-	settleHash, err := adapter.SettleChannelWithLP(ctx, channelID, lpCellIDAfterFund, principal, fee, priceX64)
+	settleHash, err := adapter.BuildSettleChannelInsertTx(ctx, channelID, "", lpCellIDAfterFund, principal, feeCKB, priceX64)
 	require.NoError(t, err)
 
-	// The settle tx spends lpCellIDAfterFund and creates the updated LP cell at output 0.
 	lpCellIDAfterSettle := fmt.Sprintf("%s:0", settleHash.String())
-	settledLP, err := adapter.GetLPCell(ctx, lpCellIDAfterSettle)
+	postSettleLP, err := adapter.GetLPCell(ctx, lpCellIDAfterSettle)
 	require.NoError(t, err)
-	require.Equal(t, postLP.Cell.ReservedCKB-principal, settledLP.Cell.ReservedCKB)
-	require.Equal(t, postLP.Cell.AvailableCKB+principal+fee, settledLP.Cell.AvailableCKB)
-	require.Equal(t, postLP.Cell.CumulativeFeesEarnedCKB+fee, settledLP.Cell.CumulativeFeesEarnedCKB)
-}
+	require.Equal(t, postFundLP.Cell.AvailableCKB+principal+feeCKB, postSettleLP.Cell.AvailableCKB, "AvailableCKB should increase by principal+fee")
+	require.Equal(t, postFundLP.Cell.ReservedCKB-principal, postSettleLP.Cell.ReservedCKB, "ReservedCKB should decrease by principal")
+	require.Equal(t, postFundLP.Cell.CumulativeFeesEarnedCKB+feeCKB, postSettleLP.Cell.CumulativeFeesEarnedCKB, "CumulativeFeesEarnedCKB should increase by fee")
+	require.Equal(t, postFundLP.Cell.Nonce+1, postSettleLP.Cell.Nonce, "Nonce should increment by 1")
+	require.Equal(t, postFundLP.Capacity+principal+feeCKB, postSettleLP.Capacity, "LP cell capacity should increase by principal+fee")
 
-func envUint64(key string, fallback uint64) uint64 {
-	value := os.Getenv(key)
-	if value == "" {
-		return fallback
-	}
-	parsed, err := strconv.ParseUint(value, 10, 64)
-	if err != nil {
-		return fallback
-	}
-	return parsed
-}
+	// Step 3: Reclaim the proxy cell created by step 1. The proxy is at output
+	// index 1 of the fund-extract tx (output 0 is the LP cell, output 2 is
+	// operator change). It is operator-locked with no type script and carries
+	// the channel_id in ChannelStatus data. Settle-insert cannot consume it
+	// in-band because the LP typescript forbids channel_id from appearing in
+	// inputs (see liquidity-pool-typescript/src/main.rs:578-582), so the
+	// operator reclaims its capacity here in a separate, LP-script-free tx.
+	proxyOutpointID := fmt.Sprintf("%s:1", fundHash.String())
+	proxyLive, err := rpcClient.GetLiveCell(ctx, &types.OutPoint{TxHash: fundHash, Index: 1}, false)
+	require.NoError(t, err)
+	require.NotNil(t, proxyLive)
+	require.NotNil(t, proxyLive.Cell)
+	proxyCapacity := proxyLive.Cell.Output.Capacity
+	require.Equal(t, amount, proxyCapacity, "proxy cell capacity should equal extract amount")
 
-func ensureLPDeploymentOnChain(t *testing.T, rpcClient rpc.Client, lpDeployment LPDeployment) {
-	ctx := context.Background()
-	if lpDeployment.TypeScriptDep.OutPoint == nil || lpDeployment.LockScriptDep.OutPoint == nil {
-		t.Skip("LP deployment missing outpoints; deploy LP scripts before running devnet tests")
-	}
-	cell, err := rpcClient.GetLiveCell(ctx, lpDeployment.TypeScriptDep.OutPoint, false)
-	if err != nil || cell == nil || cell.Cell == nil {
-		t.Skip("LP typescript not found on chain; deploy LP scripts before running devnet tests")
-	}
-	cell, err = rpcClient.GetLiveCell(ctx, lpDeployment.LockScriptDep.OutPoint, false)
-	if err != nil || cell == nil || cell.Cell == nil {
-		t.Skip("LP lockscript not found on chain; deploy LP scripts before running devnet tests")
-	}
-}
-
-func loadLPDeploymentFromDevnet(t *testing.T) (LPDeployment, bool) {
-	dir := filepath.Join("..", "..", "devnet", "contract", "migrations_lp", "dev")
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		t.Skipf("missing LP migration dir: %v", err)
-		return LPDeployment{}, false
-	}
-
-	var migrationFile string
-	for _, entry := range entries {
-		if entry.IsDir() || entry.Name() == ".gitkeep" {
-			continue
-		}
-		migrationFile = filepath.Join(dir, entry.Name())
-		break
-	}
-	if migrationFile == "" {
-		t.Skip("LP migration file not found; deploy LP scripts before running devnet tests")
-		return LPDeployment{}, false
-	}
-
-	data, err := os.ReadFile(migrationFile)
+	reclaimHash, err := adapter.ReclaimProxyCell(ctx, proxyOutpointID)
 	require.NoError(t, err)
 
-	var migration lpMigration
-	require.NoError(t, json.Unmarshal(data, &migration))
-
-	lpts, lpls := findLPRecipes(migration)
-	if lpts == nil || lpls == nil {
-		t.Skip("LP migration missing lpts/lpls entries")
-		return LPDeployment{}, false
-	}
-
-	return LPDeployment{
-		TypeScriptDep: types.CellDep{
-			OutPoint: &types.OutPoint{
-				TxHash: types.HexToHash(lpts.TxHash),
-				Index:  lpts.Index,
-			},
-			DepType: types.DepTypeCode,
-		},
-		LockScriptDep: types.CellDep{
-			OutPoint: &types.OutPoint{
-				TxHash: types.HexToHash(lpls.TxHash),
-				Index:  lpls.Index,
-			},
-			DepType: types.DepTypeCode,
-		},
-		TypeScriptCodeHash: types.HexToHash(lpts.DataHash),
-		TypeScriptHashType: types.HashTypeData1,
-		LockScriptCodeHash: types.HexToHash(lpls.DataHash),
-		LockScriptHashType: types.HashTypeData1,
-	}, true
-}
-
-type lpRecipe struct {
-	Name     string
-	TxHash   string
-	Index    uint32
-	DataHash string
-}
-
-func findLPRecipes(migration lpMigration) (*lpRecipe, *lpRecipe) {
-	var lpts *lpRecipe
-	var lpls *lpRecipe
-	for _, recipe := range migration.CellRecipes {
-		entry := lpRecipe{
-			Name:     recipe.Name,
-			TxHash:   recipe.TxHash,
-			Index:    recipe.Index,
-			DataHash: recipe.DataHash,
-		}
-		switch recipe.Name {
-		case "lpts":
-			lpts = &entry
-		case "lpls":
-			lpls = &entry
-		}
-	}
-	return lpts, lpls
-}
-
-func mustParseHash32(t *testing.T, value string) [32]byte {
-	hash, err := parseHash32(value)
+	reclaimedLive, err := rpcClient.GetLiveCell(ctx, &types.OutPoint{TxHash: reclaimHash, Index: 0}, false)
 	require.NoError(t, err)
-	var out [32]byte
-	copy(out[:], hash[:])
-	return out
-}
+	require.NotNil(t, reclaimedLive)
+	require.NotNil(t, reclaimedLive.Cell)
+	require.Nil(t, reclaimedLive.Cell.Output.Type, "reclaimed cell must have no type script")
+	require.Equal(t, signer.Address().Script.Hash(), reclaimedLive.Cell.Output.Lock.Hash(), "reclaimed cell must be operator-locked")
+	require.Equal(t, proxyCapacity-uint64(10_000), reclaimedLive.Cell.Output.Capacity, "reclaimed capacity should equal proxy capacity minus fee_shannon (0.0001 CKB)")
 
-func loadLPCellSpecFromDevnet(t *testing.T) (LPCell, bool) {
-	path := filepath.Join("..", "..", "devnet", "contract", "migrations_lp", "lp_cell_spec.json")
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return loadDefaultLPCellSpecFromDevnet(t)
+	// Verify the proxy is no longer live.
+	proxyAfterReclaim, err := rpcClient.GetLiveCell(ctx, &types.OutPoint{TxHash: fundHash, Index: 1}, false)
+	require.NoError(t, err)
+	if proxyAfterReclaim != nil && proxyAfterReclaim.Cell != nil {
+		require.FailNow(t, "proxy cell still live after reclaim")
 	}
-
-	var spec lpCellSpec
-	require.NoError(t, json.Unmarshal(data, &spec))
-
-	poolID := mustParseHash32(t, ensureHexPrefix(spec.PoolID))
-	owner := mustParseHash32(t, ensureHexPrefix(spec.OwnerLockHash))
-	operator := mustParseHash32(t, ensureHexPrefix(spec.OperatorLock))
-
-	return LPCell{
-		PoolID:                  poolID,
-		OwnerLockHash:           owner,
-		OperatorLockHash:        operator,
-		AvailableCKB:            spec.AvailableCKB,
-		ReservedCKB:             spec.ReservedCKB,
-		CumulativeFeesEarnedCKB: spec.FeesEarnedCKB,
-		Policy: LPPolicy{
-			MaxTradingVolume: spec.Policy.MaxTradingVolume,
-			FeeRateBps:       spec.Policy.FeeRateBps,
-			PolicyFlags:      spec.Policy.PolicyFlags,
-			PolicyVersion:    spec.Policy.PolicyVersion,
-			SafePriceMinX64:  uint128.Uint128{},
-			SafePriceMaxX64:  uint128.Max(),
-		},
-		Nonce:  spec.Nonce,
-		Active: spec.Active,
-	}, true
-}
-
-func loadDefaultLPCellSpecFromDevnet(t *testing.T) (LPCell, bool) {
-	keyBob, err := ckbtest.GetKey(filepath.Join("..", "..", "devnet", "accounts", "bob.pk"))
-	require.NoError(t, err)
-	bob, err := ckbaddress.NewDefaultParticipant(keyBob.PubKey())
-	require.NoError(t, err)
-
-	ownerHash := bob.ToCKBAddress(types.NetworkTest).Script.Hash()
-	operatorHash := bob.ToCKBAddress(types.NetworkTest).Script.Hash()
-
-	poolID := [32]byte{0x11}
-
-	return LPCell{
-		PoolID:                  poolID,
-		OwnerLockHash:           ownerHash,
-		OperatorLockHash:        operatorHash,
-		AvailableCKB:            50_000_000_000,
-		ReservedCKB:             0,
-		CumulativeFeesEarnedCKB: 0,
-		Policy: LPPolicy{
-			MaxTradingVolume: 0,
-			FeeRateBps:       30,
-			PolicyFlags:      0,
-			PolicyVersion:    1,
-			SafePriceMinX64:  uint128.Uint128{},
-			SafePriceMaxX64:  uint128.Max(),
-		},
-		Nonce:  0,
-		Active: true,
-	}, true
-}
-
-func ensureHexPrefix(value string) string {
-	if value == "" {
-		return value
-	}
-	if len(value) > 1 && value[0:2] == "0x" {
-		return value
-	}
-	return "0x" + value
-}
-
-func loadDevnetDeployment(t *testing.T) backend.Deployment {
-	sudtOwnerLockArg, err := ckbtest.ParseSUDTOwnerLockArg(filepath.Join("..", "..", "devnet", "accounts", "sudt-owner-lock-hash.txt"))
-	require.NoError(t, err)
-
-	deployment, _, err := ckbtest.GetDeployment(
-		filepath.Join("..", "..", "devnet", "contract", "migrations_0", "dev"),
-		filepath.Join("..", "..", "devnet", "contract", "migrations_1", "dev"),
-		filepath.Join("..", "..", "devnet", "contract", "migrations_vc", "dev"),
-		filepath.Join("..", "..", "devnet", "system_scripts"),
-		sudtOwnerLockArg,
-	)
-	require.NoError(t, err)
-	return deployment
 }
 
 func newBobSigner(t *testing.T, network types.Network) backend.Signer {

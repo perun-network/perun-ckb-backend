@@ -45,18 +45,3 @@ type LPCellInfo struct {
 	OutPointHex string
 }
 
-// FundChannelExtractWitness encodes the FundChannelExtract operation.
-type FundChannelExtractWitness struct {
-	ChannelID      [32]byte
-	ContributionID [32]byte
-	ExtractCKB     uint64
-}
-
-// SettleChannelInsertWitness encodes the SettleChannelInsert operation.
-type SettleChannelInsertWitness struct {
-	ChannelID         [32]byte
-	ContributionID    [32]byte
-	PrincipalReturned uint64
-	FeeCKB            uint64
-	PriceX64          uint128.Uint128
-}

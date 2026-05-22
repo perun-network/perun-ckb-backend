@@ -6,17 +6,11 @@ var (
 	ErrZeroPrice                 = errors.New("price_x64 must be non-zero")
 	ErrInvalidLPCell             = errors.New("invalid LP cell data")
 	ErrInvalidWitness            = errors.New("invalid LP witness")
-	ErrNotImplemented            = errors.New("not implemented")
 	ErrInvalidLPCellArg          = errors.New("invalid LP cell argument")
 	ErrInvalidChannelID          = errors.New("invalid channel id")
 	ErrInvalidContributionID     = errors.New("invalid contribution id")
 	ErrScriptHashMismatch        = errors.New("script hash mismatch")
 	ErrInsufficientOperatorFunds = errors.New("insufficient operator funding")
-	ErrFeatureDisabled           = errors.New("lp orchestration disabled")
-	ErrChannelStillLive          = errors.New("channel still live")
-	ErrChannelNotFound           = errors.New("channel not found")
-	ErrNoOp                      = errors.New("no-op")
-	ErrUnexpectedState           = errors.New("unexpected lp or channel state")
 )
 
 // ErrorKind classifies adapter errors for hub cleanup behavior.

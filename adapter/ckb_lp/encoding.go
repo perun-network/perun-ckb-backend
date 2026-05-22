@@ -9,6 +9,12 @@ import (
 
 const (
 	lpCellSize = 185
+
+	// lpCellMinOccupiedShannons is the minimum CKB capacity required by CKB's
+	// occupied-capacity rule: 8 B (capacity field) + data + lock script + type script.
+	// Lock and type scripts each carry a 32-byte code_hash, 1-byte hash_type, and
+	// 32-byte args (type-script hash and pool-id respectively) = 65 bytes each.
+	lpCellMinOccupiedShannons = (8 + lpCellSize + (32 + 1 + 32) + (32 + 1 + 32)) * 100_000_000
 )
 
 var lpMagic = []byte{'L', 'P', 'L', 'C'}

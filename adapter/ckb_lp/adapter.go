@@ -3,14 +3,11 @@ package ckblp
 import (
 	"context"
 	"fmt"
-	"log"
-	"sync"
 
 	"github.com/Pilatuz/bigz/uint128"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/indexer"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/rpc"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types"
-	"github.com/nervosnetwork/ckb-sdk-go/v2/types/molecule"
 	"perun.network/perun-ckb-backend/backend"
 	"perun.network/perun-ckb-backend/client"
 	"perun.network/perun-ckb-backend/transaction"
@@ -23,10 +20,6 @@ type Adapter struct {
 	transactor   backend.Transactor
 	deployment   backend.Deployment
 	lpDeployment LPDeployment
-
-	lpOrchestrationEnabled bool
-	contribMu              sync.Mutex
-	contribSeen            map[types.Hash]struct{}
 }
 
 // NewAdapter creates a new LP adapter with the provided dependencies.
@@ -38,18 +31,26 @@ func NewAdapter(
 	lpDeployment LPDeployment,
 ) *Adapter {
 	return &Adapter{
-		rpcClient:              rpcClient,
-		signer:                 signer,
-		transactor:             transactor,
-		deployment:             deployment,
-		lpDeployment:           lpDeployment,
-		lpOrchestrationEnabled: isLPOrchestrationEnabled(),
-		contribSeen:            make(map[types.Hash]struct{}),
+		rpcClient:    rpcClient,
+		signer:       signer,
+		transactor:   transactor,
+		deployment:   deployment,
+		lpDeployment: lpDeployment,
 	}
 }
 
 // BuildLPDepositTx builds and submits an LP deposit (creation/top-up) transaction.
+// The signer is both owner and operator of the resulting LP cell.
 func (a *Adapter) BuildLPDepositTx(ctx context.Context, lpCell LPCell) (string, error) {
+	return a.BuildLPDepositTxWithOperator(ctx, lpCell, a.signer.Address().Script.Hash())
+}
+
+// BuildLPDepositTxWithOperator builds and submits an LP deposit transaction with
+// a caller-supplied operator lock hash. The signer pays for the cell and becomes
+// the owner; only the in-cell operator_lock_hash field diverges from the signer.
+// Used when an LP wants to delegate fund-extract/settle-insert to a separate
+// operator account.
+func (a *Adapter) BuildLPDepositTxWithOperator(ctx context.Context, lpCell LPCell, operatorLockHash types.Hash) (string, error) {
 	if lpCell.AvailableCKB == 0 {
 		return "", Deterministic(ErrInvalidLPCellArg)
 	}
@@ -63,7 +64,7 @@ func (a *Adapter) BuildLPDepositTx(ctx context.Context, lpCell LPCell) (string, 
 
 	signerHash := a.signer.Address().Script.Hash()
 	lpCell.OwnerLockHash = signerHash
-	lpCell.OperatorLockHash = signerHash
+	lpCell.OperatorLockHash = operatorLockHash
 	lpCell.ReservedCKB = 0
 	lpCell.CumulativeFeesEarnedCKB = 0
 	lpCell.Nonce = 0
@@ -75,6 +76,9 @@ func (a *Adapter) BuildLPDepositTx(ctx context.Context, lpCell LPCell) (string, 
 	}
 
 	fee := transaction.DefaultFeeShannon
+	if lpCell.AvailableCKB < lpCellMinOccupiedShannons {
+		return "", Deterministic(ErrInvalidLPCellArg)
+	}
 	if operatorCell.Output.Capacity <= lpCell.AvailableCKB+fee {
 		return "", Deterministic(ErrInsufficientOperatorFunds)
 	}
@@ -216,12 +220,13 @@ func (a *Adapter) BuildLPWithdrawTx(ctx context.Context, lpCellID string, ckbOut
 	return txHash, nil
 }
 
-// BuildFundChannelTx builds a FundChannelExtract transaction.
-// It creates a proxy channel output (operator lock, no type script) with capacity
-// equal to extract_ckb. The real Perun channel cell is NOT consumed — only the LP
-// cell and an operator fee cell are inputs — so the perun-channel-lockscript never
-// runs and no participant signature is required. The LP typescript validates all
-// capacity accounting against the proxy channel output's data and capacity.
+// BuildFundChannelTx builds a FundChannelExtract transaction via the
+// PerunTransactionBuilder. It creates a proxy channel output (operator lock,
+// no type script) with capacity equal to extract_ckb. The real Perun channel
+// cell is NOT consumed — only the LP cell and an operator fee cell are inputs
+// — so the perun-channel-lockscript never runs and no participant signature is
+// required. The LP typescript validates capacity accounting against the proxy
+// channel output's data and capacity.
 func (a *Adapter) BuildFundChannelTx(
 	ctx context.Context,
 	channelID string,
@@ -260,8 +265,7 @@ func (a *Adapter) BuildFundChannelTx(
 	if cell == nil || cell.Cell == nil || cell.Cell.Output == nil || cell.Cell.Data == nil {
 		return types.Hash{}, Deterministic(ErrInvalidLPCell)
 	}
-	inputLPData := cell.Cell.Data.Content
-	inputLP, err := DecodeLPCell(inputLPData)
+	inputLP, err := DecodeLPCell(cell.Cell.Data.Content)
 	if err != nil {
 		return types.Hash{}, Deterministic(ErrInvalidLPCell)
 	}
@@ -297,63 +301,32 @@ func (a *Adapter) BuildFundChannelTx(
 	}
 	updatedLPCap := cell.Cell.Output.Capacity - amount
 
-	builder := transaction.NewSimpleTransactionBuilder(a.signer.Address().Script.CodeHash, a.deployment.DefaultLockScriptDep, false)
-	if a.signer.Address().Script.CodeHash != a.deployment.DefaultLockScript.CodeHash && len(a.deployment.OmniLockScriptDep) >= 2 {
-		builder = transaction.NewSimpleTransactionBuilder(a.deployment.OmniLockScript.CodeHash, a.deployment.OmniLockScriptDep[1], true)
-		builder.AddCellDep(&a.deployment.OmniLockScriptDep[0])
-		builder.AddCellDep(&a.deployment.OmniLockScriptDep[1])
-	} else {
-		builder.AddCellDep(&a.deployment.DefaultLockScriptDep)
-	}
-	builder.AddCellDep(&a.lpDeployment.TypeScriptDep)
-	builder.AddCellDep(&a.lpDeployment.LockScriptDep)
-
-	// Input 0: LP cell; Input 1: operator fee cell.
-	// The real Perun channel cell is intentionally excluded so the
-	// perun-channel-lockscript never runs (it would require participant signatures).
-	inputs := []*types.CellInput{
-		{PreviousOutput: outPoint},
-		{PreviousOutput: operatorCell.OutPoint},
-	}
-	for _, input := range inputs {
-		builder.AddInput(input)
-	}
-	initLockWitnessPlaceholder(builder, 1)
-
-	updatedLPOutput := &types.CellOutput{
-		Capacity: updatedLPCap,
-		Lock:     cell.Cell.Output.Lock,
-		Type:     cell.Cell.Output.Type,
-	}
-	// Proxy channel: operator-locked plain cell carrying minimal ChannelStatus data.
-	// The LP typescript reads channel_id from the data and verifies capacity delta.
-	proxyChannelOutput := &types.CellOutput{
-		Capacity: amount,
-		Lock:     operatorCell.Output.Lock,
-		Type:     nil,
-	}
-	operatorChangeOutput := &types.CellOutput{
-		Capacity: operatorChange,
-		Lock:     operatorCell.Output.Lock,
-		Type:     nil,
+	builder, err := a.newPerunTxBuilder()
+	if err != nil {
+		return types.Hash{}, Deterministic(err)
 	}
 
-	builder.AddOutput(updatedLPOutput, updatedLPData)
-	builder.AddOutput(proxyChannelOutput, buildProxyChannelData(channelHash))
-	builder.AddOutput(operatorChangeOutput, []byte{})
-
-	witness := EncodeFundChannelExtractWitness(FundChannelExtractWitness{
-		ChannelID:      channelHash,
-		ContributionID: contribHash,
-		ExtractCKB:     amount,
-	})
-	if err := builder.SetWitness(0, types.WitnessTypeInputType, witness); err != nil {
-		return types.Hash{}, Deterministic(ErrInvalidWitness)
+	fi := &transaction.LPFundExtractInfo{
+		LPInput: types.CellInput{PreviousOutput: outPoint},
+		LPOutput: types.CellOutput{
+			Capacity: updatedLPCap,
+			Lock:     cell.Cell.Output.Lock,
+			Type:     cell.Cell.Output.Type,
+		},
+		LPOutputData:      updatedLPData,
+		OperatorInput:     types.CellInput{PreviousOutput: operatorCell.OutPoint},
+		OperatorLock:      operatorCell.Output.Lock,
+		OperatorChangeCap: operatorChange,
+		ExtractCKB:        amount,
+		ChannelID:         channelHash,
+		ContributionID:    contribHash,
+		LPTypeScriptDep:   a.lpDeployment.TypeScriptDep,
+		LPLockScriptDep:   a.lpDeployment.LockScriptDep,
 	}
-
-	addInputLockScriptGroup(builder, 1, operatorCell.Output.Lock)
-
-	tx, err := builder.Build()
+	if err := builder.FundExtractLP(fi); err != nil {
+		return types.Hash{}, Deterministic(err)
+	}
+	tx, err := builder.Build(a.signer.Contexts())
 	if err != nil {
 		return types.Hash{}, Deterministic(err)
 	}
@@ -364,7 +337,11 @@ func (a *Adapter) BuildFundChannelTx(
 	return txHash, nil
 }
 
-// BuildSettleChannelInsertTx builds a SettleChannelInsert transaction (not implemented yet).
+// BuildSettleChannelInsertTx builds a SettleChannelInsert transaction via the
+// PerunTransactionBuilder. The referenced channel must NOT appear in any input
+// or output cell — settle-insert always runs after the channel has been
+// consumed elsewhere. The operator funds the principal + fee return from their
+// own cells.
 func (a *Adapter) BuildSettleChannelInsertTx(
 	ctx context.Context,
 	channelID string,
@@ -448,53 +425,34 @@ func (a *Adapter) BuildSettleChannelInsertTx(
 	operatorChange := operatorCell.Output.Capacity - totalReturn - fee
 	updatedLPCap := cell.Cell.Output.Capacity + totalReturn
 
-	builder := transaction.NewSimpleTransactionBuilder(a.signer.Address().Script.CodeHash, a.deployment.DefaultLockScriptDep, false)
-	if a.signer.Address().Script.CodeHash != a.deployment.DefaultLockScript.CodeHash && len(a.deployment.OmniLockScriptDep) >= 2 {
-		builder = transaction.NewSimpleTransactionBuilder(a.deployment.OmniLockScript.CodeHash, a.deployment.OmniLockScriptDep[1], true)
-		builder.AddCellDep(&a.deployment.OmniLockScriptDep[0])
-		builder.AddCellDep(&a.deployment.OmniLockScriptDep[1])
-	} else {
-		builder.AddCellDep(&a.deployment.DefaultLockScriptDep)
+	builder, err := a.newPerunTxBuilder()
+	if err != nil {
+		return types.Hash{}, Deterministic(err)
 	}
-	builder.AddCellDep(&a.lpDeployment.TypeScriptDep)
-	builder.AddCellDep(&a.lpDeployment.LockScriptDep)
 
-	inputs := []*types.CellInput{
-		{PreviousOutput: outPoint},
-		{PreviousOutput: operatorCell.OutPoint},
-	}
-	for _, input := range inputs {
-		builder.AddInput(input)
-	}
-	initLockWitnessPlaceholder(builder, 1)
-
-	updatedLPOutput := &types.CellOutput{
-		Capacity: updatedLPCap,
-		Lock:     cell.Cell.Output.Lock,
-		Type:     cell.Cell.Output.Type,
-	}
-	operatorChangeOutput := &types.CellOutput{
-		Capacity: operatorChange,
-		Lock:     operatorCell.Output.Lock,
-		Type:     nil,
-	}
-	builder.AddOutput(updatedLPOutput, updatedLPData)
-	builder.AddOutput(operatorChangeOutput, []byte{})
-
-	witness := EncodeSettleChannelInsertWitness(SettleChannelInsertWitness{
-		ChannelID:         channelHash,
-		ContributionID:    contribHash,
-		PrincipalReturned: principal,
+	si := &transaction.LPSettleInsertInfo{
+		LPInput: types.CellInput{PreviousOutput: outPoint},
+		LPOutput: types.CellOutput{
+			Capacity: updatedLPCap,
+			Lock:     cell.Cell.Output.Lock,
+			Type:     cell.Cell.Output.Type,
+		},
+		LPOutputData:      updatedLPData,
+		OperatorInput:     types.CellInput{PreviousOutput: operatorCell.OutPoint},
+		OperatorLock:      operatorCell.Output.Lock,
+		OperatorChangeCap: operatorChange,
+		Principal:         principal,
 		FeeCKB:            feeCKB,
 		PriceX64:          priceX64,
-	})
-	if err := builder.SetWitness(0, types.WitnessTypeInputType, witness); err != nil {
-		return types.Hash{}, Deterministic(ErrInvalidWitness)
+		ChannelID:         channelHash,
+		ContributionID:    contribHash,
+		LPTypeScriptDep:   a.lpDeployment.TypeScriptDep,
+		LPLockScriptDep:   a.lpDeployment.LockScriptDep,
 	}
-
-	addInputLockScriptGroup(builder, 1, operatorCell.Output.Lock)
-
-	tx, err := builder.Build()
+	if err := builder.SettleInsertLP(si); err != nil {
+		return types.Hash{}, Deterministic(err)
+	}
+	tx, err := builder.Build(a.signer.Contexts())
 	if err != nil {
 		return types.Hash{}, Deterministic(err)
 	}
@@ -505,183 +463,87 @@ func (a *Adapter) BuildSettleChannelInsertTx(
 	return txHash, nil
 }
 
-func (a *Adapter) FundChannelWithLP(
-	ctx context.Context,
-	channelID string,
-	lpCellID string,
-	amount uint64,
-) (types.Hash, error) {
-	if !a.lpOrchestrationEnabled {
-		return types.Hash{}, Deterministic(ErrFeatureDisabled)
-	}
-	if amount == 0 {
-		return types.Hash{}, Deterministic(ErrInvalidWitness)
-	}
-	channelHash, err := parseHash32(channelID)
+// ReclaimProxyCell spends an operator-locked proxy cell created by a prior
+// BuildFundChannelTx, sweeping its capacity (minus tx fee) into a fresh
+// operator-locked plain cell. This is the third leg of the
+// fund-extract / settle-insert / reclaim sequence: settle-insert cannot
+// consume the proxy in the same tx because the LP typescript forbids the
+// channel_id from appearing in inputs (liquidity-pool-typescript/src/main.rs:
+// 578-582), so the operator must reclaim it separately. The tx invokes no LP
+// scripts; it is authorized by the operator's signature alone.
+func (a *Adapter) ReclaimProxyCell(ctx context.Context, proxyOutpoint string) (types.Hash, error) {
+	outPoint, err := parseOutPoint(proxyOutpoint)
 	if err != nil {
 		return types.Hash{}, Deterministic(err)
 	}
-	if isZeroHash(channelHash) {
-		return types.Hash{}, Deterministic(ErrInvalidChannelID)
-	}
-
-	contribHash := deriveContributionID("lp_fund", channelHash, amount, 0)
-	if a.contributionSeen(contribHash) {
-		log.Printf("lp_fund_noop channel_id=%s contribution_id=%s lp_cell_id=%s reason=duplicate", channelID, contribHash.String(), lpCellID)
-		return types.Hash{}, Deterministic(ErrNoOp)
-	}
-
-	preLP, err := a.GetLPCell(ctx, lpCellID)
+	cell, err := a.rpcClient.GetLiveCell(ctx, outPoint, true)
 	if err != nil {
-		return types.Hash{}, err
+		return types.Hash{}, Retriable(err)
 	}
-	if preLP.Cell.ReservedCKB >= amount {
-		log.Printf("lp_fund_noop channel_id=%s contribution_id=%s lp_cell_id=%s reason=reserved_already", channelID, contribHash.String(), lpCellID)
-		return types.Hash{}, Deterministic(ErrNoOp)
+	if cell == nil || cell.Cell == nil || cell.Cell.Output == nil {
+		return types.Hash{}, Deterministic(ErrInvalidLPCell)
 	}
-
-	if _, err := a.findChannelCellByID(ctx, channelHash); err != nil {
-		if IsRetriable(err) {
-			return types.Hash{}, err
-		}
-		return types.Hash{}, Deterministic(ErrChannelNotFound)
+	if cell.Cell.Output.Type != nil {
+		// Refuses to spend cells with a type script (e.g. an LP cell passed by mistake).
+		return types.Hash{}, Deterministic(ErrInvalidLPCellArg)
 	}
-
-	txHash, err := a.BuildFundChannelTx(ctx, channelID, lpCellID, amount, contribHash.String())
-	if err != nil {
-		return types.Hash{}, err
-	}
-	a.markContribution(contribHash)
-
-	// The fund tx spends the old LP cell (input 0) and creates a new one at output 0.
-	newLPCellID := fmt.Sprintf("%s:0", txHash.String())
-	postLP, err := a.GetLPCell(ctx, newLPCellID)
-	if err != nil {
-		return txHash, err
-	}
-	if postLP.Cell.ReservedCKB != preLP.Cell.ReservedCKB+amount ||
-		postLP.Cell.AvailableCKB != preLP.Cell.AvailableCKB-amount ||
-		postLP.Cell.Nonce != preLP.Cell.Nonce+1 ||
-		postLP.Capacity != preLP.Capacity-amount {
-		return txHash, Retriable(ErrUnexpectedState)
+	operatorLock := cell.Cell.Output.Lock
+	if operatorLock == nil || operatorLock.Hash() != a.signer.Address().Script.Hash() {
+		return types.Hash{}, Deterministic(ErrScriptHashMismatch)
 	}
 
-	log.Printf("lp_fund_orchestrated channel_id=%s contribution_id=%s lp_cell_id=%s funding_tx_hash=%s", channelID, contribHash.String(), lpCellID, txHash.String())
-	return txHash, nil
-}
+	fee := transaction.DefaultFeeShannon
+	if cell.Cell.Output.Capacity <= fee {
+		return types.Hash{}, Deterministic(ErrInsufficientOperatorFunds)
+	}
+	reclaimed := cell.Cell.Output.Capacity - fee
 
-func (a *Adapter) SettleChannelWithLP(
-	ctx context.Context,
-	channelID string,
-	lpCellID string,
-	principal uint64,
-	feeCKB uint64,
-	priceX64 uint128.Uint128,
-) (types.Hash, error) {
-	if !a.lpOrchestrationEnabled {
-		return types.Hash{}, Deterministic(ErrFeatureDisabled)
-	}
-	if priceX64 == (uint128.Uint128{}) {
-		return types.Hash{}, Deterministic(ErrZeroPrice)
-	}
-	channelHash, err := parseHash32(channelID)
+	builder, err := a.newPerunTxBuilder()
 	if err != nil {
 		return types.Hash{}, Deterministic(err)
 	}
-	if isZeroHash(channelHash) {
-		return types.Hash{}, Deterministic(ErrInvalidChannelID)
+	// Reclaim bypasses the LP scripts entirely (no LP cell in/out, no LP
+	// witness), so PerunScriptHandler.BuildTransaction is never invoked and
+	// won't auto-add the operator's lock cell-dep. Add it explicitly here:
+	// for omni-lock operators the proxy's lock-script verification needs the
+	// omni-lock code cell on chain, otherwise CKB rejects with ScriptNotFound.
+	isOmni := a.signer.Address().Script.CodeHash != a.deployment.DefaultLockScript.CodeHash
+	if isOmni && len(a.deployment.OmniLockScriptDep) >= 2 {
+		builder.AddCellDep(&a.deployment.OmniLockScriptDep[0])
+		builder.AddCellDep(&a.deployment.OmniLockScriptDep[1])
+	} else {
+		builder.AddCellDep(&a.deployment.DefaultLockScriptDep)
 	}
+	builder.AddInput(&types.CellInput{PreviousOutput: outPoint})
+	builder.AddOutput(&types.CellOutput{
+		Capacity: reclaimed,
+		Lock:     operatorLock,
+		Type:     nil,
+	}, nil)
 
-	channelCell, err := a.findChannelCellByID(ctx, channelHash)
-	if err == nil && channelCell != nil {
-		return types.Hash{}, Deterministic(ErrChannelStillLive)
-	}
-	if err != nil && IsRetriable(err) {
-		return types.Hash{}, err
-	}
-
-	contribHash := deriveContributionID("lp_settle", channelHash, principal, feeCKB)
-	if a.contributionSeen(contribHash) {
-		log.Printf("lp_settle_noop channel_id=%s contribution_id=%s lp_cell_id=%s reason=duplicate", channelID, contribHash.String(), lpCellID)
-		return types.Hash{}, Deterministic(ErrNoOp)
-	}
-
-	preLP, err := a.GetLPCell(ctx, lpCellID)
+	tx, err := builder.Build(a.signer.Contexts())
 	if err != nil {
-		return types.Hash{}, err
+		return types.Hash{}, Deterministic(err)
 	}
-	if preLP.Cell.ReservedCKB < principal {
-		log.Printf("lp_settle_noop channel_id=%s contribution_id=%s lp_cell_id=%s reason=principal_already_returned", channelID, contribHash.String(), lpCellID)
-		return types.Hash{}, Deterministic(ErrNoOp)
-	}
-
-	totalReturn := principal + feeCKB
-	txHash, err := a.BuildSettleChannelInsertTx(ctx, channelID, contribHash.String(), lpCellID, principal, feeCKB, priceX64)
+	txHash, err := a.transactor.SubmitTransaction(ctx, tx)
 	if err != nil {
-		return types.Hash{}, err
+		return types.Hash{}, Retriable(err)
 	}
-	a.markContribution(contribHash)
-
-	// The settle tx spends the old LP cell (input 0) and creates a new one at output 0.
-	newLPCellID := fmt.Sprintf("%s:0", txHash.String())
-	postLP, err := a.GetLPCell(ctx, newLPCellID)
-	if err != nil {
-		return txHash, err
-	}
-	if postLP.Cell.ReservedCKB != preLP.Cell.ReservedCKB-principal ||
-		postLP.Cell.AvailableCKB != preLP.Cell.AvailableCKB+totalReturn ||
-		postLP.Cell.CumulativeFeesEarnedCKB != preLP.Cell.CumulativeFeesEarnedCKB+feeCKB ||
-		postLP.Cell.Nonce != preLP.Cell.Nonce+1 ||
-		postLP.Capacity != preLP.Capacity+totalReturn {
-		return txHash, Retriable(ErrUnexpectedState)
-	}
-
-	log.Printf("lp_settle_orchestrated channel_id=%s contribution_id=%s lp_cell_id=%s settle_tx_hash=%s", channelID, contribHash.String(), lpCellID, txHash.String())
 	return txHash, nil
 }
 
-func (a *Adapter) contributionSeen(contribHash types.Hash) bool {
-	a.contribMu.Lock()
-	defer a.contribMu.Unlock()
-	_, ok := a.contribSeen[contribHash]
-	return ok
-}
-
-func (a *Adapter) markContribution(contribHash types.Hash) {
-	a.contribMu.Lock()
-	defer a.contribMu.Unlock()
-	a.contribSeen[contribHash] = struct{}{}
-}
-
-// findChannelCellByID locates a channel cell by channel ID.
-func (a *Adapter) findChannelCellByID(ctx context.Context, channelID types.Hash) (*indexer.LiveCell, error) {
-	searchKey := &indexer.SearchKey{
-		Script: &types.Script{
-			CodeHash: a.deployment.PCTSCodeHash,
-			HashType: a.deployment.PCTSHashType,
-			Args:     []byte{},
-		},
-		ScriptType:       types.ScriptTypeType,
-		ScriptSearchMode: types.ScriptSearchModePrefix,
-		WithData:         true,
-	}
-	resp, err := a.rpcClient.GetCells(ctx, searchKey, indexer.SearchOrderDesc, client.SearchIndexerLimit, "")
-	if err != nil {
-		return nil, Retriable(err)
-	}
-	for _, cell := range resp.Objects {
-		if cell.Output == nil {
-			continue
-		}
-		status, err := molecule.ChannelStatusFromSlice(cell.OutputData, false)
-		if err != nil {
-			continue
-		}
-		if types.UnpackHash(status.State().ChannelId()) == channelID {
-			return cell, nil
-		}
-	}
-	return nil, Deterministic(ErrChannelNotFound)
+// newPerunTxBuilder constructs a PerunTransactionBuilder configured for the
+// adapter's signer (sighash or omnilock). It is the single entry point for
+// LP transactions that go through the Perun transaction pipeline.
+func (a *Adapter) newPerunTxBuilder() (*transaction.PerunTransactionBuilder, error) {
+	isOmni := a.signer.Address().Script.CodeHash != a.deployment.DefaultLockScript.CodeHash
+	return transaction.NewPerunTransactionBuilderWithDeployment(
+		a.rpcClient,
+		a.deployment,
+		nil,
+		a.signer.Address(),
+		isOmni,
+	)
 }
 
 func (a *Adapter) selectLargestOperatorCell(ctx context.Context) (*indexer.LiveCell, error) {

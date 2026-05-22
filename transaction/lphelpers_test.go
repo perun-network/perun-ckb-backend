@@ -1,24 +1,29 @@
-package ckblp
+package transaction
 
 import (
 	"math/big"
 	"testing"
 
 	"github.com/Pilatuz/bigz/uint128"
+	"github.com/nervosnetwork/ckb-sdk-go/v2/types"
 	"github.com/stretchr/testify/require"
 )
+
+func filled32(b byte) types.Hash {
+	var out types.Hash
+	for i := range out {
+		out[i] = b
+	}
+	return out
+}
 
 func TestEncodeFundChannelExtractWitness(t *testing.T) {
 	channelID := filled32(0xAA)
 	contribID := filled32(0xBB)
-	witness := EncodeFundChannelExtractWitness(FundChannelExtractWitness{
-		ChannelID:      channelID,
-		ContributionID: contribID,
-		ExtractCKB:     42,
-	})
+	witness := EncodeFundChannelExtractWitness(channelID, contribID, 42)
 
 	require.Len(t, witness, witnessLenFundChannelExtract)
-	require.Equal(t, byte(opFundChannelExtract), witness[0])
+	require.Equal(t, opFundChannelExtract, witness[0])
 	require.Equal(t, channelID[:], witness[1:33])
 	require.Equal(t, contribID[:], witness[33:65])
 	require.Equal(t, byte(42), witness[65])
@@ -31,16 +36,10 @@ func TestEncodeSettleChannelInsertWitness(t *testing.T) {
 	priceBig.Add(priceBig, big.NewInt(5))
 	priceX64 := uint128.FromBig(priceBig)
 
-	witness := EncodeSettleChannelInsertWitness(SettleChannelInsertWitness{
-		ChannelID:         channelID,
-		ContributionID:    contribID,
-		PrincipalReturned: 100,
-		FeeCKB:            7,
-		PriceX64:          priceX64,
-	})
+	witness := EncodeSettleChannelInsertWitness(channelID, contribID, 100, 7, priceX64)
 
 	require.Len(t, witness, witnessLenSettleChannelInsert)
-	require.Equal(t, byte(opSettleChannelInsert), witness[0])
+	require.Equal(t, opSettleChannelInsert, witness[0])
 	require.Equal(t, channelID[:], witness[1:33])
 	require.Equal(t, contribID[:], witness[33:65])
 
