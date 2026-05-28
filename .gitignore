@@ -33,3 +33,7 @@ devnet/deploy_*_gen-txs.log
 devnet/deploy_*.log
 devnet/*.json
 devnet/contract/migrations_*/
+
+
+CLAUDE.md
+.claude/*

@@ -29,18 +29,16 @@ func TestVirtualChannelOptimistic(t *testing.T) {
 }
 
 // TestVirtualChannelDispute tests the virtual channel dispute scenario.
-// It creates a virtual channel between Alice and Bob via Ingrid, and then disputes the
-// channel state. The test checks if the dispute is resolved correctly and the final balances
-// are as expected.
-/* Note: This test is currently expected to fail due to the lack of support for virtual channel disputes in the current implementation. It is kept for future reference when virtual channel dispute support is added.
+// It creates a virtual channel between Alice and Bob via Ingrid, then disputes
+// the channel state. The test checks that the dispute resolves correctly and
+// the final balances are as expected.
 func TestVirtualChannelDispute(t *testing.T) {
 	log.Info("Starting virtual channel dispute test")
 	rng := test.Prng(t)
 	ctx, cancel := context.WithTimeout(context.Background(), testDuration)
 	defer cancel()
 
-	setup := ctest.MakeVirtualChannelSetup(t, rng, false)
+	setup := ctest.MakeVirtualChannelSetup(t, rng)
 	clienttest.TestVirtualChannelDispute(ctx, t, setup)
 	log.Info("Virtual channel dispute test done")
 }
-*/

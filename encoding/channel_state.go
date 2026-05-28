@@ -84,18 +84,11 @@ func PackBalances(state *pchannel.State) (molecule.Balances, error) {
 
 	balancesBuilder.Assets(allocBuilder.Build())
 
-	// Locked_Balances
+	// Locked_Balances — an empty vector is valid; the contract's
+	// verify_no_locked_funds accepts both empty and one dummy entry.
 	lockedBalancesBuilder := molecule.NewLockedBalancesBuilder()
 	for _, subAlloc := range state.Locked {
 		sa, err := PackSubAlloc(&subAlloc, state)
-		if err != nil {
-			return molecule.Balances{}, err
-		}
-		lockedBalancesBuilder.Push(sa)
-	}
-
-	if len(state.Locked) == 0 {
-		sa, err := PackDefaultSubAlloc()
 		if err != nil {
 			return molecule.Balances{}, err
 		}
@@ -108,62 +101,41 @@ func PackBalances(state *pchannel.State) (molecule.Balances, error) {
 }
 
 // PackSubAlloc converts a perun suballocation to a molecule SubAlloc.
-// Uses the sub-allocation's own balances (subAlloc.Bals), NOT the top-level
-// channel balances; otherwise the locked/sub-allocation section does not
-// commit to the actual locked balances.
+//
+// SubBalances is a flat vector<Uint128> aligned with state.Assets order. Every
+// asset type (CKByte, SUDT, ETH) is encoded as a single Uint128 holding the
+// total amount locked for that asset; per-participant attribution is recovered
+// downstream via idx_map.
 func PackSubAlloc(subAlloc *pchannel.SubAlloc, state *pchannel.State) (molecule.SubAlloc, error) {
-	subAllocBuilder := molecule.NewSubAllocBuilder()
-	subAllocBuilder.Id(*molecule2.PackByte32(subAlloc.ID))
-	sudtAllocBuilder := molecule.NewSUDTAllocationBuilder()
-	subBalancesBuilder := molecule.NewSubBalancesBuilder()
 	if len(subAlloc.Bals) != len(state.Assets) {
 		return molecule.SubAlloc{}, fmt.Errorf("suballoc has %d balance rows but state has %d assets", len(subAlloc.Bals), len(state.Assets))
 	}
-	for i, pAsset := range state.Assets {
-		a, ckb := asset.IsCompatibleAsset(pAsset)
-		if !ckb {
-			return molecule.SubAlloc{}, errors.New("locked eth assets are not supported")
-		}
-		if a.IsInvalid() {
-			return molecule.SubAlloc{}, errors.New("invalid asset")
-		}
-		// SubAlloc.Bals is a single-dimensional slice indexed by asset, holding
-		// the total amount locked for that asset across all participants. Since
-		// we cannot recover per-participant distribution from that, we encode
-		// the locked total as party 0's balance and 0 for party 1. This matches
-		// what the contract expects when verifying locked funds equality.
-		lockedTotal := new(big.Int).Set(subAlloc.Bals[i])
-		zero := new(big.Int)
-		if a.IsCKBytes {
-			d, err := PackCKByteDistribution([2]*big.Int{lockedTotal, zero})
-			if err != nil {
-				return molecule.SubAlloc{}, err
-			}
-			subBalancesBuilder.Ckbytes(d)
-		} else {
-			b, err := PackSUDTBalances(a, [2]*big.Int{lockedTotal, zero})
-			if err != nil {
-				return molecule.SubAlloc{}, err
-			}
-			sudtAllocBuilder.Push(b)
-		}
-	}
-	subBalancesBuilder.Sudts(sudtAllocBuilder.Build())
 
-	subAllocBuilder.Balances(subBalancesBuilder.Build())
-	return subAllocBuilder.Build(), nil
-}
-
-// PackDefaultSubAlloc creates a default suballocation with a default ID and empty balances.
-func PackDefaultSubAlloc() (molecule.SubAlloc, error) {
-	subAllocBuilder := molecule.NewSubAllocBuilder()
-	subAllocBuilder.Id(molecule.Byte32Default())
-	sudtAllocBuilder := molecule.NewSUDTAllocationBuilder()
 	subBalancesBuilder := molecule.NewSubBalancesBuilder()
-	subBalancesBuilder.Sudts(sudtAllocBuilder.Build())
+	for i := range state.Assets {
+		u128, err := packUint128LE(subAlloc.Bals[i])
+		if err != nil {
+			return molecule.SubAlloc{}, fmt.Errorf("packing suballoc balance %d: %w", i, err)
+		}
+		subBalancesBuilder.Push(u128)
+	}
 
-	subAllocBuilder.Balances(subBalancesBuilder.Build())
-	return subAllocBuilder.Build(), nil
+	// idx_map defaults to identity [0, 1] when perun's SubAlloc.IndexMap is empty.
+	var idx0, idx1 byte = 0, 1
+	if len(subAlloc.IndexMap) >= 2 {
+		idx0 = byte(subAlloc.IndexMap[0])
+		idx1 = byte(subAlloc.IndexMap[1])
+	}
+	idxMap := molecule.NewIndexMapBuilder().
+		Nth0(*types.PackByte(idx0)).
+		Nth1(*types.PackByte(idx1)).
+		Build()
+
+	return molecule.NewSubAllocBuilder().
+		Id(*molecule2.PackByte32(subAlloc.ID)).
+		Balances(subBalancesBuilder.Build()).
+		IdxMap(idxMap).
+		Build(), nil
 }
 
 // PackCKByteDistribution converts a perun channel state to a molecule CKByteDistribution.

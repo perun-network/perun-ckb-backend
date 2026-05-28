@@ -608,6 +608,7 @@ func (psh *PerunScriptHandler) buildVCMergeTransaction(builder collector.Transac
 		return false, fmt.Errorf("failed to unpack on-chain participant: %w", err)
 	}
 	payoutScript := restoredParticipant.PaymentScript
+	log.Printf("[FCLEDGER merge] blk0=%d blk1=%d returningCap=%d to=%x", disputeInfo.BlockNum0, disputeInfo.BlockNum1, occupiedCapacity, payoutScript.Hash().Bytes()[:4])
 	paymentOutput := psh.mkPaymentOutput(payoutScript, occupiedCapacity)
 	builder.AddOutput(paymentOutput, nil)
 	return true, nil
@@ -649,11 +650,12 @@ _:
 
 	// Outputs
 	// Add the payment output for each participant.
+	log.Printf("[FCLEDGER first] LC=%x VCcap=%d chanCap=%d indexMap=%v", forceCloseWithVCInfo.ChannelCell.TxHash[:4], forceCloseWithVCInfo.VirtualChannelCapacity, forceCloseWithVCInfo.ChannelCapacity, forceCloseWithVCInfo.IndexMap)
 	for i, addr := range forceCloseWithVCInfo.Params.Parts {
 		payoutScript := address.AsParticipant(addr[3]).PaymentScript
 		paymentMinCapacity := payoutScript.OccupiedCapacity()
 		// payout ckbytes
-		balance, err := GetCKByteBalance(i, forceCloseWithVCInfo.State)
+		lcBalance, err := GetCKByteBalance(i, forceCloseWithVCInfo.State)
 		if err != nil {
 			return false, err
 		}
@@ -664,7 +666,7 @@ _:
 			return false, err
 		}
 		// Add the payout back to the original balance
-		balance += vcBalance
+		balance := lcBalance + vcBalance
 
 		// The capacity of the channel's live cell is added to the balance of the first party.
 		if i == 0 {
@@ -672,12 +674,14 @@ _:
 		}
 
 		additionalBalance := uint64(0)
-		if balance >= paymentMinCapacity {
+		emitted := balance >= paymentMinCapacity
+		if emitted {
 			paymentOutput := psh.mkPaymentOutput(payoutScript, balance)
 			builder.AddOutput(paymentOutput, nil)
 		} else {
 			additionalBalance = balance
 		}
+		log.Printf("[FCLEDGER first] i=%d script=%x min=%d lcBal=%d vcBal=%d total=%d emitted=%t addl=%d", i, payoutScript.Hash().Bytes()[:4], paymentMinCapacity, lcBalance, vcBalance, balance, emitted, additionalBalance)
 
 		err = psh.AddAssetsToOutputsWithVirtualChannel(builder, forceCloseWithVCInfo.State, forceCloseWithVCInfo.VCState, i, payoutScript, additionalBalance, forceCloseWithVCInfo.IndexMap)
 		if err != nil {
@@ -747,11 +751,12 @@ func (psh *PerunScriptHandler) buildSecondForceCloseWithVCTransaction(builder co
 
 	// Outputs
 	// Add the payment output for each participant.
+	log.Printf("[FCLEDGER second] LC=%x VCcap=%d chanCap=%d indexMap=%v restored=%x", forceCloseWithVCInfo.ChannelCell.TxHash[:4], forceCloseWithVCInfo.VirtualChannelCapacity, forceCloseWithVCInfo.ChannelCapacity, forceCloseWithVCInfo.IndexMap, restoredPayoutScript.Hash().Bytes()[:4])
 	for i, addr := range forceCloseWithVCInfo.Params.Parts {
 		payoutScript := address.AsParticipant(addr[3]).PaymentScript
 		paymentMinCapacity := payoutScript.OccupiedCapacity()
 		// payout ckbytes
-		balance, err := GetCKByteBalance(i, forceCloseWithVCInfo.State)
+		lcBalance, err := GetCKByteBalance(i, forceCloseWithVCInfo.State)
 		if err != nil {
 			return false, err
 		}
@@ -761,26 +766,30 @@ func (psh *PerunScriptHandler) buildSecondForceCloseWithVCTransaction(builder co
 			return false, err
 		}
 		// Add the payout back to the original balance
-		balance += vcBalance
+		balance := lcBalance + vcBalance
 
 		// The capacity of the channel's live cell is added to the balance of the first party.
 		if i == 0 {
 			balance += forceCloseWithVCInfo.ChannelCapacity
 		}
 
+		gotVC := false
 		if restoredPayoutScript.Equals(payoutScript) {
 			// The restored participant receives the virtual channel capacity.
 			balance += forceCloseWithVCInfo.VirtualChannelCapacity
 			returnedVCBalance = true
+			gotVC = true
 		}
 
 		additionalBalance := uint64(0)
-		if balance >= paymentMinCapacity {
+		emitted := balance >= paymentMinCapacity
+		if emitted {
 			paymentOutput := psh.mkPaymentOutput(payoutScript, balance)
 			builder.AddOutput(paymentOutput, nil)
 		} else {
 			additionalBalance = balance
 		}
+		log.Printf("[FCLEDGER second] i=%d script=%x min=%d lcBal=%d vcBal=%d gotVC=%t total=%d emitted=%t addl=%d", i, payoutScript.Hash().Bytes()[:4], paymentMinCapacity, lcBalance, vcBalance, gotVC, balance, emitted, additionalBalance)
 
 		err = psh.AddAssetsToOutputsWithVirtualChannel(builder, forceCloseWithVCInfo.State, forceCloseWithVCInfo.VCState, i, payoutScript, additionalBalance, forceCloseWithVCInfo.IndexMap)
 		if err != nil {
@@ -788,6 +797,7 @@ func (psh *PerunScriptHandler) buildSecondForceCloseWithVCTransaction(builder co
 		}
 	}
 	if !returnedVCBalance {
+		log.Printf("[FCLEDGER second] VC capacity %d to standalone restored output %x", forceCloseWithVCInfo.VirtualChannelCapacity, restoredPayoutScript.Hash().Bytes()[:4])
 		paymentOutput := psh.mkPaymentOutput(restoredPayoutScript, forceCloseWithVCInfo.VirtualChannelCapacity)
 		builder.AddOutput(paymentOutput, nil)
 	}

@@ -804,6 +804,7 @@ func (c Client) ForceCloseWithVC(ctx context.Context, id channel.ID, vcid channe
 	blockHash := oldTx.TxStatus.BlockHash
 
 	// Check version.
+	log.Printf("[FCLEDGER] ForceCloseWithVC pre  id=%x ver=%d bals=%v locked=%d vcBals=%v", id[:4], state.Version, state.Balances, len(state.Locked), vcstate.Balances)
 	if !checkVersion(state, status, vcstate, vcStatus) {
 		log.Println("ForceCloseWithVC: old versions detected")
 		state, err = updateState(state, status.State())
@@ -814,6 +815,7 @@ func (c Client) ForceCloseWithVC(ctx context.Context, id channel.ID, vcid channe
 		if err != nil {
 			return fmt.Errorf("updating vcstate: %w", err)
 		}
+		log.Printf("[FCLEDGER] ForceCloseWithVC post id=%x ver=%d bals=%v locked=%d vcBals=%v", id[:4], state.Version, state.Balances, len(state.Locked), vcstate.Balances)
 	}
 	fcvi := transaction.NewForceCloseWithVCInfo(
 		channelCell.OutPoint,

@@ -53,7 +53,7 @@ func ToEthState(s *channel.State) EthChannelState {
 			}
 		}
 
-		locked[i] = ChannelSubAlloc{ID: sub.ID, Balances: sub.Bals, IndexMap: indexMap}
+		locked[i] = ChannelSubAlloc{ID: [][32]byte{sub.ID}, Balances: sub.Bals, IndexMap: indexMap}
 	}
 
 	assets := make([]ChannelAsset, numAssets)
@@ -212,7 +212,7 @@ func EncodeEthState(state *EthChannelState) ([]byte, error) {
 			{Name: "backends", Type: "uint256[]"},
 			{Name: "balances", Type: "uint256[][]"},
 			{Name: "locked", Type: "tuple[]", Components: []abi.ArgumentMarshaling{
-				{Name: "ID", Type: "bytes32"},
+				{Name: "ID", Type: "bytes32[]"},
 				{Name: "balances", Type: "uint256[]"},
 				{Name: "indexMap", Type: "uint16[]"},
 			}},
@@ -243,7 +243,7 @@ func EncodeEthState(state *EthChannelState) ([]byte, error) {
 				Backends []*big.Int
 				Balances [][]*big.Int
 				Locked   []struct {
-					ID       [32]byte
+					ID       [][32]byte
 					Balances []*big.Int
 					IndexMap []uint16
 				}
@@ -262,7 +262,7 @@ func EncodeEthState(state *EthChannelState) ([]byte, error) {
 				Backends []*big.Int
 				Balances [][]*big.Int
 				Locked   []struct {
-					ID       [32]byte
+					ID       [][32]byte
 					Balances []*big.Int
 					IndexMap []uint16
 				}
@@ -293,18 +293,18 @@ func EncodeEthState(state *EthChannelState) ([]byte, error) {
 				Backends: state.Outcome.Backends,
 				Balances: state.Outcome.Balances,
 				Locked: func() []struct {
-					ID       [32]byte
+					ID       [][32]byte
 					Balances []*big.Int
 					IndexMap []uint16
 				} {
 					var locked []struct {
-						ID       [32]byte
+						ID       [][32]byte
 						Balances []*big.Int
 						IndexMap []uint16
 					}
 					for _, lock := range state.Outcome.Locked {
 						locked = append(locked, struct {
-							ID       [32]byte
+							ID       [][32]byte
 							Balances []*big.Int
 							IndexMap []uint16
 						}{
@@ -350,7 +350,7 @@ type ChannelAsset struct {
 
 // ChannelSubAlloc is an auto generated low-level Go binding around a user-defined struct.
 type ChannelSubAlloc struct {
-	ID       [32]byte
+	ID       [][32]byte
 	Balances []*big.Int
 	IndexMap []uint16
 }
