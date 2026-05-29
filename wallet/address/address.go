@@ -1,6 +1,7 @@
 package address
 
 import (
+	"bytes"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -265,6 +266,41 @@ func (p *Participant) UnpackOffChainParticipant(op *molecule.OffChainParticipant
 	p.PaymentScript = types.UnpackScript(op.PaymentScript())
 	p.UnlockScript = types.UnpackScript(op.UnlockScript())
 	return nil
+}
+
+// RecoverOnChainPaymentScript reconstructs the full payment script of an on-chain
+// participant. The on-chain encoding (PackOnChainParticipant) stores only the payment
+// script *hash*, so the script cannot be read back directly. We rebuild candidate scripts
+// from the stored public key — the default secp256k1-blake160 sighash script and the
+// omni-lock script — and return the one whose hash matches the stored PaymentScriptHash.
+// This recovers the correct script for omni-lock / EVM participants instead of defaulting
+// to a sighash address they do not control.
+func RecoverOnChainPaymentScript(op *molecule.Participant, omniCodeHash types.Hash) (*types.Script, error) {
+	key, err := UnpackSEC1EncodedPubKey(op.PubKey())
+	if err != nil {
+		return nil, err
+	}
+	want := op.PaymentScriptHash().AsSlice()
+
+	defaultParticipant, err := NewDefaultParticipant(key)
+	if err != nil {
+		return nil, err
+	}
+	if h := defaultParticipant.PaymentScript.Hash(); bytes.Equal(h[:], want) {
+		return defaultParticipant.PaymentScript, nil
+	}
+
+	if omniCodeHash != (types.Hash{}) {
+		omniParticipant, _, err := NewEthereumParticipantFromPublicKey(key, omniCodeHash)
+		if err != nil {
+			return nil, err
+		}
+		if h := omniParticipant.PaymentScript.Hash(); bytes.Equal(h[:], want) {
+			return omniParticipant.PaymentScript, nil
+		}
+	}
+
+	return nil, fmt.Errorf("could not recover on-chain payment script: no candidate matches stored hash %x", want)
 }
 
 func (p *Participant) UnpackOnChainParticipant(op *molecule.Participant) error {

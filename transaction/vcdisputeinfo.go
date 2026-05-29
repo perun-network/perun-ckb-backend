@@ -28,6 +28,11 @@ type VcDisputeInfo struct {
 	ParentsVec  *molecule.ParentsVec
 	first       bool
 	Owner       *address.Participant
+
+	// InputChannelCapacity is the actual capacity of the parent channel cell being consumed.
+	// The rebuilt channel cell preserves it so materialising the VC's locked sub-alloc does
+	// not grow the cell at register (see encoding.LockedSubAllocReserve).
+	InputChannelCapacity uint64
 }
 
 func NewVCDisputeInfo(

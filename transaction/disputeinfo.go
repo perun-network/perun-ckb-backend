@@ -18,6 +18,11 @@ type DisputeInfo struct {
 	PCTS        *types.Script
 	SigA        molecule.Bytes
 	SigB        molecule.Bytes
+
+	// InputChannelCapacity is the actual capacity of the channel cell being consumed. The
+	// rebuilt channel cell preserves it so the reserved sub-alloc capacity is conserved
+	// across the dispute (see encoding.LockedSubAllocReserve).
+	InputChannelCapacity uint64
 }
 
 func NewDisputeInfo(

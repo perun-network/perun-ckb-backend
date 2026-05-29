@@ -29,6 +29,11 @@ type ForceCloseWithVCInfo struct {
 	IndexMap []channel.Index
 
 	MinCKBInput *types.OutPoint
+
+	// RestoredOwnerScript is the real payment script of the virtual channel cell's owner,
+	// resolved from the on-chain owner record (see address.RecoverOnChainPaymentScript).
+	// The virtual channel capacity is returned to this script at the second force close.
+	RestoredOwnerScript *types.Script
 }
 
 // NewForceCloseWithVCInfo creates a new ForceCloseWithVCInfo instance.
@@ -48,6 +53,7 @@ func NewForceCloseWithVCInfo(
 	virtualChannelCapacity uint64,
 	firstForceClose bool,
 	indexMap []channel.Index,
+	restoredOwnerScript *types.Script,
 ) *ForceCloseWithVCInfo {
 	return &ForceCloseWithVCInfo{
 		ChannelCell:            *channelCell,
@@ -65,6 +71,7 @@ func NewForceCloseWithVCInfo(
 		VirtualChannelCapacity: virtualChannelCapacity,
 		firstForceClose:        firstForceClose,
 		IndexMap:               indexMap,
+		RestoredOwnerScript:    restoredOwnerScript,
 	}
 }
 

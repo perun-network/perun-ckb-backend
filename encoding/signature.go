@@ -30,11 +30,12 @@ func toLowS(s *big.Int) *big.Int {
 //   - 64 bytes: R||S (no V)
 //   - DER:      starts with 0x30 (passes through)
 func NewMoleculeSignature(sig []byte) (*molecule.Bytes, error) {
-	// Already DER? (SEQUENCE tag = 0x30)
-	if len(sig) > 0 && sig[0] == 0x30 {
-		return types.PackBytes(sig), nil
-	}
-
+	// Switch on length FIRST. A raw 65/64-byte signature must always be
+	// converted: its leading byte is the first byte of R, which is 0x30 (the DER
+	// SEQUENCE tag) ~1/256 of the time. Sniffing for 0x30 before checking the
+	// length would misclassify those raw signatures as DER and pass them through
+	// unconverted, so the on-chain Signature::from_der fails ~1/256 of the time
+	// (a flaky SignatureVerificationError).
 	var r, s *big.Int
 	switch len(sig) {
 	case 65: // R||S||V
@@ -45,6 +46,10 @@ func NewMoleculeSignature(sig []byte) (*molecule.Bytes, error) {
 		r = new(big.Int).SetBytes(sig[:32])
 		s = new(big.Int).SetBytes(sig[32:64])
 	default:
+		// Not a raw signature: assume it is already DER (SEQUENCE tag 0x30).
+		if len(sig) > 0 && sig[0] == 0x30 {
+			return types.PackBytes(sig), nil
+		}
 		return nil, fmt.Errorf("unexpected signature length %d (want 65/64 or DER)", len(sig))
 	}
 

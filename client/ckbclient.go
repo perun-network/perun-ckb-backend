@@ -340,6 +340,7 @@ func (c Client) Fund(ctx context.Context, pcts *types.Script, state *channel.Sta
 		return err
 	}
 	fi := transaction.NewFundInfo(*channelCell.OutPoint, params, state, pcts, *channelStatus, header.Hash)
+	fi.InputChannelCapacity = channelCell.Output.Capacity
 	builder, err := c.newPerunTransactionBuilder(nil)
 	if err != nil {
 		return fmt.Errorf("creating Perun transaction builder: %w", err)
@@ -389,6 +390,7 @@ func (c Client) Dispute(ctx context.Context, id channel.ID, state *channel.State
 	}
 
 	di = transaction.NewDisputeInfo(*channelCell.OutPoint, *status, state, params, header.Hash, channelCell.Output.Type, *sigA, *sigB)
+	di.InputChannelCapacity = channelCell.Output.Capacity
 
 	builder, err := c.newPerunTransactionBuilder(nil)
 	if err != nil {
@@ -543,9 +545,22 @@ func (c Client) DisputeVC(ctx context.Context, vcID, parentID channel.ID, vcStat
 			true,
 			signerParticipant,
 		)
+		di.InputChannelCapacity = parentCell.Output.Capacity
 	} else if len(virtualChannelCells) > 1 {
 		occupiedCapacity0 := virtualChannelCells[0].Output.OccupiedCapacity(virtualChannelCells[0].OutputData)
 		occupiedCapacity1 := virtualChannelCells[1].Output.OccupiedCapacity(virtualChannelCells[1].OutputData)
+
+		// Resolve both VC owners' real payment scripts from their on-chain owner records so
+		// the dropped cell's capacity is returned to the correct (possibly omni-lock) address.
+		omniCodeHash := c.deployment.OmniLockScript.CodeHash
+		restoredOwnerScript0, err := ckbaddress.RecoverOnChainPaymentScript(vcStatuses[0].Owner(), omniCodeHash)
+		if err != nil {
+			return fmt.Errorf("recovering virtual channel 0 owner script: %w", err)
+		}
+		restoredOwnerScript1, err := ckbaddress.RecoverOnChainPaymentScript(vcStatuses[1].Owner(), omniCodeHash)
+		if err != nil {
+			return fmt.Errorf("recovering virtual channel 1 owner script: %w", err)
+		}
 
 		// Merge two virtual channels into one.
 		mergeVCInfo := transaction.NewVCMergeInfo(
@@ -560,6 +575,8 @@ func (c Client) DisputeVC(ctx context.Context, vcID, parentID channel.ID, vcStat
 			header.Hash,
 			virtualChannelCells[0].Output.Type,
 			&vcDispute,
+			restoredOwnerScript0,
+			restoredOwnerScript1,
 		)
 		builder, err := c.newPerunTransactionBuilder(nil)
 		if err != nil {
@@ -606,6 +623,7 @@ func (c Client) DisputeVC(ctx context.Context, vcID, parentID channel.ID, vcStat
 			false,
 			nil,
 		)
+		di.InputChannelCapacity = parentCell.Output.Capacity
 	}
 
 	builder, err := c.newPerunTransactionBuilder(nil)
@@ -639,10 +657,10 @@ func (c Client) Close(ctx context.Context, id channel.ID, state *channel.State, 
 	if err != nil {
 		return fmt.Errorf("getting tip header: %w", err)
 	}
-	occupiedChannelCapacity := channelCell.Output.OccupiedCapacity(channelCell.OutputData)
+	channelCapacity := channelCell.Output.Capacity
 
 	ci := transaction.NewCloseInfo(
-		occupiedChannelCapacity,
+		channelCapacity,
 		types.CellInput{PreviousOutput: channelCell.OutPoint},
 		mkCellInputs(assets),
 		[]types.Hash{header.Hash},
@@ -725,14 +743,14 @@ func (c Client) ForceClose(ctx context.Context, id channel.ID, state *channel.St
 	}
 	blockHash := oldTx.TxStatus.BlockHash
 
-	occupiedChannelCapacity := channelCell.Output.OccupiedCapacity(channelCell.OutputData)
+	channelCapacity := channelCell.Output.Capacity
 	fci := transaction.NewForceCloseInfo(
 		types.CellInput{PreviousOutput: channelCell.OutPoint},
 		mkCellInputs(assets),
 		[]types.Hash{*blockHash, header.Hash},
 		state,
 		params,
-		occupiedChannelCapacity,
+		channelCapacity,
 	)
 
 	builder, err := c.newPerunTransactionBuilder(nil)
@@ -761,7 +779,7 @@ func (c Client) ForceCloseWithVC(ctx context.Context, id channel.ID, vcid channe
 
 	virtualChannelCell := virtualChannelCells[0]
 	vcStatus := vcStatuses[0]
-	occupiedVirtualChannelCapacity := virtualChannelCell.Output.OccupiedCapacity(virtualChannelCell.OutputData)
+	occupiedVirtualChannelCapacity := virtualChannelCell.Output.Capacity
 
 	firstForceClose := encoding.ToBool(*vcStatus.FirstForceClose())
 
@@ -770,7 +788,9 @@ func (c Client) ForceCloseWithVC(ctx context.Context, id channel.ID, vcid channe
 		return fmt.Errorf("getting channel live cell: %w", err)
 	}
 
-	occupiedChannelCapacity := channelCell.Output.OccupiedCapacity(channelCell.OutputData)
+	// Party 0 reclaims the channel cell's ACTUAL capacity (which carries the conserved
+	// sub-alloc reserve), matching the contract's load_cell_capacity check at force close.
+	channelCapacity := channelCell.Output.Capacity
 
 	pcts := channelCell.Output.Type
 	vcts := virtualChannelCell.Output.Type
@@ -815,6 +835,18 @@ func (c Client) ForceCloseWithVC(ctx context.Context, id channel.ID, vcid channe
 			return fmt.Errorf("updating vcstate: %w", err)
 		}
 	}
+
+	// RestoredOwnerScript is only consumed by the second force close, which runs when
+	// firstForceClose is true (see transaction.go ForceCloseWithVC). Resolve it lazily so a
+	// recovery failure cannot abort the first force close, which does not use it.
+	var restoredOwnerScript *types.Script
+	if firstForceClose {
+		restoredOwnerScript, err = ckbaddress.RecoverOnChainPaymentScript(vcStatus.Owner(), c.deployment.OmniLockScript.CodeHash)
+		if err != nil {
+			return fmt.Errorf("recovering virtual channel owner script: %w", err)
+		}
+	}
+
 	fcvi := transaction.NewForceCloseWithVCInfo(
 		channelCell.OutPoint,
 		virtualChannelCell.OutPoint,
@@ -826,10 +858,11 @@ func (c Client) ForceCloseWithVC(ctx context.Context, id channel.ID, vcid channe
 		params,
 		[]types.Hash{header.Hash, *blockHash},
 		mkCellInputs(assets),
-		occupiedChannelCapacity,
+		channelCapacity,
 		occupiedVirtualChannelCapacity,
 		firstForceClose,
 		indexMap,
+		restoredOwnerScript,
 	)
 
 	builder, err := c.newPerunTransactionBuilder(nil)
@@ -864,14 +897,14 @@ func (c Client) Abort(ctx context.Context, script *types.Script, params *channel
 	if err != nil {
 		return fmt.Errorf("getting tip header: %w", err)
 	}
-	occupiedChannelCapacity := channelCell.Output.OccupiedCapacity(channelCell.OutputData)
+	channelCapacity := channelCell.Output.Capacity
 	ai := transaction.NewAbortInfo(
 		types.CellInput{PreviousOutput: channelCell.OutPoint},
 		mkCellInputs(assets),
 		state,
 		params,
 		[]types.Hash{header.Hash},
-		occupiedChannelCapacity,
+		channelCapacity,
 	)
 
 	builder, err := c.newPerunTransactionBuilder(nil)

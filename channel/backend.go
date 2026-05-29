@@ -1,10 +1,11 @@
 package channel
 
 import (
-	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/pkg/errors"
 	"math"
 	"math/big"
+
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/pkg/errors"
 	"perun.network/go-perun/channel"
 	"perun.network/go-perun/wallet"
 	"perun.network/perun-ckb-backend/channel/asset"
@@ -34,10 +35,6 @@ func (b backend) CalcID(params *channel.Params) (channel.ID, error) {
 		return channel.ID{}, errors.WithMessage(err, "could not encode params")
 	}
 	return crypto.Keccak256Hash(bytes), nil
-}
-
-func (b backend) CalcVCID(params *channel.Params) channel.ID {
-	panic("no virtual channels")
 }
 
 func (b backend) Sign(account wallet.Account, state *channel.State) (wallet.Sig, error) {
