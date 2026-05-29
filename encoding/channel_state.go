@@ -138,6 +138,53 @@ func PackSubAlloc(subAlloc *pchannel.SubAlloc, state *pchannel.State) (molecule.
 		Build(), nil
 }
 
+// ShannonsPerCapacityByte is the cell-capacity cost of one byte of on-chain data: one byte
+// of occupied capacity requires one CKByte (1e8 shannons).
+const ShannonsPerCapacityByte = 100_000_000
+
+// LockedSubAllocReserve returns the extra channel-cell capacity (in shannons) needed to hold
+// one locked sub-allocation, sized for the channel's own asset count (a sub-alloc's flat
+// SubBalances vector always has one slot per channel asset).
+//
+// The funded channel cell is pre-sized by this amount so that materialising a virtual
+// channel's locked sub-alloc on-chain at dispute/register does not grow the cell. Without the
+// reserve the registrant funds that growth while party 0 reclaims it at force close, leaking
+// capacity between parties. The reserve is kept out of the *signed* channel state (it lives
+// only in the cell's capacity field), so it does not affect the EVM/Keccak state signature.
+func LockedSubAllocReserve(state *pchannel.State) (uint64, error) {
+	numAssets := len(state.Assets)
+
+	// Measure the on-chain size of adding one locked sub-allocation (with numAssets balance
+	// slots) to an otherwise empty LockedBalances vector. Because molecule tables carry the
+	// nested-field delta verbatim up to the enclosing ChannelStatus, this dynvec delta equals
+	// the channel cell's data growth when the sub-alloc is materialised.
+	zero, err := packUint128LE(new(big.Int))
+	if err != nil {
+		return 0, fmt.Errorf("packing zero sub-balance: %w", err)
+	}
+	subBalances := molecule.NewSubBalancesBuilder()
+	for i := 0; i < numAssets; i++ {
+		subBalances.Push(zero)
+	}
+	idxMap := molecule.NewIndexMapBuilder().
+		Nth0(*types.PackByte(0)).
+		Nth1(*types.PackByte(1)).
+		Build()
+	sub := molecule.NewSubAllocBuilder().
+		Id(molecule.Byte32Default()).
+		Balances(subBalances.Build()).
+		IdxMap(idxMap).
+		Build()
+
+	empty := molecule.NewLockedBalancesBuilder().Build()
+	withOne := molecule.NewLockedBalancesBuilder().Push(sub).Build()
+	delta := len(withOne.AsSlice()) - len(empty.AsSlice())
+	if delta < 0 {
+		delta = 0
+	}
+	return uint64(delta) * ShannonsPerCapacityByte, nil
+}
+
 // PackCKByteDistribution converts a perun channel state to a molecule CKByteDistribution.
 func PackCKByteDistribution(d [2]*big.Int) (molecule.CKByteDistribution, error) {
 	if !d[0].IsUint64() {

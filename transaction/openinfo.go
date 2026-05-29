@@ -44,8 +44,17 @@ func (oi *OpenInfo) MkInitialChannelCell(channelLockScript, channelTypeScript ty
 		Lock:     &channelLockScript,
 		Type:     &channelTypeScript,
 	}
+	// Pre-size the channel cell so it can later hold one locked sub-allocation (a virtual
+	// channel) without growing on-chain at dispute/register time. The reserve is funded by
+	// party 0 here and reclaimed by party 0 at close, keeping channel-cell capacity a
+	// conserved quantity (see encoding.LockedSubAllocReserve). All rebuilds preserve this
+	// capacity rather than recomputing it from the (possibly smaller) data.
 	capacity := channelOutput.OccupiedCapacity(channelStatus.AsSlice())
-	channelOutput.Capacity = capacity
+	reserve, err := encoding.LockedSubAllocReserve(oi.State)
+	if err != nil {
+		return types.CellOutput{}, nil, fmt.Errorf("computing locked sub-alloc reserve: %w", err)
+	}
+	channelOutput.Capacity = capacity + reserve
 	return channelOutput, channelStatus.AsSlice(), nil
 }
 

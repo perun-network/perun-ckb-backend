@@ -14,6 +14,11 @@ type FundInfo struct {
 	PCTS        *types.Script
 	Status      molecule.ChannelStatus
 	Header      types.Hash
+
+	// InputChannelCapacity is the actual capacity of the channel cell being consumed. The
+	// rebuilt channel cell preserves it so the (party-0-funded) reserve is never refunded to
+	// the funding party (see encoding.LockedSubAllocReserve).
+	InputChannelCapacity uint64
 }
 
 func NewFundInfo(channelCell types.OutPoint, params *channel.Params, state *channel.State, pcts *types.Script, status molecule.ChannelStatus, header types.Hash) *FundInfo {

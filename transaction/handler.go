@@ -342,6 +342,19 @@ func (psh *PerunScriptHandler) buildForceCloseTransaction(builder collector.Tran
 	return true, nil
 }
 
+// preservedChannelCapacity returns the capacity to assign to a rebuilt channel cell. It
+// preserves the consumed cell's capacity (which carries the party-0-funded sub-alloc
+// reserve) so the cell neither grows — forcing the registrant to fund the growth — nor
+// shrinks below its occupied size. Falls back to the occupied capacity when the input
+// capacity is unknown (0) or smaller than the data requires.
+func preservedChannelCapacity(cell types.CellOutput, data []byte, inputCapacity uint64) uint64 {
+	occupied := cell.OccupiedCapacity(data)
+	if inputCapacity > occupied {
+		return inputCapacity
+	}
+	return occupied
+}
+
 func (psh *PerunScriptHandler) buildFundTransaction(builder collector.TransactionBuilder, group *transaction.ScriptGroup, fundInfo *FundInfo) (bool, error) {
 	const partyIndex = 1
 	// Dependencies.
@@ -373,7 +386,7 @@ func (psh *PerunScriptHandler) buildFundTransaction(builder collector.Transactio
 		Lock:     channelLockScript,
 		Type:     fundInfo.PCTS,
 	}
-	channelCell.Capacity = channelCell.OccupiedCapacity(channelStatus.AsSlice())
+	channelCell.Capacity = preservedChannelCapacity(channelCell, channelStatus.AsSlice(), fundInfo.InputChannelCapacity)
 	builder.AddOutput(&channelCell, channelStatus.AsSlice())
 
 	// Channel funds cell output.
@@ -430,7 +443,7 @@ func (psh *PerunScriptHandler) buildDisputeTransaction(builder collector.Transac
 	if _, err := disputeInfo.update(); err != nil {
 		return false, fmt.Errorf("updating dispute info: %w", err)
 	}
-	channelCell.Capacity = channelCell.OccupiedCapacity(disputeInfo.Status.AsSlice())
+	channelCell.Capacity = preservedChannelCapacity(channelCell, disputeInfo.Status.AsSlice(), disputeInfo.InputChannelCapacity)
 	builder.AddOutput(&channelCell, disputeInfo.Status.AsSlice())
 	return true, nil
 }
@@ -479,7 +492,7 @@ func (psh *PerunScriptHandler) buildFirstVCDisputeTransaction(builder collector.
 	if _, err := disputeInfo.update(vcTypeScript); err != nil {
 		return false, fmt.Errorf("updating vc dispute info: %w", err)
 	}
-	channelCell.Capacity = channelCell.OccupiedCapacity(disputeInfo.LCStatus.AsSlice())
+	channelCell.Capacity = preservedChannelCapacity(channelCell, disputeInfo.LCStatus.AsSlice(), disputeInfo.InputChannelCapacity)
 	builder.AddOutput(&vcChannelCell, vcChannelData)
 	builder.AddOutput(&channelCell, disputeInfo.LCStatus.AsSlice())
 
@@ -534,7 +547,7 @@ func (psh *PerunScriptHandler) buildVCDisputeProgressTransaction(builder collect
 	if _, err := disputeInfo.update(disputeInfo.VCTS); err != nil {
 		return false, fmt.Errorf("updating vc dispute info: %w", err)
 	}
-	channelCell.Capacity = channelCell.OccupiedCapacity(disputeInfo.LCStatus.AsSlice())
+	channelCell.Capacity = preservedChannelCapacity(channelCell, disputeInfo.LCStatus.AsSlice(), disputeInfo.InputChannelCapacity)
 	builder.AddOutput(&channelCell, disputeInfo.LCStatus.AsSlice())
 
 	// Define the virtual channel cell output.
@@ -587,28 +600,25 @@ func (psh *PerunScriptHandler) buildVCMergeTransaction(builder collector.Transac
 		Lock:     vcChannelLockscript,
 		Type:     disputeInfo.VCTS,
 	}
-	var status molecule.VirtualChannelStatus
 	var occupiedCapacity uint64
+	var payoutScript *types.Script
 	if disputeInfo.BlockNum0 < disputeInfo.BlockNum1 {
 		vcCell.Capacity = vcCell.OccupiedCapacity(disputeInfo.VCStatus0.AsSlice())
 		builder.AddOutput(&vcCell, disputeInfo.VCStatus0.AsSlice())
-		status = disputeInfo.VCStatus1
 		occupiedCapacity = disputeInfo.OccupiedCapacity1
+		payoutScript = disputeInfo.RestoredOwnerScript1
 	} else {
 		vcCell.Capacity = vcCell.OccupiedCapacity(disputeInfo.VCStatus1.AsSlice())
 		builder.AddOutput(&vcCell, disputeInfo.VCStatus1.AsSlice())
-		status = disputeInfo.VCStatus0
 		occupiedCapacity = disputeInfo.OccupiedCapacity0
+		payoutScript = disputeInfo.RestoredOwnerScript0
 	}
 
-	// Add the occupied capacity of the virtual channel cell the participant, who created the virtual channel.
-	var restoredParticipant address.Participant
-	err = restoredParticipant.UnpackOnChainParticipant(status.Owner())
-	if err != nil {
-		return false, fmt.Errorf("failed to unpack on-chain participant: %w", err)
+	// Add the occupied capacity of the dropped virtual channel cell back to its owner. The
+	// owner's real payment script is resolved by the caller from the on-chain owner record.
+	if payoutScript == nil {
+		return false, fmt.Errorf("vc merge: restored owner script is nil")
 	}
-	payoutScript := restoredParticipant.PaymentScript
-	log.Printf("[FCLEDGER merge] blk0=%d blk1=%d returningCap=%d to=%x", disputeInfo.BlockNum0, disputeInfo.BlockNum1, occupiedCapacity, payoutScript.Hash().Bytes()[:4])
 	paymentOutput := psh.mkPaymentOutput(payoutScript, occupiedCapacity)
 	builder.AddOutput(paymentOutput, nil)
 	return true, nil
@@ -650,7 +660,6 @@ _:
 
 	// Outputs
 	// Add the payment output for each participant.
-	log.Printf("[FCLEDGER first] LC=%x VCcap=%d chanCap=%d indexMap=%v", forceCloseWithVCInfo.ChannelCell.TxHash[:4], forceCloseWithVCInfo.VirtualChannelCapacity, forceCloseWithVCInfo.ChannelCapacity, forceCloseWithVCInfo.IndexMap)
 	for i, addr := range forceCloseWithVCInfo.Params.Parts {
 		payoutScript := address.AsParticipant(addr[3]).PaymentScript
 		paymentMinCapacity := payoutScript.OccupiedCapacity()
@@ -681,7 +690,6 @@ _:
 		} else {
 			additionalBalance = balance
 		}
-		log.Printf("[FCLEDGER first] i=%d script=%x min=%d lcBal=%d vcBal=%d total=%d emitted=%t addl=%d", i, payoutScript.Hash().Bytes()[:4], paymentMinCapacity, lcBalance, vcBalance, balance, emitted, additionalBalance)
 
 		err = psh.AddAssetsToOutputsWithVirtualChannel(builder, forceCloseWithVCInfo.State, forceCloseWithVCInfo.VCState, i, payoutScript, additionalBalance, forceCloseWithVCInfo.IndexMap)
 		if err != nil {
@@ -740,18 +748,18 @@ func (psh *PerunScriptHandler) buildSecondForceCloseWithVCTransaction(builder co
 		PreviousOutput: forceCloseWithVCInfo.MinCKBInput,
 	})
 
-	// Return the virtual channel cacpacity to its owner.
-	var restoredParticipant address.Participant
-	err = restoredParticipant.UnpackOnChainParticipant(forceCloseWithVCInfo.VCStatus.Owner())
-	if err != nil {
-		return false, fmt.Errorf("failed to unpack on-chain participant: %w", err)
+	// Return the virtual channel capacity to its owner. The owner's real payment script
+	// is resolved by the caller from the on-chain owner record (the on-chain participant
+	// only stores a script hash, which UnpackOnChainParticipant would wrongly rebuild as a
+	// default sighash script — incorrect for omni-lock / cross-chain owners).
+	restoredPayoutScript := forceCloseWithVCInfo.RestoredOwnerScript
+	if restoredPayoutScript == nil {
+		return false, fmt.Errorf("force close with vc: restored owner script is nil")
 	}
-	restoredPayoutScript := restoredParticipant.PaymentScript
 	returnedVCBalance := false
 
 	// Outputs
 	// Add the payment output for each participant.
-	log.Printf("[FCLEDGER second] LC=%x VCcap=%d chanCap=%d indexMap=%v restored=%x", forceCloseWithVCInfo.ChannelCell.TxHash[:4], forceCloseWithVCInfo.VirtualChannelCapacity, forceCloseWithVCInfo.ChannelCapacity, forceCloseWithVCInfo.IndexMap, restoredPayoutScript.Hash().Bytes()[:4])
 	for i, addr := range forceCloseWithVCInfo.Params.Parts {
 		payoutScript := address.AsParticipant(addr[3]).PaymentScript
 		paymentMinCapacity := payoutScript.OccupiedCapacity()
@@ -773,23 +781,19 @@ func (psh *PerunScriptHandler) buildSecondForceCloseWithVCTransaction(builder co
 			balance += forceCloseWithVCInfo.ChannelCapacity
 		}
 
-		gotVC := false
 		if restoredPayoutScript.Equals(payoutScript) {
 			// The restored participant receives the virtual channel capacity.
 			balance += forceCloseWithVCInfo.VirtualChannelCapacity
 			returnedVCBalance = true
-			gotVC = true
 		}
 
 		additionalBalance := uint64(0)
-		emitted := balance >= paymentMinCapacity
-		if emitted {
+		if balance >= paymentMinCapacity {
 			paymentOutput := psh.mkPaymentOutput(payoutScript, balance)
 			builder.AddOutput(paymentOutput, nil)
 		} else {
 			additionalBalance = balance
 		}
-		log.Printf("[FCLEDGER second] i=%d script=%x min=%d lcBal=%d vcBal=%d gotVC=%t total=%d emitted=%t addl=%d", i, payoutScript.Hash().Bytes()[:4], paymentMinCapacity, lcBalance, vcBalance, gotVC, balance, emitted, additionalBalance)
 
 		err = psh.AddAssetsToOutputsWithVirtualChannel(builder, forceCloseWithVCInfo.State, forceCloseWithVCInfo.VCState, i, payoutScript, additionalBalance, forceCloseWithVCInfo.IndexMap)
 		if err != nil {
@@ -797,7 +801,6 @@ func (psh *PerunScriptHandler) buildSecondForceCloseWithVCTransaction(builder co
 		}
 	}
 	if !returnedVCBalance {
-		log.Printf("[FCLEDGER second] VC capacity %d to standalone restored output %x", forceCloseWithVCInfo.VirtualChannelCapacity, restoredPayoutScript.Hash().Bytes()[:4])
 		paymentOutput := psh.mkPaymentOutput(restoredPayoutScript, forceCloseWithVCInfo.VirtualChannelCapacity)
 		builder.AddOutput(paymentOutput, nil)
 	}

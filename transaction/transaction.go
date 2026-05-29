@@ -205,7 +205,6 @@ func (ptb *PerunTransactionBuilder) ForceClose(fci *ForceCloseInfo) error {
 
 func (ptb *PerunTransactionBuilder) ForceCloseWithVC(fcvi *ForceCloseWithVCInfo) error {
 	var err error
-	log.Printf("[FCLEDGER] ForceCloseWithVC firstForceClose=%t LC=%x", fcvi.firstForceClose, fcvi.ChannelCell.TxHash[:4])
 	if !fcvi.firstForceClose {
 		_, err = ptb.psh.buildFirstForceCloseWithVCTransaction(ptb, nil, fcvi)
 	} else {
