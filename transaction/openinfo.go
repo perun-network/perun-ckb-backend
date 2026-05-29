@@ -11,9 +11,6 @@ import (
 	"perun.network/perun-ckb-backend/encoding"
 )
 
-// MinLockedCapacity is the minimum capacity that must be locked in the channel cell to be used for virtual channel.
-const MinLockedCapacity = 8000000000 // 80 CKB
-
 type OpenInfo struct {
 	ChannelID    channel.ID
 	ChannelToken backend.Token

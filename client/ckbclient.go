@@ -836,11 +836,15 @@ func (c Client) ForceCloseWithVC(ctx context.Context, id channel.ID, vcid channe
 		}
 	}
 
-	// Resolve the VC owner's real payment script from the on-chain owner record so the VC
-	// capacity is returned to the correct (possibly omni-lock) address at force close.
-	restoredOwnerScript, err := ckbaddress.RecoverOnChainPaymentScript(vcStatus.Owner(), c.deployment.OmniLockScript.CodeHash)
-	if err != nil {
-		return fmt.Errorf("recovering virtual channel owner script: %w", err)
+	// RestoredOwnerScript is only consumed by the second force close, which runs when
+	// firstForceClose is true (see transaction.go ForceCloseWithVC). Resolve it lazily so a
+	// recovery failure cannot abort the first force close, which does not use it.
+	var restoredOwnerScript *types.Script
+	if firstForceClose {
+		restoredOwnerScript, err = ckbaddress.RecoverOnChainPaymentScript(vcStatus.Owner(), c.deployment.OmniLockScript.CodeHash)
+		if err != nil {
+			return fmt.Errorf("recovering virtual channel owner script: %w", err)
+		}
 	}
 
 	fcvi := transaction.NewForceCloseWithVCInfo(
