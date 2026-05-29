@@ -5,9 +5,9 @@ name: Go
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "dev", "main" ]
   pull_request:
-    branches: [ "main" ]
+    branches: [ "dev", "main" ]
 
 jobs:
   golangci:
@@ -75,7 +75,7 @@ jobs:
 
           git submodule update --init --recursive
           cd ./devnet
-          chmod +x setup-devnet.sh print_accounts.sh deploy_contracts.sh sudt_helper.sh fund_omni_accounts.sh
+          chmod +x ./*.sh
 
           # Bootstrap offckb so its config files exist, then patch the miner
           # to 1s blocks. Default is 5s, which is too slow for the dispute
@@ -92,25 +92,26 @@ jobs:
 
           ./setup-devnet.sh
           offckb node > /dev/null 2>&1 &
-          sleep 12
+          # Deterministic waits replace fixed sleeps: poll the node RPC and the
+          # deploy/funding artifacts instead of guessing timings (mirrors the
+          # local run_bootstrap.sh flow).
+          ./wait_for_rpc.sh
           ./print_accounts.sh
           env -u C_INCLUDE_PATH -u CFLAGS -u TARGET_CFLAGS \
               go run ../cmd/get_address.go
-          sleep 6
           ./fund_omni_accounts.sh
+          # Allow the omni-account funding txs to be mined before deploying.
           sleep 10
           ./deploy_contracts.sh
-          sleep 15
+          ./wait_for_file.sh ./contract/migrations_vc/dev
+          ./wait_for_deploy_committed.sh
           ./sudt_helper.sh fund
-          sleep 15
+          ./wait_for_sudt.sh genesis-2
           env -u C_INCLUDE_PATH -u CFLAGS -u TARGET_CFLAGS \
               go run ../cmd/fund_sudt.go
-          sleep 10
+          ./wait_for_sudt.sh alice
           ./sudt_helper.sh balances
           cd ../..
-    
-    - name: Wait for devnet to initialize
-      run: sleep 30
 
     - name: Build
       run: go build -v ./...
