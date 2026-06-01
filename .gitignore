@@ -37,3 +37,4 @@ devnet/contract/migrations_*/
 docs/
 .github/prompts/
 CLAUDE.md
+.claude/*

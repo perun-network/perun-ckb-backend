@@ -1,6 +1,3 @@
-//go:build devnet
-// +build devnet
-
 package ckblp
 
 import (

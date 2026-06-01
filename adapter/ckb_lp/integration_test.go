@@ -1,6 +1,3 @@
-//go:build devnet
-// +build devnet
-
 package ckblp
 
 import (
@@ -65,9 +62,6 @@ func mustParseHash32(t *testing.T, value string) [32]byte {
 }
 
 func TestDiscoverLPCellsDevnet(t *testing.T) {
-	if os.Getenv("RUN_DEVNET_TESTS") == "" {
-		t.Skip("devnet E2E test: requires proper transaction signing setup")
-	}
 	lpDeployment, ok := loadOrSkipLPDeployment(t)
 	if !ok {
 		return
@@ -103,9 +97,6 @@ func TestDiscoverLPCellsDevnet(t *testing.T) {
 }
 
 func TestGetLPCellDevnet(t *testing.T) {
-	if os.Getenv("RUN_DEVNET_TESTS") == "" {
-		t.Skip("devnet E2E test: requires proper transaction signing setup")
-	}
 	lpCellID := os.Getenv("PERUN_LP_CELL_ID")
 	poolID := os.Getenv("PERUN_LP_POOL_ID")
 	lpDeployment, ok := loadOrSkipLPDeployment(t)
@@ -149,9 +140,6 @@ func TestGetLPCellDevnet(t *testing.T) {
 }
 
 func TestBobCreatesLPCellAndWithdrawDevnet(t *testing.T) {
-	if os.Getenv("RUN_DEVNET_TESTS") == "" {
-		t.Skip("devnet E2E test: requires proper transaction signing setup")
-	}
 	lpDeployment, ok := loadOrSkipLPDeployment(t)
 	if !ok {
 		return
@@ -206,9 +194,6 @@ func TestBobCreatesLPCellAndWithdrawDevnet(t *testing.T) {
 // not require an out-of-band channel to be open. The real Perun channel flow
 // (Open/Fund/Close) is exercised by TestPaymentHappy in the client package.
 func TestLPFundAndSettleChannelDevnet(t *testing.T) {
-	if os.Getenv("RUN_DEVNET_TESTS") == "" {
-		t.Skip("devnet E2E test: requires proper transaction signing setup")
-	}
 	lpDeployment, ok := loadOrSkipLPDeployment(t)
 	if !ok {
 		return
