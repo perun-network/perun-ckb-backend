@@ -52,7 +52,7 @@ func (a *Adapter) BuildLPDepositTx(ctx context.Context, lpCell LPCell) (string, 
 // Used when an LP wants to delegate fund-extract/settle-insert to a separate
 // operator account.
 func (a *Adapter) BuildLPDepositTxWithOperator(ctx context.Context, lpCell LPCell, operatorLockHash types.Hash) (string, error) {
-	tx, lpOutpointID, err := a.BuildLPDepositTxUnsigned(ctx, lpCell, operatorLockHash)
+	tx, lpOutpointID, err := a.BuildLPDepositTxUnsigned(ctx, lpCell, a.signer.Address().Script, operatorLockHash)
 	if err != nil {
 		return "", err
 	}
@@ -67,13 +67,22 @@ func (a *Adapter) BuildLPDepositTxWithOperator(ctx context.Context, lpCell LPCel
 // owner's external wallet) and broadcasting via SubmitSignedTx. lpOutpointID is
 // the predetermined "<txhash>:0" of the resulting LP cell; the CKB tx hash is
 // computed over the body excluding witnesses, so signing does not change it.
-// signer.Address() is used to set OwnerLockHash and select a funding UTXO;
-// signer.SignTransaction is never called on this path.
-func (a *Adapter) BuildLPDepositTxUnsigned(ctx context.Context, lpCell LPCell, operatorLockHash types.Hash) (*ckbtransaction.TransactionWithScriptGroups, string, error) {
+//
+// ownerScript identifies the LP owner: its hash is written to the cell's
+// OwnerLockHash field, and a funding UTXO is selected from cells locked by it.
+// The adapter's configured signer is not consulted on this path — ws-backend
+// can build deposits for any LP whose lock script it has on the wire, without
+// holding their key. ownerScript must include code_hash + hash_type + args
+// (the lock hash alone is insufficient because cells are indexed by script,
+// not by hash, and the omnilock-vs-secp256k1 builder dispatch needs code_hash).
+func (a *Adapter) BuildLPDepositTxUnsigned(ctx context.Context, lpCell LPCell, ownerScript *types.Script, operatorLockHash types.Hash) (*ckbtransaction.TransactionWithScriptGroups, string, error) {
 	if lpCell.AvailableCKB == 0 {
 		return nil, "", Deterministic(ErrInvalidLPCellArg)
 	}
-	operatorCell, err := a.selectLargestOperatorCell(ctx)
+	if ownerScript == nil {
+		return nil, "", Deterministic(ErrInvalidLPCellArg)
+	}
+	operatorCell, err := a.selectLargestCellByLock(ctx, ownerScript)
 	if err != nil {
 		return nil, "", err
 	}
@@ -81,8 +90,7 @@ func (a *Adapter) BuildLPDepositTxUnsigned(ctx context.Context, lpCell LPCell, o
 		return nil, "", Deterministic(ErrInvalidLPCell)
 	}
 
-	signerHash := a.signer.Address().Script.Hash()
-	lpCell.OwnerLockHash = signerHash
+	lpCell.OwnerLockHash = ownerScript.Hash()
 	lpCell.OperatorLockHash = operatorLockHash
 	lpCell.ReservedCKB = 0
 	lpCell.CumulativeFeesEarnedCKB = 0
@@ -105,8 +113,8 @@ func (a *Adapter) BuildLPDepositTxUnsigned(ctx context.Context, lpCell LPCell, o
 
 	lockScript, typeScript := buildLPScriptsFromDeployment(a.lpDeployment, lpCell.PoolID)
 
-	builder := transaction.NewSimpleTransactionBuilder(a.signer.Address().Script.CodeHash, a.deployment.DefaultLockScriptDep, false)
-	if a.signer.Address().Script.CodeHash != a.deployment.DefaultLockScript.CodeHash && len(a.deployment.OmniLockScriptDep) >= 2 {
+	builder := transaction.NewSimpleTransactionBuilder(ownerScript.CodeHash, a.deployment.DefaultLockScriptDep, false)
+	if ownerScript.CodeHash != a.deployment.DefaultLockScript.CodeHash && len(a.deployment.OmniLockScriptDep) >= 2 {
 		builder = transaction.NewSimpleTransactionBuilder(a.deployment.OmniLockScript.CodeHash, a.deployment.OmniLockScriptDep[1], true)
 		builder.AddCellDep(&a.deployment.OmniLockScriptDep[0])
 		builder.AddCellDep(&a.deployment.OmniLockScriptDep[1])
@@ -145,7 +153,7 @@ func (a *Adapter) BuildLPDepositTxUnsigned(ctx context.Context, lpCell LPCell, o
 
 // BuildLPWithdrawTx builds and submits an LP withdraw transaction.
 func (a *Adapter) BuildLPWithdrawTx(ctx context.Context, lpCellID string, ckbOut uint64) (types.Hash, error) {
-	tx, err := a.BuildLPWithdrawTxUnsigned(ctx, lpCellID, ckbOut)
+	tx, err := a.BuildLPWithdrawTxUnsigned(ctx, lpCellID, ckbOut, a.signer.Address().Script)
 	if err != nil {
 		return types.Hash{}, err
 	}
@@ -158,10 +166,18 @@ func (a *Adapter) BuildLPWithdrawTx(ctx context.Context, lpCellID string, ckbOut
 
 // BuildLPWithdrawTxUnsigned builds an LP withdraw transaction without signing
 // or submitting it. The caller signs externally (LP owner's wallet) and
-// broadcasts via SubmitSignedTx. signer.Address() is used to set up the change
-// output and lock-script group; signer.SignTransaction is never called here.
-func (a *Adapter) BuildLPWithdrawTxUnsigned(ctx context.Context, lpCellID string, ckbOut uint64) (*ckbtransaction.TransactionWithScriptGroups, error) {
+// broadcasts via SubmitSignedTx.
+//
+// ownerScript identifies the LP owner: it selects the funding/change UTXO and
+// drives the omnilock-vs-secp256k1 builder dispatch. Its hash must equal the
+// LP cell's existing OwnerLockHash for the LP typescript to accept the tx;
+// this is enforced on-chain, not here, so a mismatch surfaces as a submit
+// error rather than a build error.
+func (a *Adapter) BuildLPWithdrawTxUnsigned(ctx context.Context, lpCellID string, ckbOut uint64, ownerScript *types.Script) (*ckbtransaction.TransactionWithScriptGroups, error) {
 	if ckbOut == 0 {
+		return nil, Deterministic(ErrInvalidLPCellArg)
+	}
+	if ownerScript == nil {
 		return nil, Deterministic(ErrInvalidLPCellArg)
 	}
 	outPoint, err := parseOutPoint(lpCellID)
@@ -193,7 +209,7 @@ func (a *Adapter) BuildLPWithdrawTxUnsigned(ctx context.Context, lpCellID string
 		return nil, Deterministic(ErrInvalidLPCell)
 	}
 
-	ownerCell, err := a.selectLargestOperatorCell(ctx)
+	ownerCell, err := a.selectLargestCellByLock(ctx, ownerScript)
 	if err != nil {
 		return nil, err
 	}
@@ -202,8 +218,8 @@ func (a *Adapter) BuildLPWithdrawTxUnsigned(ctx context.Context, lpCellID string
 	}
 	change := ownerCell.Output.Capacity + ckbOut
 
-	builder := transaction.NewSimpleTransactionBuilder(a.signer.Address().Script.CodeHash, a.deployment.DefaultLockScriptDep, false)
-	if a.signer.Address().Script.CodeHash != a.deployment.DefaultLockScript.CodeHash && len(a.deployment.OmniLockScriptDep) >= 2 {
+	builder := transaction.NewSimpleTransactionBuilder(ownerScript.CodeHash, a.deployment.DefaultLockScriptDep, false)
+	if ownerScript.CodeHash != a.deployment.DefaultLockScript.CodeHash && len(a.deployment.OmniLockScriptDep) >= 2 {
 		builder = transaction.NewSimpleTransactionBuilder(a.deployment.OmniLockScript.CodeHash, a.deployment.OmniLockScriptDep[1], true)
 		builder.AddCellDep(&a.deployment.OmniLockScriptDep[0])
 		builder.AddCellDep(&a.deployment.OmniLockScriptDep[1])
@@ -589,9 +605,19 @@ func (a *Adapter) newPerunTxBuilder() (*transaction.PerunTransactionBuilder, err
 }
 
 func (a *Adapter) selectLargestOperatorCell(ctx context.Context) (*indexer.LiveCell, error) {
-	signerScript := a.signer.Address().Script
+	return a.selectLargestCellByLock(ctx, a.signer.Address().Script)
+}
+
+// selectLargestCellByLock picks the largest plain (no type script, non-LP)
+// UTXO locked by the given script. Used by the non-custodial unsigned-build
+// path to fund the deposit/withdraw from any caller's account without
+// requiring the adapter's configured signer to be the owner.
+func (a *Adapter) selectLargestCellByLock(ctx context.Context, lockScript *types.Script) (*indexer.LiveCell, error) {
+	if lockScript == nil {
+		return nil, Deterministic(ErrInvalidLPCellArg)
+	}
 	searchKey := &indexer.SearchKey{
-		Script:           signerScript,
+		Script:           lockScript,
 		ScriptType:       types.ScriptTypeLock,
 		ScriptSearchMode: types.ScriptSearchModeExact,
 		WithData:         true,

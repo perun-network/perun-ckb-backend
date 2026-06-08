@@ -72,6 +72,21 @@ func TestBuildLPDepositTxUnsignedRejectsZeroAvailable(t *testing.T) {
 	_, _, err := adapter.BuildLPDepositTxUnsigned(
 		context.Background(),
 		LPCell{AvailableCKB: 0},
+		nil,
+		types.Hash{},
+	)
+
+	require.ErrorIs(t, err, ErrInvalidLPCellArg)
+	require.True(t, IsDeterministic(err))
+}
+
+func TestBuildLPDepositTxUnsignedRejectsNilOwnerScript(t *testing.T) {
+	adapter := &Adapter{}
+
+	_, _, err := adapter.BuildLPDepositTxUnsigned(
+		context.Background(),
+		LPCell{AvailableCKB: lpCellMinOccupiedShannons},
+		nil,
 		types.Hash{},
 	)
 
@@ -86,6 +101,21 @@ func TestBuildLPWithdrawTxUnsignedRejectsZeroCkbOut(t *testing.T) {
 		context.Background(),
 		"0x"+strings.Repeat("11", 32)+":0",
 		0,
+		nil,
+	)
+
+	require.ErrorIs(t, err, ErrInvalidLPCellArg)
+	require.True(t, IsDeterministic(err))
+}
+
+func TestBuildLPWithdrawTxUnsignedRejectsNilOwnerScript(t *testing.T) {
+	adapter := &Adapter{}
+
+	_, err := adapter.BuildLPWithdrawTxUnsigned(
+		context.Background(),
+		"0x"+strings.Repeat("11", 32)+":0",
+		1,
+		nil,
 	)
 
 	require.ErrorIs(t, err, ErrInvalidLPCellArg)

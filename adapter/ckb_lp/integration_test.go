@@ -180,10 +180,12 @@ func TestBobCreatesLPCellAndWithdrawDevnet(t *testing.T) {
 }
 
 // TestNonCustodialLPDepositAndWithdrawDevnet exercises the non-custodial
-// build→external-sign→submit split end-to-end. Owner (Ingrid) and operator
-// (Alice) are distinct keys, validating that the LP cell's
-// operator_lock_hash field is set independently of who signs the deposit.
-// Alice's private key is never used — only her lock hash is referenced.
+// build→external-sign→submit split end-to-end. The adapter is constructed with
+// a DIFFERENT signer (Alice, the operator/hub stand-in) than the LP owner
+// (Ingrid), proving the unsigned builders do not derive owner identity from
+// the adapter's configured signer — ownerScript is passed explicitly. Alice's
+// private key is never used to sign the deposit/withdraw txs; she only
+// contributes a lock hash for the operator field.
 func TestNonCustodialLPDepositAndWithdrawDevnet(t *testing.T) {
 	lpDeployment, ok := loadOrSkipLPDeployment(t)
 	if !ok {
@@ -199,23 +201,25 @@ func TestNonCustodialLPDepositAndWithdrawDevnet(t *testing.T) {
 	ensureLPDeploymentOnChainOrSkip(t, rpcClient, lpDeployment)
 
 	deployment := loadDevnetDeploymentRequire(t)
-	ownerSigner := newIngridSigner(t, deployment.Network)
-	transactor := backend.NewRPCTransactor(rpcClient, ownerSigner)
-	adapter := NewAdapter(rpcClient, ownerSigner, transactor, deployment, lpDeployment)
 	ctx := context.Background()
 
-	keyAlice, err := ckbtest.GetKey(filepath.Join("..", "..", "devnet", "accounts", "alice.pk"))
-	require.NoError(t, err)
-	aliceParticipant, err := ckbaddress.NewDefaultParticipant(keyAlice.PubKey())
-	require.NoError(t, err)
-	aliceLockHash := aliceParticipant.ToCKBAddress(deployment.Network).Script.Hash()
-	ownerLockHash := ownerSigner.Address().Script.Hash()
-	require.NotEqual(t, ownerLockHash, aliceLockHash,
+	// Adapter is configured with Alice (operator stand-in) — proves the
+	// unsigned path doesn't derive the owner from a.signer.
+	operatorSigner := newAliceSigner(t, deployment.Network)
+	transactor := backend.NewRPCTransactor(rpcClient, operatorSigner)
+	adapter := NewAdapter(rpcClient, operatorSigner, transactor, deployment, lpDeployment)
+
+	// Owner is Ingrid; signs externally.
+	ownerSigner := newIngridSigner(t, deployment.Network)
+	ownerScript := ownerSigner.Address().Script
+	ownerLockHash := ownerScript.Hash()
+	operatorLockHash := operatorSigner.Address().Script.Hash()
+	require.NotEqual(t, ownerLockHash, operatorLockHash,
 		"owner and operator lock hashes must differ to validate the delegation flow")
 
 	lpCell.AvailableCKB = 80_000_000_000
 
-	depositTx, lpCellID, err := adapter.BuildLPDepositTxUnsigned(ctx, lpCell, aliceLockHash)
+	depositTx, lpCellID, err := adapter.BuildLPDepositTxUnsigned(ctx, lpCell, ownerScript, operatorLockHash)
 	require.NoError(t, err)
 	require.NotNil(t, depositTx)
 	require.NotEmpty(t, lpCellID)
@@ -230,8 +234,8 @@ func TestNonCustodialLPDepositAndWithdrawDevnet(t *testing.T) {
 
 	info, err := adapter.GetLPCell(ctx, lpCellID)
 	require.NoError(t, err)
-	require.Equal(t, [32]byte(ownerLockHash), info.Cell.OwnerLockHash, "owner must be the signer (Ingrid)")
-	require.Equal(t, [32]byte(aliceLockHash), info.Cell.OperatorLockHash, "operator must be Alice")
+	require.Equal(t, [32]byte(ownerLockHash), info.Cell.OwnerLockHash, "owner must be Ingrid")
+	require.Equal(t, [32]byte(operatorLockHash), info.Cell.OperatorLockHash, "operator must be Alice")
 	require.Equal(t, uint64(0), info.Cell.Nonce)
 	require.True(t, info.Cell.Active)
 
@@ -241,7 +245,7 @@ func TestNonCustodialLPDepositAndWithdrawDevnet(t *testing.T) {
 	}
 	require.NotZero(t, withdrawAmount)
 
-	withdrawTx, err := adapter.BuildLPWithdrawTxUnsigned(ctx, lpCellID, withdrawAmount)
+	withdrawTx, err := adapter.BuildLPWithdrawTxUnsigned(ctx, lpCellID, withdrawAmount, ownerScript)
 	require.NoError(t, err)
 	require.NotNil(t, withdrawTx)
 
@@ -257,7 +261,7 @@ func TestNonCustodialLPDepositAndWithdrawDevnet(t *testing.T) {
 		"AvailableCKB must decrease after withdraw")
 	require.Equal(t, info.Cell.Nonce+1, postWithdraw.Cell.Nonce, "Nonce must increment")
 	require.Equal(t, [32]byte(ownerLockHash), postWithdraw.Cell.OwnerLockHash, "owner preserved across withdraw")
-	require.Equal(t, [32]byte(aliceLockHash), postWithdraw.Cell.OperatorLockHash, "operator preserved across withdraw")
+	require.Equal(t, [32]byte(operatorLockHash), postWithdraw.Cell.OperatorLockHash, "operator preserved across withdraw")
 }
 
 // TestLPFundAndSettleChannelDevnet is the end-to-end LP integration test.
@@ -402,4 +406,18 @@ func newIngridSigner(t *testing.T, network types.Network) backend.Signer {
 
 	addr := participant.ToCKBAddress(network)
 	return backend.NewSignerInstance(addr, *keyIngrid, network)
+}
+
+// newAliceSigner returns a Signer for Alice. Used by the non-custodial test as
+// the adapter's "operator" stand-in — its key is never invoked to sign a
+// deposit/withdraw tx; only its lock-hash/address fields are read.
+func newAliceSigner(t *testing.T, network types.Network) backend.Signer {
+	keyAlice, err := ckbtest.GetKey(filepath.Join("..", "..", "devnet", "accounts", "alice.pk"))
+	require.NoError(t, err)
+
+	participant, err := ckbaddress.NewDefaultParticipant(keyAlice.PubKey())
+	require.NoError(t, err)
+
+	addr := participant.ToCKBAddress(network)
+	return backend.NewSignerInstance(addr, *keyAlice, network)
 }
