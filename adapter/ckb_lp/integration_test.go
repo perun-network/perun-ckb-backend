@@ -72,7 +72,7 @@ func TestDiscoverLPCellsDevnet(t *testing.T) {
 	ensureLPDeploymentOnChainOrSkip(t, rpcClient, lpDeployment)
 
 	deployment := loadDevnetDeploymentRequire(t)
-	signer := newBobSigner(t, deployment.Network)
+	signer := newIngridSigner(t, deployment.Network)
 	transactor := backend.NewRPCTransactor(rpcClient, signer)
 	adapter := NewAdapter(rpcClient, signer, transactor, deployment, lpDeployment)
 
@@ -109,7 +109,7 @@ func TestGetLPCellDevnet(t *testing.T) {
 	ensureLPDeploymentOnChainOrSkip(t, rpcClient, lpDeployment)
 
 	deployment := loadDevnetDeploymentRequire(t)
-	signer := newBobSigner(t, deployment.Network)
+	signer := newIngridSigner(t, deployment.Network)
 	transactor := backend.NewRPCTransactor(rpcClient, signer)
 	adapter := NewAdapter(rpcClient, signer, transactor, deployment, lpDeployment)
 	if lpCellID == "" {
@@ -155,7 +155,7 @@ func TestBobCreatesLPCellAndWithdrawDevnet(t *testing.T) {
 	ensureLPDeploymentOnChainOrSkip(t, rpcClient, lpDeployment)
 
 	deployment := loadDevnetDeploymentRequire(t)
-	signer := newBobSigner(t, deployment.Network)
+	signer := newIngridSigner(t, deployment.Network)
 	transactor := backend.NewRPCTransactor(rpcClient, signer)
 
 	ctx := context.Background()
@@ -177,6 +177,87 @@ func TestBobCreatesLPCellAndWithdrawDevnet(t *testing.T) {
 
 	_, err = adapter.BuildLPWithdrawTx(ctx, info.OutPointHex, withdrawAmount)
 	require.NoError(t, err)
+}
+
+// TestNonCustodialLPDepositAndWithdrawDevnet exercises the non-custodial
+// build→external-sign→submit split end-to-end. Owner (Ingrid) and operator
+// (Alice) are distinct keys, validating that the LP cell's
+// operator_lock_hash field is set independently of who signs the deposit.
+// Alice's private key is never used — only her lock hash is referenced.
+func TestNonCustodialLPDepositAndWithdrawDevnet(t *testing.T) {
+	lpDeployment, ok := loadOrSkipLPDeployment(t)
+	if !ok {
+		return
+	}
+	lpCell, ok := loadOrSkipLPCellSpec(t)
+	if !ok {
+		return
+	}
+
+	rpcClient, err := rpc.Dial(ckbtest.DevnetRpcNodeURL)
+	require.NoError(t, err)
+	ensureLPDeploymentOnChainOrSkip(t, rpcClient, lpDeployment)
+
+	deployment := loadDevnetDeploymentRequire(t)
+	ownerSigner := newIngridSigner(t, deployment.Network)
+	transactor := backend.NewRPCTransactor(rpcClient, ownerSigner)
+	adapter := NewAdapter(rpcClient, ownerSigner, transactor, deployment, lpDeployment)
+	ctx := context.Background()
+
+	keyAlice, err := ckbtest.GetKey(filepath.Join("..", "..", "devnet", "accounts", "alice.pk"))
+	require.NoError(t, err)
+	aliceParticipant, err := ckbaddress.NewDefaultParticipant(keyAlice.PubKey())
+	require.NoError(t, err)
+	aliceLockHash := aliceParticipant.ToCKBAddress(deployment.Network).Script.Hash()
+	ownerLockHash := ownerSigner.Address().Script.Hash()
+	require.NotEqual(t, ownerLockHash, aliceLockHash,
+		"owner and operator lock hashes must differ to validate the delegation flow")
+
+	lpCell.AvailableCKB = 80_000_000_000
+
+	depositTx, lpCellID, err := adapter.BuildLPDepositTxUnsigned(ctx, lpCell, aliceLockHash)
+	require.NoError(t, err)
+	require.NotNil(t, depositTx)
+	require.NotEmpty(t, lpCellID)
+
+	signedDeposit, err := ownerSigner.SignTransaction(depositTx)
+	require.NoError(t, err)
+
+	txHash, err := adapter.SubmitSignedTx(ctx, signedDeposit)
+	require.NoError(t, err)
+	require.Equal(t, fmt.Sprintf("%s:0", txHash.String()), lpCellID,
+		"predicted lpCellID must equal the submitted tx hash :0")
+
+	info, err := adapter.GetLPCell(ctx, lpCellID)
+	require.NoError(t, err)
+	require.Equal(t, [32]byte(ownerLockHash), info.Cell.OwnerLockHash, "owner must be the signer (Ingrid)")
+	require.Equal(t, [32]byte(aliceLockHash), info.Cell.OperatorLockHash, "operator must be Alice")
+	require.Equal(t, uint64(0), info.Cell.Nonce)
+	require.True(t, info.Cell.Active)
+
+	withdrawAmount := uint64(100_000_000)
+	if withdrawAmount > info.Cell.AvailableCKB {
+		withdrawAmount = info.Cell.AvailableCKB
+	}
+	require.NotZero(t, withdrawAmount)
+
+	withdrawTx, err := adapter.BuildLPWithdrawTxUnsigned(ctx, lpCellID, withdrawAmount)
+	require.NoError(t, err)
+	require.NotNil(t, withdrawTx)
+
+	signedWithdraw, err := ownerSigner.SignTransaction(withdrawTx)
+	require.NoError(t, err)
+
+	withdrawHash, err := adapter.SubmitSignedTx(ctx, signedWithdraw)
+	require.NoError(t, err)
+
+	postWithdraw, err := adapter.GetLPCell(ctx, fmt.Sprintf("%s:0", withdrawHash.String()))
+	require.NoError(t, err)
+	require.Less(t, postWithdraw.Cell.AvailableCKB, info.Cell.AvailableCKB,
+		"AvailableCKB must decrease after withdraw")
+	require.Equal(t, info.Cell.Nonce+1, postWithdraw.Cell.Nonce, "Nonce must increment")
+	require.Equal(t, [32]byte(ownerLockHash), postWithdraw.Cell.OwnerLockHash, "owner preserved across withdraw")
+	require.Equal(t, [32]byte(aliceLockHash), postWithdraw.Cell.OperatorLockHash, "operator preserved across withdraw")
 }
 
 // TestLPFundAndSettleChannelDevnet is the end-to-end LP integration test.
@@ -204,7 +285,7 @@ func TestLPFundAndSettleChannelDevnet(t *testing.T) {
 	require.NoError(t, err)
 	ensureLPDeploymentOnChainOrSkip(t, rpcClient, lpDeployment)
 
-	signer := newBobSigner(t, deployment.Network)
+	signer := newIngridSigner(t, deployment.Network)
 	transactor := backend.NewRPCTransactor(rpcClient, signer)
 	adapter := NewAdapter(rpcClient, signer, transactor, deployment, lpDeployment)
 	ctx := context.Background()
@@ -305,13 +386,20 @@ func TestLPFundAndSettleChannelDevnet(t *testing.T) {
 	}
 }
 
-func newBobSigner(t *testing.T, network types.Network) backend.Signer {
-	keyBob, err := ckbtest.GetKey(filepath.Join("..", "..", "devnet", "accounts", "bob.pk"))
+// newIngridSigner returns a Signer for Ingrid. The LP adapter tests use Ingrid
+// (not Bob or Alice) so that the LP-cell deposits do not consume UTXOs Bob
+// and Alice rely on during the parallel client-package test run — otherwise
+// the channel-test BalanceReader, which sums only cells under the participant's
+// PaymentScript, sees Bob lose CKB to a deposit (the principal moves to a
+// cell with the LP lockscript, which the BalanceReader does not count) and
+// the balance-difference assertion fails non-deterministically.
+func newIngridSigner(t *testing.T, network types.Network) backend.Signer {
+	keyIngrid, err := ckbtest.GetKey(filepath.Join("..", "..", "devnet", "accounts", "ingrid.pk"))
 	require.NoError(t, err)
 
-	participant, err := ckbaddress.NewDefaultParticipant(keyBob.PubKey())
+	participant, err := ckbaddress.NewDefaultParticipant(keyIngrid.PubKey())
 	require.NoError(t, err)
 
 	addr := participant.ToCKBAddress(network)
-	return backend.NewSignerInstance(addr, *keyBob, network)
+	return backend.NewSignerInstance(addr, *keyIngrid, network)
 }

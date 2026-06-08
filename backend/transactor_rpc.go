@@ -34,6 +34,13 @@ func (t *RPCTransactor) SubmitTransaction(ctx context.Context, tx *ckbtransactio
 	return sendAndAwait(ctx, t.rpcClient, signedTx)
 }
 
+// SubmitSignedTransaction broadcasts an already-signed transaction and waits
+// for commitment. The signature must have been produced outside this
+// transactor's signer (non-custodial flows).
+func (t *RPCTransactor) SubmitSignedTransaction(ctx context.Context, signed *types.Transaction) (types.Hash, error) {
+	return sendAndAwait(ctx, t.rpcClient, signed)
+}
+
 const defaultPollingInterval = 2 * time.Second
 
 func sendAndAwait(ctx context.Context, rpcClient rpc.Client, tx *types.Transaction) (types.Hash, error) {

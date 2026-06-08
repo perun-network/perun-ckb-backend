@@ -66,6 +66,41 @@ func TestBuildSettleChannelInsertTxRejectsZeroContributionID(t *testing.T) {
 	require.True(t, IsDeterministic(err))
 }
 
+func TestBuildLPDepositTxUnsignedRejectsZeroAvailable(t *testing.T) {
+	adapter := &Adapter{}
+
+	_, _, err := adapter.BuildLPDepositTxUnsigned(
+		context.Background(),
+		LPCell{AvailableCKB: 0},
+		types.Hash{},
+	)
+
+	require.ErrorIs(t, err, ErrInvalidLPCellArg)
+	require.True(t, IsDeterministic(err))
+}
+
+func TestBuildLPWithdrawTxUnsignedRejectsZeroCkbOut(t *testing.T) {
+	adapter := &Adapter{}
+
+	_, err := adapter.BuildLPWithdrawTxUnsigned(
+		context.Background(),
+		"0x"+strings.Repeat("11", 32)+":0",
+		0,
+	)
+
+	require.ErrorIs(t, err, ErrInvalidLPCellArg)
+	require.True(t, IsDeterministic(err))
+}
+
+func TestSubmitSignedTxRejectsNonRPCTransactor(t *testing.T) {
+	adapter := &Adapter{}
+
+	_, err := adapter.SubmitSignedTx(context.Background(), &types.Transaction{})
+
+	require.ErrorIs(t, err, ErrUnsupportedTransactor)
+	require.True(t, IsDeterministic(err))
+}
+
 func TestBuildProxyChannelDataEncodesChannelID(t *testing.T) {
 	var channelHash types.Hash
 	channelHash[0] = 0x12

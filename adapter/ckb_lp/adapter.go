@@ -7,6 +7,7 @@ import (
 	"github.com/Pilatuz/bigz/uint128"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/indexer"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/rpc"
+	ckbtransaction "github.com/nervosnetwork/ckb-sdk-go/v2/transaction"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types"
 	"perun.network/perun-ckb-backend/backend"
 	"perun.network/perun-ckb-backend/client"
@@ -51,15 +52,33 @@ func (a *Adapter) BuildLPDepositTx(ctx context.Context, lpCell LPCell) (string, 
 // Used when an LP wants to delegate fund-extract/settle-insert to a separate
 // operator account.
 func (a *Adapter) BuildLPDepositTxWithOperator(ctx context.Context, lpCell LPCell, operatorLockHash types.Hash) (string, error) {
-	if lpCell.AvailableCKB == 0 {
-		return "", Deterministic(ErrInvalidLPCellArg)
-	}
-	operatorCell, err := a.selectLargestOperatorCell(ctx)
+	tx, lpOutpointID, err := a.BuildLPDepositTxUnsigned(ctx, lpCell, operatorLockHash)
 	if err != nil {
 		return "", err
 	}
+	if _, err := a.transactor.SubmitTransaction(ctx, tx); err != nil {
+		return "", Retriable(err)
+	}
+	return lpOutpointID, nil
+}
+
+// BuildLPDepositTxUnsigned builds an LP deposit transaction without signing or
+// submitting it. The caller is responsible for signing (typically via the LP
+// owner's external wallet) and broadcasting via SubmitSignedTx. lpOutpointID is
+// the predetermined "<txhash>:0" of the resulting LP cell; the CKB tx hash is
+// computed over the body excluding witnesses, so signing does not change it.
+// signer.Address() is used to set OwnerLockHash and select a funding UTXO;
+// signer.SignTransaction is never called on this path.
+func (a *Adapter) BuildLPDepositTxUnsigned(ctx context.Context, lpCell LPCell, operatorLockHash types.Hash) (*ckbtransaction.TransactionWithScriptGroups, string, error) {
+	if lpCell.AvailableCKB == 0 {
+		return nil, "", Deterministic(ErrInvalidLPCellArg)
+	}
+	operatorCell, err := a.selectLargestOperatorCell(ctx)
+	if err != nil {
+		return nil, "", err
+	}
 	if operatorCell.Output == nil {
-		return "", Deterministic(ErrInvalidLPCell)
+		return nil, "", Deterministic(ErrInvalidLPCell)
 	}
 
 	signerHash := a.signer.Address().Script.Hash()
@@ -72,15 +91,15 @@ func (a *Adapter) BuildLPDepositTxWithOperator(ctx context.Context, lpCell LPCel
 
 	data, err := EncodeLPCell(lpCell)
 	if err != nil {
-		return "", Deterministic(ErrInvalidLPCell)
+		return nil, "", Deterministic(ErrInvalidLPCell)
 	}
 
 	fee := transaction.DefaultFeeShannon
 	if lpCell.AvailableCKB < lpCellMinOccupiedShannons {
-		return "", Deterministic(ErrInvalidLPCellArg)
+		return nil, "", Deterministic(ErrInvalidLPCellArg)
 	}
 	if operatorCell.Output.Capacity <= lpCell.AvailableCKB+fee {
-		return "", Deterministic(ErrInsufficientOperatorFunds)
+		return nil, "", Deterministic(ErrInsufficientOperatorFunds)
 	}
 	change := operatorCell.Output.Capacity - lpCell.AvailableCKB - fee
 
@@ -100,7 +119,7 @@ func (a *Adapter) BuildLPDepositTxWithOperator(ctx context.Context, lpCell LPCel
 	builder.AddInput(&types.CellInput{PreviousOutput: operatorCell.OutPoint})
 	initLockWitnessPlaceholder(builder, 0)
 	if err := builder.SetWitness(0, types.WitnessTypeInputType, EncodeLPDepositWitness()); err != nil {
-		return "", Deterministic(ErrInvalidWitness)
+		return nil, "", Deterministic(ErrInvalidWitness)
 	}
 
 	builder.AddOutput(&types.CellOutput{
@@ -119,40 +138,51 @@ func (a *Adapter) BuildLPDepositTxWithOperator(ctx context.Context, lpCell LPCel
 
 	tx, err := builder.Build()
 	if err != nil {
-		return "", Deterministic(err)
+		return nil, "", Deterministic(err)
 	}
-
-	txHash, err := a.transactor.SubmitTransaction(ctx, tx)
-	if err != nil {
-		return "", Retriable(err)
-	}
-	return fmt.Sprintf("%s:%d", txHash.String(), 0), nil
+	return tx, fmt.Sprintf("%s:%d", tx.TxView.ComputeHash().String(), 0), nil
 }
 
 // BuildLPWithdrawTx builds and submits an LP withdraw transaction.
 func (a *Adapter) BuildLPWithdrawTx(ctx context.Context, lpCellID string, ckbOut uint64) (types.Hash, error) {
-	if ckbOut == 0 {
-		return types.Hash{}, Deterministic(ErrInvalidLPCellArg)
-	}
-	outPoint, err := parseOutPoint(lpCellID)
+	tx, err := a.BuildLPWithdrawTxUnsigned(ctx, lpCellID, ckbOut)
 	if err != nil {
-		return types.Hash{}, Deterministic(err)
+		return types.Hash{}, err
 	}
-	cell, err := a.rpcClient.GetLiveCell(ctx, outPoint, true)
+	txHash, err := a.transactor.SubmitTransaction(ctx, tx)
 	if err != nil {
 		return types.Hash{}, Retriable(err)
 	}
+	return txHash, nil
+}
+
+// BuildLPWithdrawTxUnsigned builds an LP withdraw transaction without signing
+// or submitting it. The caller signs externally (LP owner's wallet) and
+// broadcasts via SubmitSignedTx. signer.Address() is used to set up the change
+// output and lock-script group; signer.SignTransaction is never called here.
+func (a *Adapter) BuildLPWithdrawTxUnsigned(ctx context.Context, lpCellID string, ckbOut uint64) (*ckbtransaction.TransactionWithScriptGroups, error) {
+	if ckbOut == 0 {
+		return nil, Deterministic(ErrInvalidLPCellArg)
+	}
+	outPoint, err := parseOutPoint(lpCellID)
+	if err != nil {
+		return nil, Deterministic(err)
+	}
+	cell, err := a.rpcClient.GetLiveCell(ctx, outPoint, true)
+	if err != nil {
+		return nil, Retriable(err)
+	}
 	if cell == nil || cell.Cell == nil || cell.Cell.Output == nil || cell.Cell.Data == nil {
-		return types.Hash{}, Deterministic(ErrInvalidLPCell)
+		return nil, Deterministic(ErrInvalidLPCell)
 	}
 	inputLP, err := DecodeLPCell(cell.Cell.Data.Content)
 	if err != nil {
-		return types.Hash{}, Deterministic(ErrInvalidLPCell)
+		return nil, Deterministic(ErrInvalidLPCell)
 	}
 
 	fee := transaction.DefaultFeeShannon
 	if ckbOut+fee > inputLP.AvailableCKB {
-		return types.Hash{}, Deterministic(ErrInvalidLPCellArg)
+		return nil, Deterministic(ErrInvalidLPCellArg)
 	}
 
 	updatedLP := inputLP
@@ -160,15 +190,15 @@ func (a *Adapter) BuildLPWithdrawTx(ctx context.Context, lpCellID string, ckbOut
 	updatedLP.Nonce += 1
 	updatedLPData, err := EncodeLPCell(updatedLP)
 	if err != nil {
-		return types.Hash{}, Deterministic(ErrInvalidLPCell)
+		return nil, Deterministic(ErrInvalidLPCell)
 	}
 
 	ownerCell, err := a.selectLargestOperatorCell(ctx)
 	if err != nil {
-		return types.Hash{}, err
+		return nil, err
 	}
 	if ownerCell.Output == nil {
-		return types.Hash{}, Deterministic(ErrInvalidLPCell)
+		return nil, Deterministic(ErrInvalidLPCell)
 	}
 	change := ownerCell.Output.Capacity + ckbOut
 
@@ -192,7 +222,7 @@ func (a *Adapter) BuildLPWithdrawTx(ctx context.Context, lpCellID string, ckbOut
 	}
 	initLockWitnessPlaceholder(builder, 1)
 	if err := builder.SetWitness(0, types.WitnessTypeInputType, EncodeLPWithdrawWitness(ckbOut)); err != nil {
-		return types.Hash{}, Deterministic(ErrInvalidWitness)
+		return nil, Deterministic(ErrInvalidWitness)
 	}
 
 	builder.AddOutput(&types.CellOutput{
@@ -211,9 +241,21 @@ func (a *Adapter) BuildLPWithdrawTx(ctx context.Context, lpCellID string, ckbOut
 
 	tx, err := builder.Build()
 	if err != nil {
-		return types.Hash{}, Deterministic(err)
+		return nil, Deterministic(err)
 	}
-	txHash, err := a.transactor.SubmitTransaction(ctx, tx)
+	return tx, nil
+}
+
+// SubmitSignedTx broadcasts a transaction that has already been signed (for
+// example by the LP owner's external wallet) and waits for commitment. The
+// adapter's internal transactor must be *backend.RPCTransactor; otherwise
+// ErrUnsupportedTransactor is returned.
+func (a *Adapter) SubmitSignedTx(ctx context.Context, signed *types.Transaction) (types.Hash, error) {
+	rpcTx, ok := a.transactor.(*backend.RPCTransactor)
+	if !ok {
+		return types.Hash{}, Deterministic(ErrUnsupportedTransactor)
+	}
+	txHash, err := rpcTx.SubmitSignedTransaction(ctx, signed)
 	if err != nil {
 		return types.Hash{}, Retriable(err)
 	}

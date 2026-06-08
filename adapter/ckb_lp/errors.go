@@ -11,6 +11,7 @@ var (
 	ErrInvalidContributionID     = errors.New("invalid contribution id")
 	ErrScriptHashMismatch        = errors.New("script hash mismatch")
 	ErrInsufficientOperatorFunds = errors.New("insufficient operator funding")
+	ErrUnsupportedTransactor     = errors.New("transactor does not support pre-signed transaction submission")
 )
 
 // ErrorKind classifies adapter errors for hub cleanup behavior.
