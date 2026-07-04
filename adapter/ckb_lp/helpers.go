@@ -46,3 +46,20 @@ func outPointKey(outPoint *types.OutPoint) string {
 func isZeroHash(hash types.Hash) bool {
 	return hash == (types.Hash{})
 }
+
+// updatedLPCellCapacity returns the rebuilt LP cell's capacity after taking
+// take shannons out of a live cell with capacity current. It enforces CKB's
+// occupied-capacity rule for the LP cell shape: the remainder must stay at or
+// above MinLPCellOccupiedShannons, or the verifier rejects the transaction
+// with InsufficientCellCapacity. Both violations are deterministic — retrying
+// the same transaction can never succeed.
+func updatedLPCellCapacity(current, take uint64) (uint64, error) {
+	if current < take {
+		return 0, Deterministic(ErrInvalidLPCellArg)
+	}
+	remaining := current - take
+	if remaining < MinLPCellOccupiedShannons {
+		return 0, Deterministic(ErrInsufficientLPCellCapacity)
+	}
+	return remaining, nil
+}

@@ -103,7 +103,7 @@ func (a *Adapter) BuildLPDepositTxUnsigned(ctx context.Context, lpCell LPCell, o
 	}
 
 	fee := transaction.DefaultFeeShannon
-	if lpCell.AvailableCKB < lpCellMinOccupiedShannons {
+	if lpCell.AvailableCKB < MinLPCellOccupiedShannons {
 		return nil, "", Deterministic(ErrInvalidLPCellArg)
 	}
 	if operatorCell.Output.Capacity <= lpCell.AvailableCKB+fee {
@@ -200,6 +200,10 @@ func (a *Adapter) BuildLPWithdrawTxUnsigned(ctx context.Context, lpCellID string
 	if ckbOut+fee > inputLP.AvailableCKB {
 		return nil, Deterministic(ErrInvalidLPCellArg)
 	}
+	updatedLPCap, err := updatedLPCellCapacity(cell.Cell.Output.Capacity, ckbOut+fee)
+	if err != nil {
+		return nil, err
+	}
 
 	updatedLP := inputLP
 	updatedLP.AvailableCKB -= ckbOut + fee
@@ -242,7 +246,7 @@ func (a *Adapter) BuildLPWithdrawTxUnsigned(ctx context.Context, lpCellID string
 	}
 
 	builder.AddOutput(&types.CellOutput{
-		Capacity: cell.Cell.Output.Capacity - ckbOut - fee,
+		Capacity: updatedLPCap,
 		Lock:     cell.Cell.Output.Lock,
 		Type:     cell.Cell.Output.Type,
 	}, updatedLPData)
@@ -354,10 +358,10 @@ func (a *Adapter) BuildFundChannelTx(
 		return types.Hash{}, Deterministic(ErrInsufficientOperatorFunds)
 	}
 	operatorChange := operatorCell.Output.Capacity - fee
-	if cell.Cell.Output.Capacity < amount {
-		return types.Hash{}, Deterministic(ErrInvalidLPCellArg)
+	updatedLPCap, err := updatedLPCellCapacity(cell.Cell.Output.Capacity, amount)
+	if err != nil {
+		return types.Hash{}, err
 	}
-	updatedLPCap := cell.Cell.Output.Capacity - amount
 
 	builder, err := a.newPerunTxBuilder()
 	if err != nil {

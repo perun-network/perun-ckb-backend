@@ -85,7 +85,7 @@ func TestBuildLPDepositTxUnsignedRejectsNilOwnerScript(t *testing.T) {
 
 	_, _, err := adapter.BuildLPDepositTxUnsigned(
 		context.Background(),
-		LPCell{AvailableCKB: lpCellMinOccupiedShannons},
+		LPCell{AvailableCKB: MinLPCellOccupiedShannons},
 		nil,
 		types.Hash{},
 	)
@@ -128,6 +128,38 @@ func TestSubmitSignedTxRejectsNonRPCTransactor(t *testing.T) {
 	_, err := adapter.SubmitSignedTx(context.Background(), &types.Transaction{})
 
 	require.ErrorIs(t, err, ErrUnsupportedTransactor)
+	require.True(t, IsDeterministic(err))
+}
+
+// TestUpdatedLPCellCapacity locks the occupied-capacity floor for the rebuilt
+// LP cell in fund-extract and LP-withdraw. The numbers replay the fullcycle6
+// failure: a 500-CKB cell cannot serve a 380-CKB extract (remainder 120 CKB <
+// 323 CKB occupied), while a 4000-CKB cell can (remainder 3620 CKB).
+func TestUpdatedLPCellCapacity(t *testing.T) {
+	const ckb = uint64(100_000_000) // shannons per CKB
+
+	// The dust cell from the bug report: rejected, deterministic.
+	_, err := updatedLPCellCapacity(500*ckb, 380*ckb)
+	require.ErrorIs(t, err, ErrInsufficientLPCellCapacity)
+	require.True(t, IsDeterministic(err))
+
+	// The 4000-CKB cell survives the same extract.
+	got, err := updatedLPCellCapacity(4000*ckb, 380*ckb)
+	require.NoError(t, err)
+	require.Equal(t, 3620*ckb, got)
+
+	// Exactly at the floor is allowed (remainder == occupied).
+	got, err = updatedLPCellCapacity(380*ckb+MinLPCellOccupiedShannons, 380*ckb)
+	require.NoError(t, err)
+	require.Equal(t, uint64(MinLPCellOccupiedShannons), got)
+
+	// One shannon below the floor is rejected.
+	_, err = updatedLPCellCapacity(380*ckb+MinLPCellOccupiedShannons-1, 380*ckb)
+	require.ErrorIs(t, err, ErrInsufficientLPCellCapacity)
+
+	// Taking more than the cell holds is rejected, deterministic.
+	_, err = updatedLPCellCapacity(100*ckb, 380*ckb)
+	require.ErrorIs(t, err, ErrInvalidLPCellArg)
 	require.True(t, IsDeterministic(err))
 }
 
