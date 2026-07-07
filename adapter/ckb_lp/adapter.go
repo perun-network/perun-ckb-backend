@@ -3,6 +3,7 @@ package ckblp
 import (
 	"context"
 	"fmt"
+	"sort"
 
 	"github.com/Pilatuz/bigz/uint128"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/indexer"
@@ -82,14 +83,6 @@ func (a *Adapter) BuildLPDepositTxUnsigned(ctx context.Context, lpCell LPCell, o
 	if ownerScript == nil {
 		return nil, "", Deterministic(ErrInvalidLPCellArg)
 	}
-	operatorCell, err := a.selectLargestCellByLock(ctx, ownerScript)
-	if err != nil {
-		return nil, "", err
-	}
-	if operatorCell.Output == nil {
-		return nil, "", Deterministic(ErrInvalidLPCell)
-	}
-
 	lpCell.OwnerLockHash = ownerScript.Hash()
 	lpCell.OperatorLockHash = operatorLockHash
 	lpCell.ReservedCKB = 0
@@ -106,10 +99,14 @@ func (a *Adapter) BuildLPDepositTxUnsigned(ctx context.Context, lpCell LPCell, o
 	if lpCell.AvailableCKB < MinLPCellOccupiedShannons {
 		return nil, "", Deterministic(ErrInvalidLPCellArg)
 	}
-	if operatorCell.Output.Capacity <= lpCell.AvailableCKB+fee {
-		return nil, "", Deterministic(ErrInsufficientOperatorFunds)
+	// The change output must itself satisfy CKB's occupied-capacity floor, so
+	// the inputs have to cover deposit + fee + a valid change cell.
+	minChange := types.CellOutput{Lock: ownerScript}.OccupiedCapacity([]byte{})
+	fundingCells, fundingTotal, err := a.selectCellsByLockForAmount(ctx, ownerScript, lpCell.AvailableCKB+fee+minChange)
+	if err != nil {
+		return nil, "", err
 	}
-	change := operatorCell.Output.Capacity - lpCell.AvailableCKB - fee
+	change := fundingTotal - lpCell.AvailableCKB - fee
 
 	lockScript, typeScript := buildLPScriptsFromDeployment(a.lpDeployment, lpCell.PoolID)
 
@@ -124,7 +121,11 @@ func (a *Adapter) BuildLPDepositTxUnsigned(ctx context.Context, lpCell LPCell, o
 	builder.AddCellDep(&a.lpDeployment.TypeScriptDep)
 	builder.AddCellDep(&a.lpDeployment.LockScriptDep)
 
-	builder.AddInput(&types.CellInput{PreviousOutput: operatorCell.OutPoint})
+	inputIndices := make([]uint32, len(fundingCells))
+	for i, fundingCell := range fundingCells {
+		builder.AddInput(&types.CellInput{PreviousOutput: fundingCell.OutPoint})
+		inputIndices[i] = uint32(i)
+	}
 	initLockWitnessPlaceholder(builder, 0)
 	if err := builder.SetWitness(0, types.WitnessTypeInputType, EncodeLPDepositWitness()); err != nil {
 		return nil, "", Deterministic(ErrInvalidWitness)
@@ -138,11 +139,11 @@ func (a *Adapter) BuildLPDepositTxUnsigned(ctx context.Context, lpCell LPCell, o
 
 	builder.AddOutput(&types.CellOutput{
 		Capacity: change,
-		Lock:     operatorCell.Output.Lock,
+		Lock:     fundingCells[0].Output.Lock,
 		Type:     nil,
 	}, []byte{})
 
-	addInputLockScriptGroup(builder, 0, operatorCell.Output.Lock)
+	addInputLockScriptGroup(builder, fundingCells[0].Output.Lock, inputIndices...)
 
 	tx, err := builder.Build()
 	if err != nil {
@@ -257,7 +258,7 @@ func (a *Adapter) BuildLPWithdrawTxUnsigned(ctx context.Context, lpCellID string
 		Type:     nil,
 	}, []byte{})
 
-	addInputLockScriptGroup(builder, 1, ownerCell.Output.Lock)
+	addInputLockScriptGroup(builder, ownerCell.Output.Lock, 1)
 
 	tx, err := builder.Build()
 	if err != nil {
@@ -617,6 +618,40 @@ func (a *Adapter) selectLargestOperatorCell(ctx context.Context) (*indexer.LiveC
 // path to fund the deposit/withdraw from any caller's account without
 // requiring the adapter's configured signer to be the owner.
 func (a *Adapter) selectLargestCellByLock(ctx context.Context, lockScript *types.Script) (*indexer.LiveCell, error) {
+	candidates, err := a.plainCellsByLock(ctx, lockScript)
+	if err != nil {
+		return nil, err
+	}
+	if len(candidates) == 0 {
+		return nil, Deterministic(ErrInsufficientOperatorFunds)
+	}
+	return candidates[0], nil
+}
+
+// selectCellsByLockForAmount gathers plain (no type script, non-LP) UTXOs
+// locked by the given script, largest first, until their combined capacity
+// reaches target. Accounts fragment into change cells over time, so funding
+// must be able to span inputs rather than require one cell to cover it all.
+func (a *Adapter) selectCellsByLockForAmount(ctx context.Context, lockScript *types.Script, target uint64) ([]*indexer.LiveCell, uint64, error) {
+	candidates, err := a.plainCellsByLock(ctx, lockScript)
+	if err != nil {
+		return nil, 0, err
+	}
+	var selected []*indexer.LiveCell
+	var total uint64
+	for _, cell := range candidates {
+		selected = append(selected, cell)
+		total += cell.Output.Capacity
+		if total >= target {
+			return selected, total, nil
+		}
+	}
+	return nil, 0, Deterministic(ErrInsufficientOperatorFunds)
+}
+
+// plainCellsByLock returns the live plain (no type script, non-LP) UTXOs
+// locked by the given script, sorted by capacity descending.
+func (a *Adapter) plainCellsByLock(ctx context.Context, lockScript *types.Script) ([]*indexer.LiveCell, error) {
 	if lockScript == nil {
 		return nil, Deterministic(ErrInvalidLPCellArg)
 	}
@@ -630,7 +665,7 @@ func (a *Adapter) selectLargestCellByLock(ctx context.Context, lockScript *types
 	if err != nil {
 		return nil, Retriable(err)
 	}
-	var best *indexer.LiveCell
+	candidates := make([]*indexer.LiveCell, 0, len(resp.Objects))
 	for _, cell := range resp.Objects {
 		if cell.Output == nil || cell.Output.Type != nil {
 			continue
@@ -638,14 +673,12 @@ func (a *Adapter) selectLargestCellByLock(ctx context.Context, lockScript *types
 		if IsLPCell(cell.OutputData) {
 			continue
 		}
-		if best == nil || cell.Output.Capacity > best.Output.Capacity {
-			best = cell
-		}
+		candidates = append(candidates, cell)
 	}
-	if best == nil {
-		return nil, Deterministic(ErrInsufficientOperatorFunds)
-	}
-	return best, nil
+	sort.Slice(candidates, func(i, j int) bool {
+		return candidates[i].Output.Capacity > candidates[j].Output.Capacity
+	})
+	return candidates, nil
 }
 
 func buildLPScriptsFromDeployment(lpDeployment LPDeployment, poolID [32]byte) (types.Script, types.Script) {

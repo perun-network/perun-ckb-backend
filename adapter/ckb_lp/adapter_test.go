@@ -7,9 +7,12 @@ import (
 	"testing"
 
 	"github.com/Pilatuz/bigz/uint128"
+	"github.com/nervosnetwork/ckb-sdk-go/v2/indexer"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types/molecule"
 	"github.com/stretchr/testify/require"
+	"perun.network/perun-ckb-backend/backend"
+	clienttest "perun.network/perun-ckb-backend/client/test"
 	ckbencoding "perun.network/perun-ckb-backend/encoding"
 	"perun.network/perun-ckb-backend/transaction"
 )
@@ -173,6 +176,106 @@ func TestBuildProxyChannelDataEncodesChannelID(t *testing.T) {
 	require.Equal(t, channelHash, types.UnpackHash(status.State().ChannelId()))
 	require.False(t, ckbencoding.ToBool(*status.Funded()))
 	require.False(t, ckbencoding.ToBool(*status.Disputed()))
+}
+
+func TestBuildLPDepositTxUnsignedGathersMultipleFundingCells(t *testing.T) {
+	const ckb = uint64(100_000_000)
+	ownerScript := &types.Script{
+		CodeHash: types.BytesToHash([]byte{0x01}),
+		HashType: types.HashTypeType,
+		Args:     make([]byte, 20),
+	}
+	// Fragmented owner account: no single cell covers the 4000 CKB deposit,
+	// but the two largest together do.
+	cells := []*indexer.LiveCell{
+		fundingCell(0xaa, 3213*ckb, ownerScript),
+		fundingCell(0xbb, 1288*ckb, ownerScript),
+		fundingCell(0xcc, 300*ckb, ownerScript),
+	}
+	adapter := &Adapter{
+		rpcClient:    mockRPCWithCells(cells),
+		deployment: backend.Deployment{
+			DefaultLockScript:    types.Script{CodeHash: ownerScript.CodeHash},
+			DefaultLockScriptDep: types.CellDep{OutPoint: &types.OutPoint{TxHash: types.Hash{0x05}, Index: 0}, DepType: types.DepTypeCode},
+		},
+		lpDeployment: testLPDeployment(),
+	}
+
+	deposit := 4000 * ckb
+	tx, expectedOutpoint, err := adapter.BuildLPDepositTxUnsigned(
+		context.Background(),
+		LPCell{AvailableCKB: deposit},
+		ownerScript,
+		types.Hash{0x02},
+	)
+
+	require.NoError(t, err)
+	require.Len(t, tx.TxView.Inputs, 2)
+	require.Len(t, tx.TxView.Outputs, 2)
+	require.Equal(t, deposit, tx.TxView.Outputs[0].Capacity)
+	inTotal := (3213 + 1288) * ckb
+	require.Equal(t, inTotal-deposit-transaction.DefaultFeeShannon, tx.TxView.Outputs[1].Capacity)
+	require.Len(t, tx.TxView.Witnesses, 2)
+	require.Len(t, tx.ScriptGroups, 1)
+	require.Equal(t, []uint32{0, 1}, tx.ScriptGroups[0].InputIndices)
+	require.NotEmpty(t, expectedOutpoint)
+}
+
+func TestBuildLPDepositTxUnsignedRejectsWhenTotalFundsInsufficient(t *testing.T) {
+	const ckb = uint64(100_000_000)
+	ownerScript := &types.Script{
+		CodeHash: types.BytesToHash([]byte{0x01}),
+		HashType: types.HashTypeType,
+		Args:     make([]byte, 20),
+	}
+	cells := []*indexer.LiveCell{
+		fundingCell(0xaa, 300*ckb, ownerScript),
+		fundingCell(0xbb, 200*ckb, ownerScript),
+	}
+	adapter := &Adapter{
+		rpcClient:    mockRPCWithCells(cells),
+		deployment: backend.Deployment{
+			DefaultLockScript:    types.Script{CodeHash: ownerScript.CodeHash},
+			DefaultLockScriptDep: types.CellDep{OutPoint: &types.OutPoint{TxHash: types.Hash{0x05}, Index: 0}, DepType: types.DepTypeCode},
+		},
+		lpDeployment: testLPDeployment(),
+	}
+
+	_, _, err := adapter.BuildLPDepositTxUnsigned(
+		context.Background(),
+		LPCell{AvailableCKB: 4000 * ckb},
+		ownerScript,
+		types.Hash{0x02},
+	)
+
+	require.ErrorIs(t, err, ErrInsufficientOperatorFunds)
+	require.True(t, IsDeterministic(err))
+}
+
+func testLPDeployment() LPDeployment {
+	return LPDeployment{
+		TypeScriptDep:      types.CellDep{OutPoint: &types.OutPoint{TxHash: types.Hash{0x06}, Index: 0}, DepType: types.DepTypeCode},
+		LockScriptDep:      types.CellDep{OutPoint: &types.OutPoint{TxHash: types.Hash{0x07}, Index: 0}, DepType: types.DepTypeCode},
+		TypeScriptCodeHash: types.Hash{0x03},
+		TypeScriptHashType: types.HashTypeType,
+		LockScriptCodeHash: types.Hash{0x04},
+		LockScriptHashType: types.HashTypeType,
+	}
+}
+
+func fundingCell(txHashByte byte, capacity uint64, lock *types.Script) *indexer.LiveCell {
+	return &indexer.LiveCell{
+		OutPoint: &types.OutPoint{TxHash: types.Hash{txHashByte}, Index: 0},
+		Output:   &types.CellOutput{Capacity: capacity, Lock: lock},
+	}
+}
+
+func mockRPCWithCells(cells []*indexer.LiveCell) *clienttest.MockRPCClient {
+	mock := clienttest.NewMockRPCClient()
+	mock.SetGetCells(func(_ context.Context, _ *indexer.SearchKey, _ indexer.SearchOrder, _ uint64, _ string) (*indexer.LiveCells, error) {
+		return &indexer.LiveCells{Objects: cells}, nil
+	})
+	return mock
 }
 
 func bigOne() *big.Int {

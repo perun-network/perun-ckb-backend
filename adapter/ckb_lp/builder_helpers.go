@@ -6,14 +6,14 @@ import (
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types"
 )
 
-func addInputLockScriptGroup(builder *ckbbuilder.SimpleTransactionBuilder, inputIndex uint32, lockScript *types.Script) {
-	if lockScript == nil {
+func addInputLockScriptGroup(builder *ckbbuilder.SimpleTransactionBuilder, lockScript *types.Script, inputIndices ...uint32) {
+	if lockScript == nil || len(inputIndices) == 0 {
 		return
 	}
 	group := &ckbtransaction.ScriptGroup{
 		Script:       lockScript,
 		GroupType:    types.ScriptTypeLock,
-		InputIndices: []uint32{inputIndex},
+		InputIndices: inputIndices,
 	}
 	builder.AddScriptGroup(group)
 }
