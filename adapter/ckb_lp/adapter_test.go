@@ -27,6 +27,7 @@ func TestBuildSettleChannelInsertTxRejectsZeroPrice(t *testing.T) {
 		"",
 		0,
 		0,
+		0,
 		uint128.Uint128{},
 	)
 
@@ -61,6 +62,7 @@ func TestBuildSettleChannelInsertTxRejectsZeroContributionID(t *testing.T) {
 		zeroContribution,
 		"0x"+strings.Repeat("22", 32)+":0",
 		1,
+		0,
 		0,
 		uint128.FromBig(bigOne()),
 	)

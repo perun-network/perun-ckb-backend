@@ -32,10 +32,15 @@ type LPSettleInsertInfo struct {
 	OperatorChangeCap uint64
 
 	// Principal is the CKB amount being returned to the LP cell from the
-	// settled channel position (decreases LP.ReservedCKB by Principal).
+	// settled channel position.
 	Principal uint64
 	// FeeCKB is the operator's fee paid to the LP (increases LP.CumulativeFeesEarnedCKB).
 	FeeCKB uint64
+	// TradedCKB is the portion of the channel's extract that was sold to the
+	// peer during the swap and does not return. Principal+TradedCKB together
+	// release the channel's full reservation (decrease LP.ReservedCKB), and
+	// the LP policy fee applies to TradedCKB.
+	TradedCKB uint64
 	// PriceX64 is the operator-declared price for this settlement, validated
 	// against LP policy by the adapter before this struct is built.
 	PriceX64 uint128.Uint128
@@ -59,6 +64,7 @@ func NewLPSettleInsertInfo(
 	operatorChangeCap uint64,
 	principal uint64,
 	feeCKB uint64,
+	tradedCKB uint64,
 	priceX64 uint128.Uint128,
 	channelID types.Hash,
 	contributionID types.Hash,
@@ -74,6 +80,7 @@ func NewLPSettleInsertInfo(
 		OperatorChangeCap: operatorChangeCap,
 		Principal:         principal,
 		FeeCKB:            feeCKB,
+		TradedCKB:         tradedCKB,
 		PriceX64:          priceX64,
 		ChannelID:         channelID,
 		ContributionID:    contributionID,

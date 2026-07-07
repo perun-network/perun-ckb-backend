@@ -36,14 +36,17 @@ func TestEncodeSettleChannelInsertWitness(t *testing.T) {
 	priceBig.Add(priceBig, big.NewInt(5))
 	priceX64 := uint128.FromBig(priceBig)
 
-	witness := EncodeSettleChannelInsertWitness(channelID, contribID, 100, 7, priceX64)
+	witness := EncodeSettleChannelInsertWitness(channelID, contribID, 100, 7, 93, priceX64)
 
 	require.Len(t, witness, witnessLenSettleChannelInsert)
 	require.Equal(t, opSettleChannelInsert, witness[0])
 	require.Equal(t, channelID[:], witness[1:33])
 	require.Equal(t, contribID[:], witness[33:65])
+	require.Equal(t, byte(100), witness[65])
+	require.Equal(t, byte(7), witness[73])
+	require.Equal(t, byte(93), witness[81])
 
 	var expectedPrice [16]byte
 	uint128.StoreLittleEndian(expectedPrice[:], priceX64)
-	require.Equal(t, expectedPrice[:], witness[81:97])
+	require.Equal(t, expectedPrice[:], witness[89:105])
 }

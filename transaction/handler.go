@@ -1031,7 +1031,7 @@ func (psh *PerunScriptHandler) buildSettleInsertLPTransaction(builder collector.
 	// Input 0: LP cell, with PoolWitness.
 	lpInputIdx := builder.AddInput(&si.LPInput)
 	if err := builder.SetWitness(uint(lpInputIdx), types.WitnessTypeInputType,
-		EncodeSettleChannelInsertWitness(si.ChannelID, si.ContributionID, si.Principal, si.FeeCKB, si.PriceX64)); err != nil {
+		EncodeSettleChannelInsertWitness(si.ChannelID, si.ContributionID, si.Principal, si.FeeCKB, si.TradedCKB, si.PriceX64)); err != nil {
 		return false, fmt.Errorf("setting LP settle witness: %w", err)
 	}
 	// Input 1: operator auth cell (provides principal + fee + tx fee).

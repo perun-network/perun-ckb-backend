@@ -15,7 +15,7 @@ const (
 	opSettleChannelInsert byte = 0x44
 
 	witnessLenFundChannelExtract  = 73
-	witnessLenSettleChannelInsert = 97
+	witnessLenSettleChannelInsert = 105
 )
 
 // BuildProxyChannelData encodes a minimal ChannelStatus molecule whose only
@@ -66,8 +66,9 @@ func EncodeFundChannelExtractWitness(channelID, contributionID types.Hash, extra
 //	[33..65]   contribution_id (32 B)
 //	[65..73]   principal_returned (u64 LE)
 //	[73..81]   fee_ckb (u64 LE)
-//	[81..97]   price_x64 (u128 LE)
-func EncodeSettleChannelInsertWitness(channelID, contributionID types.Hash, principal, feeCKB uint64, priceX64 uint128.Uint128) []byte {
+//	[81..89]   traded_ckb (u64 LE)
+//	[89..105]  price_x64 (u128 LE)
+func EncodeSettleChannelInsertWitness(channelID, contributionID types.Hash, principal, feeCKB, tradedCKB uint64, priceX64 uint128.Uint128) []byte {
 	buf := make([]byte, 0, witnessLenSettleChannelInsert)
 	buf = append(buf, opSettleChannelInsert)
 	buf = append(buf, channelID[:]...)
@@ -77,6 +78,8 @@ func EncodeSettleChannelInsertWitness(channelID, contributionID types.Hash, prin
 	binary.LittleEndian.PutUint64(tmp[:], principal)
 	buf = append(buf, tmp[:]...)
 	binary.LittleEndian.PutUint64(tmp[:], feeCKB)
+	buf = append(buf, tmp[:]...)
+	binary.LittleEndian.PutUint64(tmp[:], tradedCKB)
 	buf = append(buf, tmp[:]...)
 
 	var tmp128 [16]byte

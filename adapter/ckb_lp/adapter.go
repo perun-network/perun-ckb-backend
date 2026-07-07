@@ -3,6 +3,7 @@ package ckblp
 import (
 	"context"
 	"fmt"
+	"math"
 	"sort"
 
 	"github.com/Pilatuz/bigz/uint128"
@@ -412,6 +413,7 @@ func (a *Adapter) BuildSettleChannelInsertTx(
 	lpCellID string,
 	principal uint64,
 	feeCKB uint64,
+	tradedCKB uint64,
 	priceX64 uint128.Uint128,
 ) (types.Hash, error) {
 	if priceX64 == (uint128.Uint128{}) {
@@ -454,7 +456,13 @@ func (a *Adapter) BuildSettleChannelInsertTx(
 	if inputLP.OperatorLockHash != operatorLockHash {
 		return types.Hash{}, Deterministic(ErrScriptHashMismatch)
 	}
-	if principal > inputLP.ReservedCKB {
+	// Principal (the extract's returned remainder) and tradedCKB (the portion
+	// sold to the peer) together release the channel's full reservation.
+	if tradedCKB > math.MaxUint64-principal {
+		return types.Hash{}, Deterministic(ErrInvalidLPCellArg)
+	}
+	reservedRelease := principal + tradedCKB
+	if reservedRelease > inputLP.ReservedCKB {
 		return types.Hash{}, Deterministic(ErrInvalidLPCellArg)
 	}
 	if (inputLP.Policy.PolicyFlags&policyFlagRequirePrice) != 0 && priceX64 == (uint128.Uint128{}) {
@@ -465,6 +473,19 @@ func (a *Adapter) BuildSettleChannelInsertTx(
 			return types.Hash{}, Deterministic(ErrInvalidLPCellArg)
 		}
 	}
+	// Mirror the typescript's fee-policy rule: the policy fee is computed on
+	// the traded notional, and Enforce{Max,Min}Fee bound feeCKB against it.
+	if inputLP.Policy.FeeRateBps != 0 &&
+		(inputLP.Policy.PolicyFlags&(policyFlagEnforceMaxFee|policyFlagEnforceMinFee)) != 0 {
+		policyFee := uint128.From64(tradedCKB).Mul64(uint64(inputLP.Policy.FeeRateBps)).Div64(10_000)
+		fee := uint128.From64(feeCKB)
+		if (inputLP.Policy.PolicyFlags&policyFlagEnforceMaxFee) != 0 && fee.Cmp(policyFee) > 0 {
+			return types.Hash{}, Deterministic(ErrInvalidLPCellArg)
+		}
+		if (inputLP.Policy.PolicyFlags&policyFlagEnforceMinFee) != 0 && fee.Cmp(policyFee) < 0 {
+			return types.Hash{}, Deterministic(ErrInvalidLPCellArg)
+		}
+	}
 
 	operatorCell, err := a.selectLargestOperatorCell(ctx)
 	if err != nil {
@@ -472,7 +493,7 @@ func (a *Adapter) BuildSettleChannelInsertTx(
 	}
 	updatedLP := inputLP
 	updatedLP.AvailableCKB += principal + feeCKB
-	updatedLP.ReservedCKB -= principal
+	updatedLP.ReservedCKB -= reservedRelease
 	updatedLP.CumulativeFeesEarnedCKB += feeCKB
 	updatedLP.Nonce += 1
 	updatedLPData, err := EncodeLPCell(updatedLP)
@@ -506,6 +527,7 @@ func (a *Adapter) BuildSettleChannelInsertTx(
 		OperatorChangeCap: operatorChange,
 		Principal:         principal,
 		FeeCKB:            feeCKB,
+		TradedCKB:         tradedCKB,
 		PriceX64:          priceX64,
 		ChannelID:         channelHash,
 		ContributionID:    contribHash,

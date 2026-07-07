@@ -344,7 +344,7 @@ func TestLPFundAndSettleChannelDevnet(t *testing.T) {
 	feeCKB := uint64(100_000_000)
 	priceX64 := uint128.FromBig(big.NewInt(1))
 
-	settleHash, err := adapter.BuildSettleChannelInsertTx(ctx, channelID, "", lpCellIDAfterFund, principal, feeCKB, priceX64)
+	settleHash, err := adapter.BuildSettleChannelInsertTx(ctx, channelID, "", lpCellIDAfterFund, principal, feeCKB, 0, priceX64)
 	require.NoError(t, err)
 
 	lpCellIDAfterSettle := fmt.Sprintf("%s:0", settleHash.String())
