@@ -223,6 +223,58 @@ func TestBuildLPDepositTxUnsignedGathersMultipleFundingCells(t *testing.T) {
 	require.NotEmpty(t, expectedOutpoint)
 }
 
+// The funding script pays, but a caller may pre-set the cell owner (payer/owner
+// decoupling — the devnet seeder pays from bob's default lock while the owner
+// is his omnilock identity). A zero OwnerLockHash keeps the old default: the
+// funding script's hash.
+func TestBuildLPDepositTxUnsignedHonorsPresetOwner(t *testing.T) {
+	const ckb = uint64(100_000_000)
+	ownerScript := &types.Script{
+		CodeHash: types.BytesToHash([]byte{0x01}),
+		HashType: types.HashTypeType,
+		Args:     make([]byte, 20),
+	}
+	newAdapter := func() *Adapter {
+		return &Adapter{
+			rpcClient: mockRPCWithCells([]*indexer.LiveCell{
+				fundingCell(0xaa, 1000*ckb, ownerScript),
+			}),
+			deployment: backend.Deployment{
+				DefaultLockScript:    types.Script{CodeHash: ownerScript.CodeHash},
+				DefaultLockScriptDep: types.CellDep{OutPoint: &types.OutPoint{TxHash: types.Hash{0x05}, Index: 0}, DepType: types.DepTypeCode},
+			},
+			lpDeployment: testLPDeployment(),
+		}
+	}
+
+	// Default: zero owner in the spec -> the funding script's hash.
+	tx, _, err := newAdapter().BuildLPDepositTxUnsigned(
+		context.Background(),
+		LPCell{AvailableCKB: 500 * ckb},
+		ownerScript,
+		types.Hash{0x02},
+	)
+	require.NoError(t, err)
+	got, err := DecodeLPCell(tx.TxView.OutputsData[0])
+	require.NoError(t, err)
+	require.Equal(t, [32]byte(ownerScript.Hash()), got.OwnerLockHash)
+
+	// Pre-set owner survives even though a different script funds the cell.
+	var presetOwner [32]byte
+	presetOwner[0] = 0x91
+	presetOwner[31] = 0xb7
+	tx, _, err = newAdapter().BuildLPDepositTxUnsigned(
+		context.Background(),
+		LPCell{AvailableCKB: 500 * ckb, OwnerLockHash: presetOwner},
+		ownerScript,
+		types.Hash{0x02},
+	)
+	require.NoError(t, err)
+	got, err = DecodeLPCell(tx.TxView.OutputsData[0])
+	require.NoError(t, err)
+	require.Equal(t, presetOwner, got.OwnerLockHash)
+}
+
 func TestBuildLPDepositTxUnsignedRejectsWhenTotalFundsInsufficient(t *testing.T) {
 	const ckb = uint64(100_000_000)
 	ownerScript := &types.Script{

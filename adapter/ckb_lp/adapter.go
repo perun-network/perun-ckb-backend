@@ -49,10 +49,10 @@ func (a *Adapter) BuildLPDepositTx(ctx context.Context, lpCell LPCell) (string, 
 }
 
 // BuildLPDepositTxWithOperator builds and submits an LP deposit transaction with
-// a caller-supplied operator lock hash. The signer pays for the cell and becomes
-// the owner; only the in-cell operator_lock_hash field diverges from the signer.
-// Used when an LP wants to delegate fund-extract/settle-insert to a separate
-// operator account.
+// a caller-supplied operator lock hash. The signer pays for the cell and — unless
+// lpCell.OwnerLockHash is pre-set — becomes the owner; the in-cell
+// operator_lock_hash always comes from the argument. Used when an LP wants to
+// delegate fund-extract/settle-insert to a separate operator account.
 func (a *Adapter) BuildLPDepositTxWithOperator(ctx context.Context, lpCell LPCell, operatorLockHash types.Hash) (string, error) {
 	tx, lpOutpointID, err := a.BuildLPDepositTxUnsigned(ctx, lpCell, a.signer.Address().Script, operatorLockHash)
 	if err != nil {
@@ -70,8 +70,8 @@ func (a *Adapter) BuildLPDepositTxWithOperator(ctx context.Context, lpCell LPCel
 // the predetermined "<txhash>:0" of the resulting LP cell; the CKB tx hash is
 // computed over the body excluding witnesses, so signing does not change it.
 //
-// ownerScript identifies the LP owner: its hash is written to the cell's
-// OwnerLockHash field, and a funding UTXO is selected from cells locked by it.
+// ownerScript selects the funding UTXOs; its hash is also written to the cell's
+// OwnerLockHash field unless the caller pre-set one (payer/owner decoupling).
 // The adapter's configured signer is not consulted on this path — ws-backend
 // can build deposits for any LP whose lock script it has on the wire, without
 // holding their key. ownerScript must include code_hash + hash_type + args
@@ -84,7 +84,14 @@ func (a *Adapter) BuildLPDepositTxUnsigned(ctx context.Context, lpCell LPCell, o
 	if ownerScript == nil {
 		return nil, "", Deterministic(ErrInvalidLPCellArg)
 	}
-	lpCell.OwnerLockHash = ownerScript.Hash()
+	// ownerScript selects the funding UTXOs; by default its hash also becomes
+	// the cell owner. A caller may pre-set OwnerLockHash to decouple payer from
+	// owner (the devnet seeder pays from bob's default lock while the owner is
+	// his omnilock identity — the hash LP position queries and withdrawals are
+	// keyed by).
+	if lpCell.OwnerLockHash == ([32]byte{}) {
+		lpCell.OwnerLockHash = ownerScript.Hash()
+	}
 	lpCell.OperatorLockHash = operatorLockHash
 	lpCell.ReservedCKB = 0
 	lpCell.CumulativeFeesEarnedCKB = 0
