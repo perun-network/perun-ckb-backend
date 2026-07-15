@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	lpCellSize = 185
+	lpCellSize = 205
 
 	// MinLPCellOccupiedShannons is the minimum CKB capacity required by CKB's
 	// occupied-capacity rule: 8 B (capacity field) + data + lock script + type script.
@@ -37,6 +37,7 @@ const (
 	lpOffsetSafePriceMaxX64  = lpOffsetSafePriceMinX64 + 16
 	lpOffsetNonce            = lpOffsetSafePriceMaxX64 + 16
 	lpOffsetActive           = lpOffsetNonce + 8
+	lpOffsetEthBeneficiary   = lpOffsetActive + 1
 
 	lpEndPoolID           = lpOffsetPoolID + 32
 	lpEndOwnerLockHash    = lpOffsetOwnerLockHash + 32
@@ -52,6 +53,7 @@ const (
 	lpEndSafePriceMaxX64  = lpOffsetSafePriceMaxX64 + 16
 	lpEndNonce            = lpOffsetNonce + 8
 	lpEndActive           = lpOffsetActive + 1
+	lpEndEthBeneficiary   = lpOffsetEthBeneficiary + 20
 )
 
 // EncodeLPCell encodes LP cell data using the raw fixed layout from pool.rs.
@@ -95,6 +97,8 @@ func EncodeLPCell(cell LPCell) ([]byte, error) {
 		buf = append(buf, 0)
 	}
 
+	buf = append(buf, cell.EthBeneficiary[:]...)
+
 	if len(buf) != lpCellSize {
 		return nil, ErrInvalidLPCell
 	}
@@ -128,6 +132,7 @@ func DecodeLPCell(data []byte) (LPCell, error) {
 
 	cell.Nonce = binary.LittleEndian.Uint64(data[lpOffsetNonce:lpEndNonce])
 	cell.Active = data[lpOffsetActive] != 0
+	copy(cell.EthBeneficiary[:], data[lpOffsetEthBeneficiary:lpEndEthBeneficiary])
 
 	return cell, nil
 }

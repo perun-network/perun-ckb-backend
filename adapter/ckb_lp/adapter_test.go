@@ -99,6 +99,35 @@ func TestBuildLPDepositTxUnsignedRejectsNilOwnerScript(t *testing.T) {
 	require.True(t, IsDeterministic(err))
 }
 
+func TestBuildLPDepositTxUnsignedRejectsZeroBeneficiary(t *testing.T) {
+	adapter := &Adapter{}
+
+	// A creation without an eth_beneficiary would be rejected on-chain
+	// (LPMissingBeneficiary); the builder fails fast instead.
+	_, _, err := adapter.BuildLPDepositTxUnsigned(
+		context.Background(),
+		LPCell{AvailableCKB: MinLPCellOccupiedShannons, OwnerLockHash: filled32(0x22)},
+		&types.Script{CodeHash: types.Hash{0x01}, HashType: types.HashTypeType, Args: []byte{}},
+		types.Hash{},
+	)
+
+	require.ErrorIs(t, err, ErrInvalidLPCellArg)
+	require.True(t, IsDeterministic(err))
+}
+
+func TestBuildLPTopUpTxRejectsZeroAmount(t *testing.T) {
+	adapter := &Adapter{}
+
+	_, err := adapter.BuildLPTopUpTx(
+		context.Background(),
+		"0x"+strings.Repeat("11", 32)+":0",
+		0,
+	)
+
+	require.ErrorIs(t, err, ErrInvalidLPCellArg)
+	require.True(t, IsDeterministic(err))
+}
+
 func TestBuildLPWithdrawTxUnsignedRejectsZeroCkbOut(t *testing.T) {
 	adapter := &Adapter{}
 
@@ -195,7 +224,7 @@ func TestBuildLPDepositTxUnsignedGathersMultipleFundingCells(t *testing.T) {
 		fundingCell(0xcc, 300*ckb, ownerScript),
 	}
 	adapter := &Adapter{
-		rpcClient:    mockRPCWithCells(cells),
+		rpcClient: mockRPCWithCells(cells),
 		deployment: backend.Deployment{
 			DefaultLockScript:    types.Script{CodeHash: ownerScript.CodeHash},
 			DefaultLockScriptDep: types.CellDep{OutPoint: &types.OutPoint{TxHash: types.Hash{0x05}, Index: 0}, DepType: types.DepTypeCode},
@@ -206,7 +235,7 @@ func TestBuildLPDepositTxUnsignedGathersMultipleFundingCells(t *testing.T) {
 	deposit := 4000 * ckb
 	tx, expectedOutpoint, err := adapter.BuildLPDepositTxUnsigned(
 		context.Background(),
-		LPCell{AvailableCKB: deposit},
+		LPCell{AvailableCKB: deposit, EthBeneficiary: filled20(0x44)},
 		ownerScript,
 		types.Hash{0x02},
 	)
@@ -250,7 +279,7 @@ func TestBuildLPDepositTxUnsignedHonorsPresetOwner(t *testing.T) {
 	// Default: zero owner in the spec -> the funding script's hash.
 	tx, _, err := newAdapter().BuildLPDepositTxUnsigned(
 		context.Background(),
-		LPCell{AvailableCKB: 500 * ckb},
+		LPCell{AvailableCKB: 500 * ckb, EthBeneficiary: filled20(0x44)},
 		ownerScript,
 		types.Hash{0x02},
 	)
@@ -265,7 +294,7 @@ func TestBuildLPDepositTxUnsignedHonorsPresetOwner(t *testing.T) {
 	presetOwner[31] = 0xb7
 	tx, _, err = newAdapter().BuildLPDepositTxUnsigned(
 		context.Background(),
-		LPCell{AvailableCKB: 500 * ckb, OwnerLockHash: presetOwner},
+		LPCell{AvailableCKB: 500 * ckb, OwnerLockHash: presetOwner, EthBeneficiary: filled20(0x44)},
 		ownerScript,
 		types.Hash{0x02},
 	)
@@ -287,7 +316,7 @@ func TestBuildLPDepositTxUnsignedRejectsWhenTotalFundsInsufficient(t *testing.T)
 		fundingCell(0xbb, 200*ckb, ownerScript),
 	}
 	adapter := &Adapter{
-		rpcClient:    mockRPCWithCells(cells),
+		rpcClient: mockRPCWithCells(cells),
 		deployment: backend.Deployment{
 			DefaultLockScript:    types.Script{CodeHash: ownerScript.CodeHash},
 			DefaultLockScriptDep: types.CellDep{OutPoint: &types.OutPoint{TxHash: types.Hash{0x05}, Index: 0}, DepType: types.DepTypeCode},
@@ -297,7 +326,7 @@ func TestBuildLPDepositTxUnsignedRejectsWhenTotalFundsInsufficient(t *testing.T)
 
 	_, _, err := adapter.BuildLPDepositTxUnsigned(
 		context.Background(),
-		LPCell{AvailableCKB: 4000 * ckb},
+		LPCell{AvailableCKB: 4000 * ckb, EthBeneficiary: filled20(0x44)},
 		ownerScript,
 		types.Hash{0x02},
 	)

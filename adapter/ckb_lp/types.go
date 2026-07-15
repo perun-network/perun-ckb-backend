@@ -36,6 +36,10 @@ type LPCell struct {
 	Policy                  LPPolicy
 	Nonce                   uint64
 	Active                  bool
+	// EthBeneficiary is the ETH address that receives ETH-pool shares when
+	// this cell's traded CKB is converted. Owner-designated at creation,
+	// immutable, never zero (the verifier rejects a zero beneficiary).
+	EthBeneficiary [20]byte
 }
 
 // LPCellInfo is a lightweight view of an LP cell returned by discovery.
@@ -44,4 +48,3 @@ type LPCellInfo struct {
 	Capacity    uint64
 	OutPointHex string
 }
-

@@ -2,6 +2,7 @@ package ckblp
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -31,13 +32,14 @@ type LPMigration struct {
 }
 
 type lpCellSpec struct {
-	PoolID        string `json:"pool_id"`
-	OwnerLockHash string `json:"owner_lock_hash"`
-	OperatorLock  string `json:"operator_lock_hash"`
-	AvailableCKB  uint64 `json:"available_ckb"`
-	ReservedCKB   uint64 `json:"reserved_ckb"`
-	FeesEarnedCKB uint64 `json:"cumulative_fees_earned_ckb"`
-	Policy        struct {
+	PoolID         string `json:"pool_id"`
+	OwnerLockHash  string `json:"owner_lock_hash"`
+	OperatorLock   string `json:"operator_lock_hash"`
+	EthBeneficiary string `json:"eth_beneficiary"`
+	AvailableCKB   uint64 `json:"available_ckb"`
+	ReservedCKB    uint64 `json:"reserved_ckb"`
+	FeesEarnedCKB  uint64 `json:"cumulative_fees_earned_ckb"`
+	Policy         struct {
 		MaxTradingVolume uint64 `json:"max_trading_volume"`
 		FeeRateBps       uint32 `json:"fee_rate_bps"`
 		PolicyFlags      uint32 `json:"policy_flags"`
@@ -169,11 +171,19 @@ func LoadLPCellSpecFromDevnet() (LPCell, error) {
 	if err != nil {
 		return LPCell{}, fmt.Errorf("operator_lock_hash: %w", err)
 	}
+	beneficiary := DevnetDefaultEthBeneficiary
+	if spec.EthBeneficiary != "" {
+		beneficiary, err = parseEthAddress(spec.EthBeneficiary)
+		if err != nil {
+			return LPCell{}, fmt.Errorf("eth_beneficiary: %w", err)
+		}
+	}
 
 	return LPCell{
 		PoolID:                  poolID,
 		OwnerLockHash:           owner,
 		OperatorLockHash:        operator,
+		EthBeneficiary:          beneficiary,
 		AvailableCKB:            spec.AvailableCKB,
 		ReservedCKB:             spec.ReservedCKB,
 		CumulativeFeesEarnedCKB: spec.FeesEarnedCKB,
@@ -209,6 +219,7 @@ func LoadDefaultLPCellSpec(devnetDir string) (LPCell, error) {
 		PoolID:                  poolID,
 		OwnerLockHash:           bobHash,
 		OperatorLockHash:        bobHash,
+		EthBeneficiary:          DevnetDefaultEthBeneficiary,
 		AvailableCKB:            50_000_000_000,
 		ReservedCKB:             0,
 		CumulativeFeesEarnedCKB: 0,
@@ -310,5 +321,31 @@ func parseHash32Fixed(value string) ([32]byte, error) {
 	}
 	var out [32]byte
 	copy(out[:], h[:])
+	return out, nil
+}
+
+// DevnetDefaultEthBeneficiary is bob's devnet ETH address (derived from
+// accounts/bob.pk) — the fallback beneficiary for devnet seed cells whose
+// spec predates the eth_beneficiary field. Creation rejects a zero
+// beneficiary, so the fixtures must always supply one.
+var DevnetDefaultEthBeneficiary = [20]byte{
+	0xa2, 0x98, 0xfc, 0x05, 0xbc, 0xcf, 0xf3, 0x41, 0xf3, 0x40,
+	0xa1, 0x1f, 0xff, 0xa3, 0x05, 0x67, 0xa0, 0x0e, 0x65, 0x1f,
+}
+
+func parseEthAddress(value string) ([20]byte, error) {
+	var out [20]byte
+	s := value
+	if len(s) > 1 && s[0:2] == "0x" {
+		s = s[2:]
+	}
+	b, err := hex.DecodeString(s)
+	if err != nil {
+		return out, err
+	}
+	if len(b) != 20 {
+		return out, fmt.Errorf("expected 20-byte ETH address, got %d bytes", len(b))
+	}
+	copy(out[:], b)
 	return out, nil
 }

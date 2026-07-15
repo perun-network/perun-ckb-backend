@@ -97,6 +97,11 @@ func (a *Adapter) BuildLPDepositTxUnsigned(ctx context.Context, lpCell LPCell, o
 	lpCell.CumulativeFeesEarnedCKB = 0
 	lpCell.Nonce = 0
 	lpCell.Active = true
+	// The verifier rejects cell creation with a zero eth_beneficiary
+	// (LPMissingBeneficiary); fail fast here instead of on-chain.
+	if lpCell.EthBeneficiary == ([20]byte{}) {
+		return nil, "", Deterministic(ErrInvalidLPCellArg)
+	}
 
 	data, err := EncodeLPCell(lpCell)
 	if err != nil {
@@ -273,6 +278,103 @@ func (a *Adapter) BuildLPWithdrawTxUnsigned(ctx context.Context, lpCellID string
 		return nil, Deterministic(err)
 	}
 	return tx, nil
+}
+
+// BuildLPTopUpTx builds and submits an owner-signed top-up of an existing LP
+// cell: one LP input, one LP output with AvailableCKB grown by ckbIn (funded
+// from the adapter signer's own cells) and the nonce incremented; every other
+// field — owner, operator, policy, eth_beneficiary — is carried over unchanged,
+// as the LP typescript requires. The signer must be the cell's owner (the
+// contract's top-up branch verifies the owner's signature). Returns the LP
+// cell's new outpoint "<txhash>:0". Used by the hub to recycle CKB received
+// from CKB→ETH swaps back into its operator-owned inventory cell.
+func (a *Adapter) BuildLPTopUpTx(ctx context.Context, lpCellID string, ckbIn uint64) (string, error) {
+	if ckbIn == 0 {
+		return "", Deterministic(ErrInvalidLPCellArg)
+	}
+	ownerScript := a.signer.Address().Script
+	outPoint, err := parseOutPoint(lpCellID)
+	if err != nil {
+		return "", Deterministic(err)
+	}
+	cell, err := a.rpcClient.GetLiveCell(ctx, outPoint, true)
+	if err != nil {
+		return "", Retriable(err)
+	}
+	if cell == nil || cell.Cell == nil || cell.Cell.Output == nil || cell.Cell.Data == nil {
+		return "", Deterministic(ErrInvalidLPCell)
+	}
+	inputLP, err := DecodeLPCell(cell.Cell.Data.Content)
+	if err != nil {
+		return "", Deterministic(ErrInvalidLPCell)
+	}
+	if inputLP.OwnerLockHash != [32]byte(ownerScript.Hash()) {
+		return "", Deterministic(ErrInvalidLPCellArg)
+	}
+
+	updatedLP := inputLP
+	updatedLP.AvailableCKB += ckbIn
+	if updatedLP.AvailableCKB < inputLP.AvailableCKB {
+		return "", Deterministic(ErrInvalidLPCellArg)
+	}
+	updatedLP.Nonce += 1
+	updatedLPData, err := EncodeLPCell(updatedLP)
+	if err != nil {
+		return "", Deterministic(ErrInvalidLPCell)
+	}
+
+	fee := transaction.DefaultFeeShannon
+	minChange := types.CellOutput{Lock: ownerScript}.OccupiedCapacity([]byte{})
+	fundingCells, fundingTotal, err := a.selectCellsByLockForAmount(ctx, ownerScript, ckbIn+fee+minChange)
+	if err != nil {
+		return "", err
+	}
+	change := fundingTotal - ckbIn - fee
+
+	builder := transaction.NewSimpleTransactionBuilder(ownerScript.CodeHash, a.deployment.DefaultLockScriptDep, false)
+	if ownerScript.CodeHash != a.deployment.DefaultLockScript.CodeHash && len(a.deployment.OmniLockScriptDep) >= 2 {
+		builder = transaction.NewSimpleTransactionBuilder(a.deployment.OmniLockScript.CodeHash, a.deployment.OmniLockScriptDep[1], true)
+		builder.AddCellDep(&a.deployment.OmniLockScriptDep[0])
+		builder.AddCellDep(&a.deployment.OmniLockScriptDep[1])
+	} else {
+		builder.AddCellDep(&a.deployment.DefaultLockScriptDep)
+	}
+	builder.AddCellDep(&a.lpDeployment.TypeScriptDep)
+	builder.AddCellDep(&a.lpDeployment.LockScriptDep)
+
+	builder.AddInput(&types.CellInput{PreviousOutput: outPoint})
+	fundingIndices := make([]uint32, len(fundingCells))
+	for i, fundingCell := range fundingCells {
+		builder.AddInput(&types.CellInput{PreviousOutput: fundingCell.OutPoint})
+		fundingIndices[i] = uint32(i + 1)
+	}
+	initLockWitnessPlaceholder(builder, 1)
+	if err := builder.SetWitness(0, types.WitnessTypeInputType, EncodeLPDepositWitness()); err != nil {
+		return "", Deterministic(ErrInvalidWitness)
+	}
+
+	builder.AddOutput(&types.CellOutput{
+		Capacity: cell.Cell.Output.Capacity + ckbIn,
+		Lock:     cell.Cell.Output.Lock,
+		Type:     cell.Cell.Output.Type,
+	}, updatedLPData)
+
+	builder.AddOutput(&types.CellOutput{
+		Capacity: change,
+		Lock:     ownerScript,
+		Type:     nil,
+	}, []byte{})
+
+	addInputLockScriptGroup(builder, ownerScript, fundingIndices...)
+
+	tx, err := builder.Build()
+	if err != nil {
+		return "", Deterministic(err)
+	}
+	if _, err := a.transactor.SubmitTransaction(ctx, tx); err != nil {
+		return "", Retriable(err)
+	}
+	return fmt.Sprintf("%s:%d", tx.TxView.ComputeHash().String(), 0), nil
 }
 
 // SubmitSignedTx broadcasts a transaction that has already been signed (for

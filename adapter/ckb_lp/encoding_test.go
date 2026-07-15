@@ -26,9 +26,18 @@ func sampleLPCell() LPCell {
 			SafePriceMinX64:  minPrice,
 			SafePriceMaxX64:  maxPrice,
 		},
-		Nonce:  7,
-		Active: true,
+		Nonce:          7,
+		Active:         true,
+		EthBeneficiary: filled20(0x44),
 	}
+}
+
+func filled20(value byte) [20]byte {
+	var out [20]byte
+	for i := range out {
+		out[i] = value
+	}
+	return out
 }
 
 func filled32(value byte) [32]byte {
