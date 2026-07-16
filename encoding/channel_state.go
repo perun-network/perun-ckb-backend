@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+
 	"perun.network/go-perun/channel/multi"
 
 	"github.com/Pilatuz/bigz/uint128"

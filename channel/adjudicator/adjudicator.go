@@ -49,7 +49,7 @@ func (a Adjudicator) Withdraw(ctx context.Context, req channel.AdjudicatorReq, s
 			// Force Close with Virtual Channel.
 			for _, vcstate := range stateMap {
 				indexMap := req.Tx.Locked[0].IndexMap
-				return a.client.ForceCloseWithVC(ctx, req.Tx.ID, vcstate.State.ID, req.Tx.State, vcstate.State, req.Tx.Sigs, req.Params, indexMap)
+				return a.client.ForceCloseWithVC(ctx, req.Tx.ID, vcstate.ID, req.Tx.State, vcstate, req.Tx.Sigs, req.Params, indexMap)
 			}
 		}
 

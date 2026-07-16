@@ -30,7 +30,7 @@ import (
 	"perun.network/go-perun/wire"
 
 	"perun.network/perun-ckb-backend/channel/asset"
-	"perun.network/perun-ckb-backend/channel/test"
+"perun.network/perun-ckb-backend/channel/test"
 	"perun.network/perun-ckb-backend/transaction"
 )
 

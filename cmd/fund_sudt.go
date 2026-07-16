@@ -10,6 +10,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/nervosnetwork/ckb-sdk-go/v2/address"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/collector"
@@ -25,6 +26,68 @@ import (
 	"github.com/nervosnetwork/ckb-sdk-go/v2/rpc"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types"
 )
+
+func ckbRPCURL() string {
+	if u := os.Getenv("CKB_RPC_URL"); u != "" {
+		return u
+	}
+	return "http://127.0.0.1:8114"
+}
+
+func dialRPC(url string) (rpc.Client, error) {
+	var lastErr error
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		cl, err := rpc.Dial(url)
+		if err == nil {
+			if _, perr := cl.GetTipBlockNumber(context.Background()); perr == nil {
+				return cl, nil
+			} else {
+				lastErr = perr
+			}
+		} else {
+			lastErr = err
+		}
+		if time.Now().After(deadline) {
+			return nil, fmt.Errorf("rpc not reachable at %s after 30s: %w", url, lastErr)
+		}
+		time.Sleep(2 * time.Second)
+	}
+}
+
+func dialIndexer(url string) (indexer.Client, error) {
+	var lastErr error
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		cl, err := indexer.Dial(url)
+		if err == nil {
+			return cl, nil
+		}
+		lastErr = err
+		if time.Now().After(deadline) {
+			return nil, fmt.Errorf("indexer dial failed at %s after 30s: %w", url, lastErr)
+		}
+		time.Sleep(2 * time.Second)
+	}
+}
+
+func waitForTxCommitted(cl rpc.Client, h types.Hash, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for {
+		st, err := cl.GetTransaction(context.Background(), h)
+		if err == nil && st != nil && st.TxStatus.Status == types.TransactionStatusCommitted {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			status := ""
+			if st != nil {
+				status = string(st.TxStatus.Status)
+			}
+			return fmt.Errorf("tx %s did not commit within %s (last status=%q, err=%v)", h.String(), timeout, status, err)
+		}
+		time.Sleep(2 * time.Second)
+	}
+}
 
 type WrappedTx struct {
 	Transaction     *types.Transaction `json:"transaction"`
@@ -86,7 +149,8 @@ func parseLockArg(path string) (string, error) {
 }
 
 func main() {
-	rpcClient, err := rpc.Dial("http://127.0.0.1:8114")
+	rpcURL := ckbRPCURL()
+	rpcClient, err := dialRPC(rpcURL)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -144,7 +208,10 @@ func main() {
 	}
 	log.Printf("Expected args: %x", blake2b.Blake160(privKey.PubKey().SerializeCompressed()))
 	log.Printf("Actual input script args: %x", lockScript.Args)
-	indexerClient, _ := indexer.Dial("http://127.0.0.1:8114")
+	indexerClient, err := dialIndexer(rpcURL)
+	if err != nil {
+		log.Fatal(err)
+	}
 	// Query CKB balance
 	capacityResp, err := indexerClient.GetCellsCapacity(context.Background(), &indexer.SearchKey{
 		Script:     lockScript,
@@ -254,4 +321,9 @@ func main() {
 	fmt.Println("🔢 Transaction Hash:", txHash.String())
 	fmt.Println("🔍 You can query it with:")
 	fmt.Printf("ckb-cli rpc get_transaction --hash %s\n", txHash.String())
+
+	if err := waitForTxCommitted(rpcClient, *txHash, 180*time.Second); err != nil {
+		log.Fatal("waiting for commit: ", err)
+	}
+	fmt.Println("✅ SUDT distribution tx committed")
 }

@@ -171,6 +171,22 @@ func (ptb *PerunTransactionBuilder) Fund(fi *FundInfo) error {
 	return err
 }
 
+// FundExtractLP builds a PoolWitness::FundChannelExtract transaction. The
+// referenced channel is recorded only via the proxy cell's ChannelStatus data;
+// the real perun-channel-typescript is intentionally not invoked.
+func (ptb *PerunTransactionBuilder) FundExtractLP(fi *LPFundExtractInfo) error {
+	_, err := ptb.psh.buildFundExtractLPTransaction(ptb, nil, fi)
+	return err
+}
+
+// SettleInsertLP builds a PoolWitness::SettleChannelInsert transaction. The
+// caller must ensure the referenced channel is absent from inputs and outputs
+// (the LP typescript rejects the tx otherwise).
+func (ptb *PerunTransactionBuilder) SettleInsertLP(si *LPSettleInsertInfo) error {
+	_, err := ptb.psh.buildSettleInsertLPTransaction(ptb, nil, si)
+	return err
+}
+
 func (ptb *PerunTransactionBuilder) Dispute(di *DisputeInfo) error {
 	_, err := ptb.psh.buildDisputeTransaction(ptb, nil, di)
 

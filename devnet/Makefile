@@ -1,9 +1,33 @@
-.PHONY: dev
+.PHONY: dev stop clean-ready
 
-dev:
-	go run ../cmd/get_address.go
+SENTINEL := .devnet-ready
+READY_TIMEOUT ?= 600
+
+clean-ready:
+	@rm -f $(SENTINEL)
+
+dev: clean-ready
+	go run -tags getaddress ../cmd/get_address.go
 	tmuxp load -d ./devnet-session.yaml
-	@echo "Waiting for the local devnet to start..."
-	@sleep 60
-	go run ../cmd/fund_sudt.go
-	tmux a -t devnet
+	@echo "Waiting up to $(READY_TIMEOUT)s for devnet to become ready..."
+	@i=0; while [ $$i -lt $(READY_TIMEOUT) ]; do \
+	  if [ -f $(SENTINEL) ]; then \
+	    echo "Devnet ready (after $${i}s)."; \
+	    exec tmux a -t devnet; \
+	  fi; \
+	  i=$$((i+1)); sleep 1; \
+	done; \
+	echo "Devnet failed to become ready in $(READY_TIMEOUT)s" >&2; \
+	tmux capture-pane -t devnet -p -S -200 || true; \
+	exit 1
+
+stop:
+	@echo "Stopping devnet..."
+	@tmux kill-session -t devnet 2>/dev/null || true
+	@pkill -INT -f 'offckb-nodejs/bins.*/ckb' 2>/dev/null || true
+	@pkill -INT -f 'offckb node' 2>/dev/null || true
+	@sleep 3
+	@pkill -KILL -f 'offckb-nodejs/bins.*/ckb' 2>/dev/null || true
+	@pkill -KILL -f 'offckb node' 2>/dev/null || true
+	@rm -f $(SENTINEL)
+	@echo "Devnet stopped."
