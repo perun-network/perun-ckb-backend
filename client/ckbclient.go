@@ -410,8 +410,15 @@ func (c Client) Dispute(ctx context.Context, id channel.ID, state *channel.State
 		return fmt.Errorf("encoding signature B: %w", err)
 	}
 
-	if !checkVersion(state, status, nil, nil) {
-		log.Println("Dispute not needed")
+	// A dispute is redundant only when one is already registered on chain AND
+	// this state brings nothing newer. Skipping on "same version" alone made
+	// recovery of a never-updated channel impossible: version zero equals
+	// version zero, the dispute was skipped, and the force-close that followed
+	// was rejected by the contract with StatusNotDisputed. The contract
+	// explicitly accepts registering the initial state of an undisputed
+	// channel, which is exactly the recovery case (mainnet 2026-09-01).
+	if encoding.ToBool(*status.Disputed()) && !checkVersion(state, status, nil, nil) {
+		log.Println("Dispute not needed: already disputed with a state at least as new")
 		return nil
 	}
 
