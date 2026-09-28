@@ -36,6 +36,12 @@ func loadOrSkipLPCellSpec(t *testing.T) (LPCell, bool) {
 		return LPCell{}, false
 	}
 	require.NoError(t, err)
+	// The spec names Bob as owner, but every test here funds and signs the
+	// creation with another account. Since the deposit builder honors a
+	// pre-set owner and the LP typescript requires the owner's signature at
+	// creation, keeping Bob fails with InvalidSignature (73). Clearing it lets
+	// the payer become the owner, which is what these tests exercise.
+	lpCell.OwnerLockHash = [32]byte{}
 	return lpCell, true
 }
 
