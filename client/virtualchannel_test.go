@@ -39,7 +39,7 @@ func TestVirtualChannelDispute(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), testDuration)
 	defer cancel()
 
-	setup := ctest.MakeVirtualChannelSetup(t, rng, false)
+	setup := ctest.MakeVirtualChannelSetup(t, rng)
 	clienttest.TestVirtualChannelDispute(ctx, t, setup)
 	log.Info("Virtual channel dispute test done")
 }

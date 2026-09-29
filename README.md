@@ -32,6 +32,7 @@ This backend supports the following features on CKB:
 * `encoding/`: On/off-chain serialization.
 * `devnet/`: Local devnet deployment.
 * `transaction`: Contract bindings. 
+* `adapter/ckb_lp/`: Liquidity-pool (LP) cells for Perun-X yield.
 
 ## Development
  
@@ -91,6 +92,26 @@ go test ./...
 ```
 
 **Disclaimer:** The tests require at least 3 minutes to complete.
+
+## Liquidity-pool adapter
+
+Package `adapter/ckb_lp` implements the CKB side of Perun-X yield: one LP cell per liquidity
+provider, guarded by the `lpts` type script and the `lpls` lock script from `perun-ckb-contract`.
+The `Adapter` creates cells (`BuildLPDepositTx*`, which requires the owner's lock among the inputs),
+withdraws for the owner (`BuildLPWithdrawTx*`), tops up operator-owned cells (`BuildLPTopUpTx`), and
+funds and settles channels from a cell (`BuildFundChannelTx`, `BuildSettleChannelInsertTx`). The
+`*Unsigned` variants return transactions for an external signer, such as a browser wallet, and
+`DiscoverLPCells` and `GetLPCell` read cells from the chain. The system-level description, the
+testnet deployment and the policy flags are in `docs/YIELD.md` of `perun-websocket-backend` on its
+branch `staging-testnet`.
+
+The devnet tests in `adapter/ckb_lp` (`TestLPFundAndSettleChannelDevnet` and others) need a devnet
+with the LP scripts deployed under `devnet/contract/migrations_lp/`; without it they are skipped.
+
+Branch `feat/yield-backport-fixes` also contains a recovery fix (`c353ae8`). Before force-closing,
+the client now registers a dispute whenever none is registered on chain yet, including for a channel
+that never got past its initial state. The contract rejects a force-close without a registered
+dispute with `StatusNotDisputed`.
 
 ## Security Disclaimer
 

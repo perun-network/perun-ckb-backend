@@ -10,15 +10,17 @@ DEVNET_DIR="$PWD"
 DEPLOYMENT_INFO_0="info_0"
 DEPLOYMENT_INFO_1="info_1"
 DEPLOYMENT_INFO_VC="info_vc"
+DEPLOYMENT_INFO_LP="info_lp"
 MIGRATION_0="migrations_0/dev"
 MIGRATION_1="migrations_1/dev"
 MIGRATION_VC="migrations_vc/dev"
+MIGRATION_LP="migrations_lp/dev"
 genesis=$(awk '/^ckb_address:/ {print $2}' "$ACCOUNTS_DIR/genesis-2.txt")
 GENESIS_PRIVKEY="$DEVNET_DIR/$ACCOUNTS_DIR/genesis-2.pk"
 MINER_PRIVKEY="$DEVNET_DIR/$ACCOUNTS_DIR/miner.pk"
 
 # Remove old info files in repo root if present
-for f in "$DEPLOYMENT_INFO_0.json" "$DEPLOYMENT_INFO_1.json" "$DEPLOYMENT_INFO_VC.json"; do
+for f in "$DEPLOYMENT_INFO_0.json" "$DEPLOYMENT_INFO_1.json" "$DEPLOYMENT_INFO_VC.json" "$DEPLOYMENT_INFO_LP.json"; do
   [ -f "$f" ] && rm -f "$f"
 done
 
@@ -165,11 +167,38 @@ sleep 25
 run_deploy_phase "normal-1" "./deployment/dev/deployment_1.toml" "./$MIGRATION_1" "$DEVNET_DIR/$DEPLOYMENT_INFO_1.json" "$GENESIS_PRIVKEY" "$MINER_PRIVKEY" || { echo "phase normal-1 failed"; exit 1; }
 sleep 25
 run_deploy_phase "vc" "./deployment/dev/deployment_vc.toml" "./$MIGRATION_VC" "$DEVNET_DIR/$DEPLOYMENT_INFO_VC.json" "$GENESIS_PRIVKEY" "$MINER_PRIVKEY" || { echo "phase vc failed"; exit 1; }
+sleep 25
+run_deploy_phase "lp" "./deployment/dev/deployment_lp.toml" "./$MIGRATION_LP" "$DEVNET_DIR/$DEPLOYMENT_INFO_LP.json" "$GENESIS_PRIVKEY" "$MINER_PRIVKEY" || { echo "phase lp failed"; exit 1; }
+
+ALICE_LOCK_HASH=$(awk '/^lock_hash:/ {print $2}' "$DEVNET_DIR/$ACCOUNTS_DIR/alice.txt")
+BOB_LOCK_HASH=$(awk '/^lock_hash:/ {print $2}' "$DEVNET_DIR/$ACCOUNTS_DIR/bob.txt")
+LP_POOL_ID=${LP_POOL_ID:-}
+if [ -z "$LP_POOL_ID" ]; then
+  LP_POOL_ID=$(python3 - <<'PY'
+import os, secrets
+print("0x" + secrets.token_hex(32))
+PY
+)
+fi
+
+if [ -n "$ALICE_LOCK_HASH" ] && [ -n "$BOB_LOCK_HASH" ]; then
+  echo "Preparing LP migration spec (operator=alice, owner=bob)..."
+  (cd "$DEVNET_DIR/$PERUN_CONTRACTS_DIR" && \
+    ./scripts/lp_migration_prepare.sh \
+      --pool-id "$LP_POOL_ID" \
+      --owner-lock-hash "$BOB_LOCK_HASH" \
+      --operator-lock-hash "$ALICE_LOCK_HASH" \
+      --network dev \
+      --out migrations_lp/lp_cell_spec.json)
+else
+  echo "Skipping LP migration spec: missing alice/bob lock hash"
+fi
 
 # Move info files to devnet root (they are already created there) — keep as artifacts
 mv "$DEVNET_DIR/$DEPLOYMENT_INFO_0.json" "$DEVNET_DIR/" 2>/dev/null || true
 mv "$DEVNET_DIR/$DEPLOYMENT_INFO_1.json" "$DEVNET_DIR/" 2>/dev/null || true
 mv "$DEVNET_DIR/$DEPLOYMENT_INFO_VC.json" "$DEVNET_DIR/" 2>/dev/null || true
+mv "$DEVNET_DIR/$DEPLOYMENT_INFO_LP.json" "$DEVNET_DIR/" 2>/dev/null || true
 
 echo "Deploying contracts done."
 

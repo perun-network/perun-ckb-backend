@@ -53,6 +53,7 @@ func processAccount(name, pkPath, outPath string, outPathDef string, ethAuthCode
 	}
 	defer f.Close()
 
+	fmt.Fprintf(f, "lock_hash: %s\n", participant.PaymentScript.Hash().String())
 	fmt.Fprintf(f, "eth_address: 0x%x\n", ethAddress)
 	fmt.Fprintf(f, "lock_arg: 0x%x\n", participant.PaymentScript.Args)
 	fmt.Fprintf(f, "ckb_address: %s\n", ckbAddr)
@@ -70,6 +71,7 @@ func processAccount(name, pkPath, outPath string, outPathDef string, ethAuthCode
 	}
 	defer f.Close()
 
+	fmt.Fprintf(f, "lock_hash: %s\n", defpart.PaymentScript.Hash().String())
 	fmt.Fprintf(f, "eth_address: 0x%x\n", ethAddress)
 	fmt.Fprintf(f, "lock_arg: 0x%x\n", defpart.PaymentScript.Args)
 	fmt.Fprintf(f, "ckb_address: %s\n", defCKBAddr)

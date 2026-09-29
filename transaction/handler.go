@@ -123,6 +123,20 @@ func (psh *PerunScriptHandler) BuildTransaction(builder collector.TransactionBui
 			forceCloseInfo = &v
 		}
 		return psh.buildForceCloseTransaction(builder, group, forceCloseInfo)
+	case LPFundExtractInfo, *LPFundExtractInfo:
+		var lpFundInfo *LPFundExtractInfo
+		if lpFundInfo, ok = context.(*LPFundExtractInfo); !ok {
+			v, _ := context.(LPFundExtractInfo)
+			lpFundInfo = &v
+		}
+		return psh.buildFundExtractLPTransaction(builder, group, lpFundInfo)
+	case LPSettleInsertInfo, *LPSettleInsertInfo:
+		var lpSettleInfo *LPSettleInsertInfo
+		if lpSettleInfo, ok = context.(*LPSettleInsertInfo); !ok {
+			v, _ := context.(LPSettleInsertInfo)
+			lpSettleInfo = &v
+		}
+		return psh.buildSettleInsertLPTransaction(builder, group, lpSettleInfo)
 	default:
 	}
 	return ok, nil
@@ -932,6 +946,109 @@ func (psh PerunScriptHandler) mkWitnessClose(state *channel.State, paddedSigs []
 func (psh PerunScriptHandler) mkWitnessForceClose() []byte {
 	w := molecule.NewChannelWitnessBuilder().Set(molecule.ChannelWitnessUnionFromForceClose(molecule.ForceCloseDefault())).Build()
 	return w.AsSlice()
+}
+
+// buildFundExtractLPTransaction assembles a PoolWitness::FundChannelExtract
+// transaction. The on-chain shape mirrors the contract harness in
+// devnet/contract/tests/src/lp_tests.rs: LP cell + operator auth cell as inputs,
+// updated LP cell + operator-locked proxy (carrying channel_id in ChannelStatus
+// data) + operator change as outputs, PoolWitness on the LP input.
+func (psh *PerunScriptHandler) buildFundExtractLPTransaction(builder collector.TransactionBuilder, group *transaction.ScriptGroup, fi *LPFundExtractInfo) (bool, error) {
+	if fi == nil {
+		return false, errors.New("nil LPFundExtractInfo")
+	}
+	if fi.OperatorLock == nil {
+		return false, errors.New("LPFundExtractInfo missing operator lock")
+	}
+
+	// Cell deps: operator lock(s) + LP type + LP lock.
+	builder.AddCellDep(&psh.defaultLockScriptDep)
+	if len(psh.omniLockScriptDep) != 0 {
+		builder.AddCellDep(&psh.omniLockScriptDep[0])
+		builder.AddCellDep(&psh.omniLockScriptDep[1])
+	}
+	builder.AddCellDep(&fi.LPTypeScriptDep)
+	builder.AddCellDep(&fi.LPLockScriptDep)
+
+	// Input 0: LP cell. PoolWitness goes on this input.
+	lpInputIdx := builder.AddInput(&fi.LPInput)
+	if err := builder.SetWitness(uint(lpInputIdx), types.WitnessTypeInputType,
+		EncodeFundChannelExtractWitness(fi.ChannelID, fi.ContributionID, fi.ExtractCKB)); err != nil {
+		return false, fmt.Errorf("setting LP witness: %w", err)
+	}
+	// Input 1: operator auth cell (signs the tx, funds the proxy + fee).
+	builder.AddInput(&fi.OperatorInput)
+
+	// Output 0: updated LP cell.
+	lpOutput := fi.LPOutput
+	builder.AddOutput(&lpOutput, fi.LPOutputData)
+	// Output 1: proxy cell with operator lock and ChannelStatus{channel_id} data.
+	// The proxy's capacity == ExtractCKB by contract math (ch_out_cap - ch_in_cap
+	// == extract_ckb, and ch_in_cap == 0 since we mint the proxy in this tx),
+	// so ExtractCKB must cover the proxy's CKB-occupied-capacity minimum.
+	proxyData := BuildProxyChannelData(fi.ChannelID)
+	proxy := &types.CellOutput{
+		Capacity: fi.ExtractCKB,
+		Lock:     fi.OperatorLock,
+		Type:     nil,
+	}
+	if minOcc := proxy.OccupiedCapacity(proxyData); fi.ExtractCKB < minOcc {
+		return false, fmt.Errorf("extract amount %d shannons below proxy cell occupied-capacity minimum %d", fi.ExtractCKB, minOcc)
+	}
+	builder.AddOutput(proxy, proxyData)
+	// Output 2: operator change.
+	change := &types.CellOutput{
+		Capacity: fi.OperatorChangeCap,
+		Lock:     fi.OperatorLock,
+		Type:     nil,
+	}
+	builder.AddOutput(change, nil)
+
+	return true, nil
+}
+
+// buildSettleInsertLPTransaction assembles a PoolWitness::SettleChannelInsert
+// transaction. The channel referenced by channel_id must not appear in inputs
+// or outputs; this is the operator returning principal + fee to the LP after
+// the channel has been consumed elsewhere.
+func (psh *PerunScriptHandler) buildSettleInsertLPTransaction(builder collector.TransactionBuilder, group *transaction.ScriptGroup, si *LPSettleInsertInfo) (bool, error) {
+	if si == nil {
+		return false, errors.New("nil LPSettleInsertInfo")
+	}
+	if si.OperatorLock == nil {
+		return false, errors.New("LPSettleInsertInfo missing operator lock")
+	}
+
+	// Cell deps.
+	builder.AddCellDep(&psh.defaultLockScriptDep)
+	if len(psh.omniLockScriptDep) != 0 {
+		builder.AddCellDep(&psh.omniLockScriptDep[0])
+		builder.AddCellDep(&psh.omniLockScriptDep[1])
+	}
+	builder.AddCellDep(&si.LPTypeScriptDep)
+	builder.AddCellDep(&si.LPLockScriptDep)
+
+	// Input 0: LP cell, with PoolWitness.
+	lpInputIdx := builder.AddInput(&si.LPInput)
+	if err := builder.SetWitness(uint(lpInputIdx), types.WitnessTypeInputType,
+		EncodeSettleChannelInsertWitness(si.ChannelID, si.ContributionID, si.Principal, si.FeeCKB, si.TradedCKB, si.PriceX64)); err != nil {
+		return false, fmt.Errorf("setting LP settle witness: %w", err)
+	}
+	// Input 1: operator auth cell (provides principal + fee + tx fee).
+	builder.AddInput(&si.OperatorInput)
+
+	// Output 0: updated LP cell.
+	lpOutput := si.LPOutput
+	builder.AddOutput(&lpOutput, si.LPOutputData)
+	// Output 1: operator change.
+	change := &types.CellOutput{
+		Capacity: si.OperatorChangeCap,
+		Lock:     si.OperatorLock,
+		Type:     nil,
+	}
+	builder.AddOutput(change, nil)
+
+	return true, nil
 }
 
 func GetCKByteBalance(index int, state *channel.State) (uint64, error) {

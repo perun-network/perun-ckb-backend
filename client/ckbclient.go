@@ -383,8 +383,15 @@ func (c Client) Dispute(ctx context.Context, id channel.ID, state *channel.State
 		return fmt.Errorf("encoding signature B: %w", err)
 	}
 
-	if !checkVersion(state, status, nil, nil) {
-		log.Println("Dispute not needed")
+	// A dispute is redundant only when one is already registered on chain AND
+	// this state brings nothing newer. Skipping on "same version" alone made
+	// recovery of a never-updated channel impossible: version zero equals
+	// version zero, the dispute was skipped, and the force-close that followed
+	// was rejected by the contract with StatusNotDisputed. The contract
+	// explicitly accepts registering the initial state of an undisputed
+	// channel, which is exactly the recovery case (mainnet 2026-09-01).
+	if encoding.ToBool(*status.Disputed()) && !checkVersion(state, status, nil, nil) {
+		log.Println("Dispute not needed: already disputed with a state at least as new")
 		return nil
 	}
 
@@ -902,43 +909,50 @@ func (c Client) GetChannelWithExactPCTS(ctx context.Context, pcts *types.Script)
 
 const defaultPollingInterval = 2 * time.Second
 
-// sendAndAwait sends the given transaction and waits for it to be committed
-// on-chain.
-func (c Client) sendAndAwait(ctx context.Context, tx *types.Transaction) error {
+// SendAndAwait sends the given transaction and waits for it to be committed
+// on-chain. It returns the transaction hash on success.
+func SendAndAwait(ctx context.Context, rpcClient rpc.Client, tx *types.Transaction) (types.Hash, error) {
 	txHash, err := retryRPC(ctx, 3, 10*time.Second, func() (*types.Hash, error) {
-		return c.client.SendTransaction(ctx, tx)
+		return rpcClient.SendTransaction(ctx, tx)
 	})
 	if err != nil {
-		return fmt.Errorf("sending transaction: %w", err)
+		return types.Hash{}, fmt.Errorf("sending transaction: %w", err)
 	}
 
 	// Wait for the transaction to be committed on-chain.
 	txWithStatus, err := retryRPC(ctx, 3, 10*time.Second, func() (*types.TransactionWithStatus, error) {
-		return c.client.GetTransaction(ctx, *txHash)
+		return rpcClient.GetTransaction(ctx, *txHash)
 	})
 	if err != nil {
-		return fmt.Errorf("initially polling transaction: %w", err)
+		return types.Hash{}, fmt.Errorf("initially polling transaction: %w", err)
 	}
 
 	ticker := time.NewTicker(defaultPollingInterval)
 	for txWithStatus.TxStatus.Status != types.TransactionStatusCommitted {
 		if txWithStatus.TxStatus.Status == types.TransactionStatusRejected {
-			return fmt.Errorf("transaction rejected with: %v", *txWithStatus.TxStatus.Reason)
+			return types.Hash{}, fmt.Errorf("transaction rejected with: %v", *txWithStatus.TxStatus.Reason)
 		}
 		select {
 		case <-ctx.Done():
-			return fmt.Errorf("context done: %w", ctx.Err())
+			return types.Hash{}, fmt.Errorf("context done: %w", ctx.Err())
 		case <-ticker.C:
 			txWithStatus, err = retryRPC(ctx, 3, 10*time.Second, func() (*types.TransactionWithStatus, error) {
-				return c.client.GetTransaction(ctx, *txHash)
+				return rpcClient.GetTransaction(ctx, *txHash)
 			})
 			if err != nil {
-				return fmt.Errorf("polling transaction: %w", err)
+				return types.Hash{}, fmt.Errorf("polling transaction: %w", err)
 			}
 		}
 	}
 
-	return nil
+	return *txHash, nil
+}
+
+// sendAndAwait sends the given transaction and waits for it to be committed
+// on-chain.
+func (c Client) sendAndAwait(ctx context.Context, tx *types.Transaction) error {
+	_, err := SendAndAwait(ctx, c.client, tx)
+	return err
 }
 
 func (c Client) GetChannelWithID(ctx context.Context, id channel.ID) (BlockNumber, *types.Script, *molecule.ChannelConstants, *molecule.ChannelStatus, error) {

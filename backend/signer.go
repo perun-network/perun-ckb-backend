@@ -9,6 +9,8 @@ import (
 	"github.com/nervosnetwork/ckb-sdk-go/v2/transaction/signer/omnilock"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types"
 	"log"
+	"fmt"
+	"github.com/nervosnetwork/ckb-sdk-go/v2/crypto/blake2b"
 )
 
 type Signer interface {
@@ -47,7 +49,36 @@ func NewSignerInstance(addr address.Address, key secp256k1.PrivateKey, network t
 
 func (s LocalSigner) SignTransaction(tx *transaction.TransactionWithScriptGroups) (*types.Transaction, error) {
 	log.Println("Signing transaction: ", tx.TxView)
-	_, err := s.TxSigner.SignTransactionByPrivateKeys(tx, s.key.Key.String())
+	log.Printf("Signer pubkey hash=%x", blake2b.Blake160(s.PublicKey().SerializeCompressed()))
+	// Debug: print script groups and witnesses before signing
+	for i, sg := range tx.ScriptGroups {
+		log.Printf("ScriptGroup[%d]: Type=%v, ScriptHash=%x, ScriptArgs=%x, InputIndices=%v, OutputIndices=%v", i, sg.GroupType, sg.Script.Hash(), sg.Script.Args, sg.InputIndices, sg.OutputIndices)
+	}
+	// Debug: print cell deps to verify TypeScript/Lock deps are present
+	log.Printf("CellDeps count=%d", len(tx.TxView.CellDeps))
+	for i, d := range tx.TxView.CellDeps {
+		out := d.OutPoint
+		var outStr string
+		if out == nil {
+			outStr = "<nil>"
+		} else {
+			outStr = out.TxHash.String() + ":" + fmt.Sprint(out.Index)
+		}
+		log.Printf("CellDep[%d]: DepType=%v OutPoint=%s", i, d.DepType, outStr)
+	}
+	log.Printf("Witnesses before sign: count=%d", len(tx.TxView.Witnesses))
+	for i, w := range tx.TxView.Witnesses {
+		log.Printf("Witness[%d] len=%d", i, len(w))
+	}
+
+	signedIndexes, err := s.TxSigner.SignTransactionByPrivateKeys(tx, s.key.Key.String())
+	log.Printf("Signed script group indexes: %v", signedIndexes)
+
+	// Debug: print witnesses after signing
+	log.Printf("Witnesses after sign: count=%d", len(tx.TxView.Witnesses))
+	for i, w := range tx.TxView.Witnesses {
+		log.Printf("Witness[%d] len=%d; prefix_hex=%x", i, len(w), func(b []byte) []byte { if len(b) > 16 { return b[:16] }; return b }(w))
+	}
 	return tx.TxView, err
 }
 

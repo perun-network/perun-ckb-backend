@@ -3,7 +3,10 @@
 set -e
 
 ACCOUNTS_DIR="accounts"
-FUND_AMOUNT=10000  # Amount in CKB
+FUND_AMOUNT_ALICE=${FUND_AMOUNT_ALICE:-100000}
+FUND_AMOUNT_BOB=${FUND_AMOUNT_BOB:-100000}
+FUND_AMOUNT_INGRID=${FUND_AMOUNT_INGRID:-50000}
+FUND_AMOUNT_DEFAULT=${FUND_AMOUNT_DEFAULT:-20000}
 
 # Extract CKB address from .txt file (line starting with ckb_address:)
 extract_address() {
@@ -13,13 +16,14 @@ extract_address() {
 # Fund a recipient using offckb transfer
 fund_address() {
   local to_addr="$1"
+  local amount="$2"
   local privkey_path="$ACCOUNTS_DIR/genesis-1.pk"
   local privkey=$(head -n 1 "$privkey_path")
   echo "${privkey}"
 
-  echo "Sending ${FUND_AMOUNT} CKB to $to_addr"
+  echo "Sending ${amount} CKB to $to_addr"
   local output
-    output=$(offckb transfer --privkey "$privkey" "$to_addr" "$FUND_AMOUNT" 2>&1)
+    output=$(offckb transfer --privkey "$privkey" "$to_addr" "$amount" 2>&1)
 
     echo "$output"
   tx_hash=$(echo "$output" | grep -oE 'txHash: 0x[a-f0-9]{64}' | awk '{print $2}')
@@ -48,16 +52,16 @@ bob_def=$(extract_address "$ACCOUNTS_DIR/bob_default.txt")
 ingrid_def=$(extract_address "$ACCOUNTS_DIR/ingrid_default.txt")
 
 # Fund each account
-fund_address "$alice"
+fund_address "$alice" "$FUND_AMOUNT_ALICE"
 sleep 5
-fund_address "$bob"
+fund_address "$bob" "$FUND_AMOUNT_BOB"
 sleep 5
-fund_address "$ingrid"
+fund_address "$ingrid" "$FUND_AMOUNT_INGRID"
 sleep 5
-fund_address "$alice_def"
+fund_address "$alice_def" "$FUND_AMOUNT_DEFAULT"
 sleep 5
-fund_address "$bob_def"
+fund_address "$bob_def" "$FUND_AMOUNT_DEFAULT"
 sleep 5
-fund_address "$ingrid_def"
+fund_address "$ingrid_def" "$FUND_AMOUNT_DEFAULT"
 
 echo "✅ All transfers completed."
