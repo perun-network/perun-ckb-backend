@@ -1,11 +1,12 @@
 package transaction
 
 import (
+	"bytes"
 	"context"
-	"encoding/binary"
 	"fmt"
 	"log"
 	"math/big"
+	"sort"
 
 	"github.com/nervosnetwork/ckb-sdk-go/v2/address"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/collector"
@@ -15,6 +16,7 @@ import (
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types"
 	"perun.network/perun-ckb-backend/backend"
 	molecule2 "perun.network/perun-ckb-backend/encoding/molecule"
+	"perun.network/perun-ckb-backend/xudt"
 )
 
 var zeroHash types.Hash = types.Hash{}
@@ -46,6 +48,7 @@ type PerunTransactionBuilder struct {
 	iterators map[types.Hash]collector.CellIterator
 	// knownUDTs is a set of all UDTs that are known to the builder.
 	knownUDTs map[types.Hash]types.Script
+	xudts     map[types.Hash]xudt.Config
 
 	scriptGroups []*ckbtransaction.ScriptGroup
 	// scriptGroupmap maps the hash of a script to the index within the
@@ -71,6 +74,9 @@ func NewPerunTransactionBuilder(client LiveCellFetcher, iterators map[types.Hash
 	}
 	var tb *builder.SimpleTransactionBuilder
 	if omni {
+		if len(psh.omniLockScriptDep) < 2 {
+			return nil, fmt.Errorf("OmniLock requires both lock and secp256k1 dependencies")
+		}
 		tb = NewSimpleTransactionBuilder(psh.omniLockScript.CodeHash, psh.omniLockScriptDep[1], omni)
 	} else {
 		tb = NewSimpleTransactionBuilder(psh.defaultLockScript.CodeHash, psh.defaultLockScriptDep, omni)
@@ -89,6 +95,11 @@ func NewPerunTransactionBuilder(client LiveCellFetcher, iterators map[types.Hash
 		feeShannon:               DefaultFeeShannon,
 	}
 
+	if omni {
+		for i := range psh.omniLockScriptDep {
+			b.AddCellDep(&psh.omniLockScriptDep[i])
+		}
+	}
 	return b, nil
 }
 
@@ -99,24 +110,32 @@ func NewPerunTransactionBuilderWithDeployment(
 	changeAddress address.Address,
 	omni bool,
 ) (*PerunTransactionBuilder, error) {
+	scripts, err := deployment.TokenScripts()
+	if err != nil {
+		return nil, err
+	}
 	log.Println("Creating PerunTransactionBuilder with omni?", omni)
 	psh := NewPerunScriptHandlerWithDeployment(deployment)
 	var simpleBuilder *builder.SimpleTransactionBuilder
 	if omni {
+		if len(deployment.OmniLockScriptDep) < 2 {
+			return nil, fmt.Errorf("OmniLock requires both lock and secp256k1 dependencies")
+		}
 		simpleBuilder = NewSimpleTransactionBuilder(deployment.OmniLockScript.CodeHash, deployment.OmniLockScriptDep[1], omni)
 	} else {
 		simpleBuilder = NewSimpleTransactionBuilder(deployment.DefaultLockScript.CodeHash, deployment.DefaultLockScriptDep, omni)
 	}
 
 	udtChangeCellIndices := make(map[types.Hash]int)
-	for hash := range deployment.SUDTs {
+	for hash := range scripts {
 		udtChangeCellIndices[hash] = -1
 	}
 	b := &PerunTransactionBuilder{
 		SimpleTransactionBuilder: simpleBuilder,
 		psh:                      psh,
 		iterators:                iterators,
-		knownUDTs:                deployment.SUDTs,
+		knownUDTs:                scripts,
+		xudts:                    deployment.XUDTs,
 		ckbChangeCellIndex:       -1,
 		udtChangeCellIndices:     udtChangeCellIndices,
 		cl:                       client,
@@ -126,6 +145,14 @@ func NewPerunTransactionBuilderWithDeployment(
 		feeShannon:               DefaultFeeShannon,
 	}
 
+	if omni {
+		for i := range deployment.OmniLockScriptDep {
+			b.AddCellDep(&deployment.OmniLockScriptDep[i])
+		}
+	}
+	if deployment.FeeShannon != 0 {
+		b.feeShannon = deployment.FeeShannon
+	}
 	return b, nil
 }
 
@@ -222,6 +249,19 @@ func (ptb *PerunTransactionBuilder) ForceCloseWithVC(fcvi *ForceCloseWithVCInfo)
 }
 
 func (ptb *PerunTransactionBuilder) Build(contexts ...interface{}) (*ckbtransaction.TransactionWithScriptGroups, error) {
+	seen := make(map[types.OutPoint]bool, len(ptb.Inputs))
+	for _, input := range ptb.Inputs {
+		if input == nil || input.PreviousOutput == nil {
+			return nil, fmt.Errorf("missing input outpoint")
+		}
+		if seen[*input.PreviousOutput] {
+			return nil, fmt.Errorf("duplicate input outpoint")
+		}
+		seen[*input.PreviousOutput] = true
+	}
+	if err := ptb.prepareXUDTOutputs(); err != nil {
+		return nil, err
+	}
 	// Initialize all required script groups that we expect when building
 	// transactions for Perun channels.
 	if err := ptb.InitializeScriptGroups(); err != nil {
@@ -260,6 +300,9 @@ func (ptb *PerunTransactionBuilder) Build(contexts ...interface{}) (*ckbtransact
 		return nil, fmt.Errorf("processing inputs: %w", err)
 	}
 
+	if err := ptb.prepareXUDTWitnesses(); err != nil {
+		return nil, err
+	}
 	if err := ptb.HandleCKBFee(); err != nil {
 		return nil, fmt.Errorf("handling CKB fee: %w", err)
 	}
@@ -277,9 +320,9 @@ func (ptb *PerunTransactionBuilder) HandleCKBFee() error {
 	}
 
 	ckbChangeCell := ptb.Outputs[ptb.ckbChangeCellIndex]
-	if ckbChangeCell.Capacity <= ptb.feeShannon {
-		// TODO: Handle proper change cell deletion/update.
-		return fmt.Errorf("insufficient CKB change cell capacity: %d < %d", ckbChangeCell.Capacity, ptb.feeShannon)
+	minimum := ckbChangeCell.OccupiedCapacity(ptb.OutputsData[ptb.ckbChangeCellIndex])
+	if ckbChangeCell.Capacity < minimum {
+		return fmt.Errorf("insufficient CKB change cell capacity: %d < %d", ckbChangeCell.Capacity, minimum)
 	}
 
 	return nil
@@ -326,6 +369,9 @@ func (ptb *PerunTransactionBuilder) InitializeScriptGroups() error {
 		inputCell, err := ptb.cl.GetLiveCell(context.Background(), input.PreviousOutput, false)
 		if err != nil {
 			return fmt.Errorf("getting live cell when resolving script groups: %w", err)
+		}
+		if inputCell == nil || inputCell.Status != "live" || inputCell.Cell == nil || inputCell.Cell.Output == nil {
+			return fmt.Errorf("input cell is not live")
 		}
 		ptb.initializeScript(inputCell.Cell.Output.Lock, types.ScriptTypeLock, idx, inputDir)
 		ptb.initializeScript(inputCell.Cell.Output.Type, types.ScriptTypeType, idx, inputDir)
@@ -395,83 +441,105 @@ func (ptb *PerunTransactionBuilder) getScriptGroups() []*ckbtransaction.ScriptGr
 	return ptb.scriptGroups
 }
 
+// AssetInformation accumulates amounts without truncating the 128-bit UDT value.
+// Capacity remains limited to uint64; token totals remain limited to uint128.
 type AssetInformation struct {
-	// AssetInformation maps the hash of a type script to its amount.
-	// The zero hash is used for native CKBytes.
-	assetAmounts map[types.Hash]uint64
-
-	knownUDTs map[types.Hash]types.Script
+	assetAmounts map[types.Hash]*big.Int
+	knownUDTs    map[types.Hash]types.Script
 }
 
 func NewAssetInformation(knownUDTs map[types.Hash]types.Script) *AssetInformation {
-	return &AssetInformation{
-		assetAmounts: make(map[types.Hash]uint64),
-		knownUDTs:    knownUDTs,
-	}
+	return &AssetInformation{assetAmounts: make(map[types.Hash]*big.Int), knownUDTs: knownUDTs}
 }
 
 func (ai AssetInformation) Clone() AssetInformation {
-	clonedAssets := make(map[types.Hash]uint64)
+	c := NewAssetInformation(ai.knownUDTs)
 	for hash, amount := range ai.assetAmounts {
-		clonedAssets[hash] = amount
+		c.assetAmounts[hash] = new(big.Int).Set(amount)
 	}
-	return AssetInformation{
-		assetAmounts: clonedAssets,
-		knownUDTs:    ai.knownUDTs,
-	}
+	return *c
 }
 
-func (ai *AssetInformation) MergeWithAssetInformation(other AssetInformation) {
+func (ai *AssetInformation) MergeWithAssetInformation(other AssetInformation) error {
+	next := ai.Clone()
 	for hash, amount := range other.assetAmounts {
-		ai.AddAssetAmount(hash, amount)
+		if err := next.addAmount(hash, amount); err != nil {
+			return err
+		}
 	}
+	ai.assetAmounts = next.assetAmounts
+	return nil
 }
 
-func (ai *AssetInformation) AddAssetAmount(hash types.Hash, amount uint64) {
-	ai.assetAmounts[hash] += amount
+func (ai *AssetInformation) AddAssetAmount(hash types.Hash, amount uint64) error {
+	return ai.addAmount(hash, new(big.Int).SetUint64(amount))
+}
+
+func (ai *AssetInformation) addAmount(hash types.Hash, amount *big.Int) error {
+	if amount == nil || amount.Sign() < 0 {
+		return fmt.Errorf("negative or nil asset amount")
+	}
+	sum := new(big.Int).Add(ai.AssetAmount(hash), amount)
+	bits := 128
+	if hash == zeroHash {
+		bits = 64
+	}
+	if sum.BitLen() > bits {
+		return fmt.Errorf("asset %s total exceeds uint%d", hash, bits)
+	}
+	ai.assetAmounts[hash] = sum
+	return nil
 }
 
 func (ai AssetInformation) EqualAssets(other AssetInformation) bool {
-	if len(ai.assetAmounts) != len(other.assetAmounts) {
-		return false
-	}
-
 	for hash, amount := range ai.assetAmounts {
-		if other.assetAmounts[hash] != amount {
+		if amount.Cmp(other.AssetAmount(hash)) != 0 {
+			return false
+		}
+	}
+	for hash, amount := range other.assetAmounts {
+		if amount.Cmp(ai.AssetAmount(hash)) != 0 {
 			return false
 		}
 	}
 	return true
 }
 
-func (ai AssetInformation) AssetAmount(hash types.Hash) uint64 {
-	return ai.assetAmounts[hash]
-}
-
-func (ai AssetInformation) CKBAmount() uint64 {
-	return ai.assetAmounts[zeroHash]
-}
-
-// AddValuesFromOutput adds the capacity of the given cell together with the
-// potential UDT values, if the given output cell is a known UDT.
-// It holds that:
-//
-//	isKnownUDT(output) --> data != nil && len(data) == default UDT value size.
-func (ai *AssetInformation) AddValuesFromOutput(output *types.CellOutput, data []byte) {
-	ai.assetAmounts[zeroHash] += output.Capacity
-	if ai.isUDT(output.Type) {
-		ai.assetAmounts[output.Type.Hash()] += binary.LittleEndian.Uint64(data)
+// AssetAmount returns an independent copy; missing assets have a zero balance.
+func (ai AssetInformation) AssetAmount(hash types.Hash) *big.Int {
+	if amount := ai.assetAmounts[hash]; amount != nil {
+		return new(big.Int).Set(amount)
 	}
+	return new(big.Int)
 }
 
-// isUDT checks if the given type script is a known UDT.
-func (ai AssetInformation) isUDT(typeScript *types.Script) bool {
-	if typeScript == nil {
-		return false
-	}
+func (ai AssetInformation) CKBAmount() uint64 { return ai.AssetAmount(zeroHash).Uint64() }
 
-	_, ok := ai.knownUDTs[typeScript.Hash()]
-	return ok
+func (ai *AssetInformation) AddValuesFromOutput(output *types.CellOutput, data []byte) error {
+	if output == nil {
+		return fmt.Errorf("missing cell output")
+	}
+	next := ai.Clone()
+	if output.Type != nil {
+		if _, known := ai.knownUDTs[output.Type.Hash()]; known {
+			if len(data) < 16 {
+				return fmt.Errorf("UDT data must contain a 16-byte amount, got %d bytes", len(data))
+			}
+			// Cell data may contain xUDT extension data after the amount.
+			be := make([]byte, 16)
+			for i := range be {
+				be[15-i] = data[i]
+			}
+			if err := next.addAmount(output.Type.Hash(), new(big.Int).SetBytes(be)); err != nil {
+				return err
+			}
+		}
+	}
+	if err := next.AddAssetAmount(zeroHash, output.Capacity); err != nil {
+		return err
+	}
+	ai.assetAmounts = next.assetAmounts
+	return nil
 }
 
 func (ptb *PerunTransactionBuilder) ProcessInputs(contexts ...interface{}) error {
@@ -495,99 +563,57 @@ func (ptb *PerunTransactionBuilder) ProcessInputs(contexts ...interface{}) error
 // NOTE: This method is NOT idempotent. It should only be called once all
 // user-defined inputs and outputs have been added.
 func (ptb *PerunTransactionBuilder) balanceTransaction() error {
-	alreadyProvidedFunding := NewAssetInformation(ptb.knownUDTs)
-	requiredFunding := NewAssetInformation(ptb.knownUDTs)
-	requiredFunding.AddAssetAmount(zeroHash, ptb.feeShannon)
-
-	// First go over the outputs and accumulate the required funding expected by
-	// a user making some channel action.
-	ptb.accumulateOutputs(requiredFunding)
-
-	// We know the required funding, now we need to check and see what is already
-	// provided.
-	if err := ptb.accumulateInputs(alreadyProvidedFunding); err != nil {
-		return fmt.Errorf("accumulating inputs: %w", err)
+	provided := NewAssetInformation(ptb.knownUDTs)
+	required := NewAssetInformation(ptb.knownUDTs)
+	if len(ptb.Outputs) != len(ptb.OutputsData) {
+		return fmt.Errorf("output/data count mismatch")
 	}
-
-	if alreadyProvidedFunding.EqualAssets(*requiredFunding) {
-		// Everything is in order, the user built a transaction that is already
-		// balanced.
-		return nil
+	if err := required.AddAssetAmount(zeroHash, ptb.feeShannon); err != nil {
+		return err
 	}
-
-	// Go over all required amounts check if the inputs already account for them.
-	for assetHash, requiredAmount := range requiredFunding.assetAmounts {
-		if assetHash == zeroHash {
-			// We skip the native CKB asset, because if SUDTs have to be added to
-			// balance this transaction, we might be able to use the occupied CKB
-			// capacity of SUDT cells to fund the required CKB capacity.
-			continue
-		}
-		alreadyProvidedAmount := alreadyProvidedFunding.assetAmounts[assetHash]
-		if alreadyProvidedAmount == requiredAmount && requiredAmount > 0 {
-			// The inputs already account for the required amount.
-			continue
-		}
-
-		if alreadyProvidedAmount < requiredAmount {
-			// We need more inputs to fund the required amount for the given UDT.
-			// This might require a change cell for the UDT modifying the
-			// required amount of CKB capacity.
-			log.Println("Adding inputs for UDT", assetHash, "required amount:", requiredAmount, "already provided amount:", alreadyProvidedAmount)
-			if err := ptb.addInputsAndChangeForFunding(assetHash, requiredAmount-alreadyProvidedAmount, requiredFunding, alreadyProvidedFunding); err != nil {
-				return fmt.Errorf("adding inputs and change for UDT %x funding: %w", assetHash, err)
-			}
-			continue
-		}
-
-		if alreadyProvidedAmount > requiredAmount {
-			// We provide more than required, add a change cell for the difference.
-			// This uses the CKBBytes of the original "input" cell containing the
-			// SUDTs.
-			change := alreadyProvidedAmount - requiredAmount
-			if err := ptb.addChangeAndAdjustRequiredFunding(assetHash, change, requiredFunding); err != nil {
-				return fmt.Errorf("adding change cell for UDT %x: %w", assetHash, err)
-			}
-			continue
+	for i, output := range ptb.Outputs {
+		if err := required.AddValuesFromOutput(output, ptb.OutputsData[i]); err != nil {
+			return fmt.Errorf("output %d: %w", i, err)
 		}
 	}
-
-	// Do the final balancing.
-	if err := ptb.completeCKBCapacity(requiredFunding, alreadyProvidedFunding); err != nil {
-		return fmt.Errorf("final balancing of CKB capacity: %w", err)
-	}
-
-	return nil
-}
-
-func (ptb *PerunTransactionBuilder) accumulateOutputs(requiredFunding *AssetInformation) {
-	outputs := ptb.Outputs
-	outputData := ptb.OutputsData
-	for idx, outputCell := range outputs {
-		outputData := outputData[idx]
-		requiredFunding.AddValuesFromOutput(outputCell, outputData)
-	}
-}
-
-func (ptb *PerunTransactionBuilder) accumulateInputs(providedFunding *AssetInformation) error {
-	for _, input := range ptb.Inputs {
-		inputCell, inputCellData, err := ptb.resolveInputCell(input)
+	for i, input := range ptb.Inputs {
+		output, data, err := ptb.resolveInputCell(input)
 		if err != nil {
-			return fmt.Errorf("resolving input cell: %w", err)
+			return err
 		}
-		providedFunding.AddValuesFromOutput(inputCell, inputCellData)
+		if err := provided.AddValuesFromOutput(output, data); err != nil {
+			return fmt.Errorf("input %d: %w", i, err)
+		}
 	}
-	return nil
-}
-
-// addChangeCell will add a change cell to the output of the given transaction
-// using the preconfigured change address.
-func (ptb *PerunTransactionBuilder) addOrUpdateChangeCell(assetHash types.Hash, amount uint64) error {
-	if assetHash == zeroHash {
-		return ptb.addOrUpdateCKBChangeCell(amount)
+	// Include input-only assets as well: excess tokens must be returned, never burned.
+	hashes := make([]types.Hash, 0, len(ptb.knownUDTs))
+	for hash := range ptb.knownUDTs {
+		hashes = append(hashes, hash)
 	}
-
-	return ptb.addOrUpdateUDTChangeCell(assetHash, amount)
+	sort.Slice(hashes, func(i, j int) bool { return bytes.Compare(hashes[i][:], hashes[j][:]) < 0 })
+	for _, hash := range hashes {
+		need := required.AssetAmount(hash)
+		have := provided.AssetAmount(hash)
+		if have.Cmp(need) < 0 {
+			added, err := ptb.addInputsForFunding(ptb.iterators[hash], hash, new(big.Int).Sub(need, have))
+			if err != nil {
+				return err
+			}
+			if err := provided.MergeWithAssetInformation(added); err != nil {
+				return err
+			}
+		}
+		change := new(big.Int).Sub(provided.AssetAmount(hash), need)
+		if change.Sign() > 0 {
+			if err := ptb.addOrUpdateUDTChangeCell(hash, change); err != nil {
+				return err
+			}
+			if err := required.AddAssetAmount(zeroHash, ptb.Outputs[ptb.udtChangeCellIndices[hash]].Capacity); err != nil {
+				return err
+			}
+		}
+	}
+	return ptb.completeCKBCapacity(required, provided)
 }
 
 func (ptb *PerunTransactionBuilder) addOrUpdateCKBChangeCell(amount uint64) error {
@@ -616,15 +642,15 @@ func (ptb *PerunTransactionBuilder) addOrUpdateCKBChangeCell(amount uint64) erro
 	return nil
 }
 
-func (ptb *PerunTransactionBuilder) addOrUpdateUDTChangeCell(assetHash types.Hash, amount uint64) error {
-	encodedAmount, err := molecule2.PackUint128(big.NewInt(0).SetUint64(amount))
+func (ptb *PerunTransactionBuilder) addOrUpdateUDTChangeCell(assetHash types.Hash, amount *big.Int) error {
+	encodedAmount, err := molecule2.PackUint128(amount)
 	if err != nil {
 		return fmt.Errorf("encoding amount for %x as Uint128: %w", assetHash, err)
 	}
 	data := encodedAmount.AsSlice()
 
-	idx := ptb.udtChangeCellIndices[assetHash]
-	if idx != -1 {
+	idx, exists := ptb.udtChangeCellIndices[assetHash]
+	if exists && idx != -1 {
 		// We already constructed and added the udt change cell to its script
 		// group, only the change amount has to be adjusted.
 		ptb.OutputsData[idx] = data
@@ -643,13 +669,18 @@ func (ptb *PerunTransactionBuilder) addOrUpdateUDTChangeCell(assetHash types.Has
 	}
 	outputCell.Type = &udtScript
 
-	requiredCapacity := ptb.requiredCapacity(assetHash)
-	outputCell.Capacity = requiredCapacity
+	var dataErr error
+	data, dataErr = ptb.xudtOutputData(outputCell, data)
+	if dataErr != nil {
+		return dataErr
+	}
+	outputCell.Capacity = outputCell.OccupiedCapacity(data)
 
 	ptb.Outputs = append(ptb.Outputs, outputCell)
 	ptb.OutputsData = append(ptb.OutputsData, data)
 
 	changeIndex := len(ptb.Outputs) - 1
+	ptb.initializeScript(&udtScript, types.ScriptTypeType, -1, noneDir)
 	lockScriptGroup, typeScriptGroup := ptb.scriptGroupsForHash(assetHash)
 	appendOutputToGroups(lockScriptGroup, typeScriptGroup, uint32(changeIndex))
 
@@ -674,138 +705,90 @@ func (ptb *PerunTransactionBuilder) scriptGroupsForHash(assetHash types.Hash) (*
 	return lockScriptGroup, typeScriptGroup
 }
 
-func (ptb *PerunTransactionBuilder) completeCKBCapacity(requiredFunding, alreadyProvidedFunding *AssetInformation) error {
-	alreadyProvidedCKBAmount := alreadyProvidedFunding.assetAmounts[zeroHash]
-	requiredCKBAmount := requiredFunding.assetAmounts[zeroHash]
-	if alreadyProvidedCKBAmount >= (requiredCKBAmount + ptb.ckbChangeCellCapacity()) {
-		// We provided more funding than required AND we can accommodate a CKB
-		// change cell, set the difference as change.
-		return ptb.addOrUpdateChangeCell(zeroHash, alreadyProvidedCKBAmount-requiredCKBAmount)
-	}
-
-	if alreadyProvidedCKBAmount < (requiredCKBAmount + ptb.ckbChangeCellCapacity()) {
-		// We are missing CKB, complete funding by adding inputs from the CKB
-		// iterator.
-		return ptb.addInputsAndChangeForCKB(alreadyProvidedCKBAmount, requiredCKBAmount, requiredFunding, alreadyProvidedFunding)
-	}
-	return nil
-}
-
-func (ptb *PerunTransactionBuilder) addInputsAndChangeForCKB(alreadyProvidedCKBAmount, requestedCKBAmount uint64, requiredFunding, alreadyProvidedFunding *AssetInformation) error {
-	ckbIter := ptb.iterators[zeroHash]
-
-	requiredCKBAmount := requestedCKBAmount - alreadyProvidedCKBAmount
-	amountAddedByInputs, err := ptb.addInputsForFunding(ckbIter, zeroHash, requiredCKBAmount)
-	if err != nil {
-		return fmt.Errorf("adding inputs for ckb funding: %w", err)
-	}
-	alreadyProvidedFunding.MergeWithAssetInformation(amountAddedByInputs)
-
-	alreadyProvidedCKBAmount = alreadyProvidedFunding.CKBAmount()
-	requiredCKBAmount = requiredFunding.CKBAmount()
-
-	// We need to make sure, that we have enough CKB to pay for the storage
-	// required for a CKB change cell.
-	if alreadyProvidedCKBAmount < (requiredCKBAmount + ptb.ckbChangeCellCapacity()) {
-		requiredCKBAmount = (requiredCKBAmount + ptb.ckbChangeCellCapacity()) - alreadyProvidedCKBAmount
-		amountAddedByInputs, err := ptb.addInputsForFunding(ckbIter, zeroHash, requiredCKBAmount)
+func (ptb *PerunTransactionBuilder) completeCKBCapacity(required, provided *AssetInformation) error {
+	need := required.AssetAmount(zeroHash)
+	have := provided.AssetAmount(zeroHash)
+	if have.Cmp(need) < 0 {
+		added, err := ptb.addInputsForFunding(ptb.iterators[zeroHash], zeroHash, new(big.Int).Sub(need, have))
 		if err != nil {
-			return fmt.Errorf("adding inputs for ckb change funding: %w", err)
+			return err
 		}
-		alreadyProvidedFunding.MergeWithAssetInformation(amountAddedByInputs)
-	}
-
-	// We now definitely have enough CKB to pay for the storage of all change
-	// cells.
-	requiredCKBAmount = requiredFunding.CKBAmount()
-	alreadyProvidedCKBAmount = alreadyProvidedFunding.CKBAmount()
-	change := alreadyProvidedCKBAmount - requiredCKBAmount
-	if err := ptb.addChangeAndAdjustRequiredFunding(zeroHash, change, requiredFunding); err != nil {
-		return fmt.Errorf("adding change cell for CKB: %w", err)
-	}
-	return nil
-}
-
-// addInputsAndChangeForFunding adds inputs and potentially change cells to the
-// transaction to fund the required amount.
-func (ptb *PerunTransactionBuilder) addInputsAndChangeForFunding(assetHash types.Hash, requestedAmount uint64, requiredFunding, alreadyProvidedFunding *AssetInformation) error {
-	iter := ptb.iterators[assetHash]
-
-	alreadyProvidedAssetAmount := alreadyProvidedFunding.AssetAmount(assetHash)
-	if alreadyProvidedAssetAmount < requestedAmount || requestedAmount == uint64(0) {
-		requiredAmount := requestedAmount - alreadyProvidedAssetAmount
-		amountAddedByInputs, err := ptb.addInputsForFunding(iter, assetHash, requiredAmount)
-		if err != nil {
-			return fmt.Errorf("adding inputs for funding: %w", err)
+		if err := provided.MergeWithAssetInformation(added); err != nil {
+			return err
 		}
-		alreadyProvidedFunding.MergeWithAssetInformation(amountAddedByInputs)
+		have = provided.AssetAmount(zeroHash)
 	}
-
-	fundedAmount := alreadyProvidedFunding.Clone()
-	fundedAssetValue := fundedAmount.AssetAmount(assetHash)
-	if fundedAssetValue < requestedAmount {
-		log.Println("not enough funds for asset", assetHash, "funded amount:", fundedAssetValue, "requested amount:", requestedAmount)
-		return fmt.Errorf("not enough funds for asset: %#x", assetHash.Bytes())
-	}
-
-	// We have at least the required amount of funds for the asset available,
-	// check if we need to add a change cell.
-	if fundedAmount.AssetAmount(assetHash) == requestedAmount {
-		// Perfect funding, no change cell needed.
+	if have.Cmp(need) == 0 {
 		return nil
 	}
-
-	// We need a change cell, this will increase the required capacity of this TX
-	// by the minimum cell capacity for this asset.
-	change := fundedAmount.AssetAmount(assetHash) - requestedAmount
-	if err := ptb.addChangeAndAdjustRequiredFunding(assetHash, change, requiredFunding); err != nil {
-		return fmt.Errorf("adding change cell for asset %#x: %w", assetHash.Bytes(), err)
+	// A positive remainder below minimum capacity needs additional CKB, not
+	// unsigned subtraction of the already funded capacity from the deficit.
+	target := new(big.Int).Add(need, new(big.Int).SetUint64(ptb.ckbChangeCellCapacity()))
+	if !target.IsUint64() {
+		return fmt.Errorf("CKB capacity including change exceeds uint64")
 	}
-
-	return nil
+	if have.Cmp(target) < 0 {
+		added, err := ptb.addInputsForFunding(ptb.iterators[zeroHash], zeroHash, new(big.Int).Sub(target, have))
+		if err != nil {
+			return err
+		}
+		if err := provided.MergeWithAssetInformation(added); err != nil {
+			return err
+		}
+	}
+	change := new(big.Int).Sub(provided.AssetAmount(zeroHash), need)
+	return ptb.addOrUpdateCKBChangeCell(change.Uint64())
 }
 
-func (ptb *PerunTransactionBuilder) addInputsForFunding(iter collector.CellIterator, assetHash types.Hash, requiredAmount uint64) (AssetInformation, error) {
+func (ptb *PerunTransactionBuilder) addInputsForFunding(iter collector.CellIterator, assetHash types.Hash, requiredAmount *big.Int) (AssetInformation, error) {
+	funded := NewAssetInformation(ptb.knownUDTs)
+	if requiredAmount.Sign() == 0 {
+		return *funded, nil
+	}
 	if iter == nil {
-		return AssetInformation{}, fmt.Errorf("no iterator for asset %#x registered", assetHash.Bytes())
+		return *funded, fmt.Errorf("no iterator for asset %s", assetHash)
 	}
-
-	if !iter.HasNext() {
-		return AssetInformation{}, fmt.Errorf("empty iterator for asset %#x", assetHash.Bytes())
+	used := make(map[types.OutPoint]bool, len(ptb.Inputs))
+	for _, input := range ptb.Inputs {
+		if input == nil || input.PreviousOutput == nil {
+			return *funded, fmt.Errorf("missing input outpoint")
+		}
+		if used[*input.PreviousOutput] {
+			return *funded, fmt.Errorf("duplicate input outpoint")
+		}
+		used[*input.PreviousOutput] = true
 	}
-
-	fundedAmount := NewAssetInformation(ptb.knownUDTs)
-
-	// Fetch inputs from the correct iterator until we fullfill our needs.
 	for iter.HasNext() {
 		input := iter.Next()
-
-		// We need to fetch the groups for each output cell, because they might
-		// contain different lock-scripts & type-scripts.
-		lockScriptGroup, typeScriptGroup := ptb.scriptGroupsForHash(assetHash)
-		if lockScriptGroup == nil || (assetHash != zeroHash && typeScriptGroup == nil) {
-			// It is mandatory for cells to have at least a lock script.
-			// If we are looking at a UDT cell, we will also expect to find a
-			// typeScriptGroup.
-			return AssetInformation{}, fmt.Errorf("no script group for asset %x", assetHash)
+		if input == nil || input.OutPoint == nil || input.Output == nil || input.Output.Lock == nil {
+			return *funded, fmt.Errorf("invalid iterator cell")
 		}
-
-		ptb.Inputs = append(ptb.Inputs, &types.CellInput{
-			Since:          0,
-			PreviousOutput: input.OutPoint,
-		})
-		fundedAmount.AddValuesFromOutput(input.Output, input.OutputData)
-		// Make sure to add a dummy witness for each input.
-		ptb.Witnesses = append(ptb.Witnesses, []byte{})
-
-		// Make sure to update the according script group.
-		appendInputToGroups(lockScriptGroup, typeScriptGroup, uint32(len(ptb.Inputs)-1))
-		if fundedAmount.AssetAmount(assetHash) >= requiredAmount {
-			break
+		if used[*input.OutPoint] {
+			continue
+		}
+		if (assetHash == zeroHash && input.Output.Type != nil) ||
+			(assetHash != zeroHash && (input.Output.Type == nil || input.Output.Type.Hash() != assetHash)) {
+			return *funded, fmt.Errorf("iterator returned a cell for a different asset")
+		}
+		if err := ptb.validateXUDTInput(input.Output, input.OutputData); err != nil {
+			return *funded, err
+		}
+		if err := funded.AddValuesFromOutput(input.Output, input.OutputData); err != nil {
+			return *funded, err
+		}
+		used[*input.OutPoint] = true
+		index := len(ptb.Inputs)
+		ptb.Inputs = append(ptb.Inputs, &types.CellInput{PreviousOutput: input.OutPoint})
+		for len(ptb.Witnesses) < len(ptb.Inputs) {
+			ptb.Witnesses = append(ptb.Witnesses, []byte{})
+		}
+		ptb.initializeScript(input.Output.Lock, types.ScriptTypeLock, index, inputDir)
+		ptb.initializeScript(input.Output.Type, types.ScriptTypeType, index, inputDir)
+		if funded.AssetAmount(assetHash).Cmp(requiredAmount) >= 0 {
+			return *funded, nil
 		}
 	}
-
-	return *fundedAmount, nil
+	return *funded, fmt.Errorf("insufficient funds for asset %s: collected %s, need %s", assetHash, funded.AssetAmount(assetHash), requiredAmount)
 }
 
 func appendInputToGroups(lockScriptGroup, typeScriptGroup *ckbtransaction.ScriptGroup, idx uint32) {
@@ -820,16 +803,6 @@ func appendOutputToGroups(lockScriptGroup, typeScriptGroup *ckbtransaction.Scrip
 	if typeScriptGroup != nil {
 		typeScriptGroup.OutputIndices = append(typeScriptGroup.OutputIndices, uint32(idx))
 	}
-}
-
-func (ptb *PerunTransactionBuilder) addChangeAndAdjustRequiredFunding(assetHash types.Hash, change uint64, requiredFunding *AssetInformation) error {
-	// Adding the change cell will subtract the required CKB capacity for the UDT
-	// from the already provided amount since we add everything to the provided
-	// amount by default.
-	cellCapacity := ptb.requiredCapacity(assetHash)
-	requiredFunding.assetAmounts[zeroHash] += cellCapacity
-
-	return ptb.addOrUpdateChangeCell(assetHash, change)
 }
 
 // requiredCapacity returns the required amount of CKBytes to accommodate the
@@ -864,6 +837,12 @@ func (ptb *PerunTransactionBuilder) resolveInputCell(input *types.CellInput) (*t
 	cell, err := ptb.cl.GetLiveCell(context.Background(), input.PreviousOutput, true)
 	if err != nil {
 		return nil, nil, fmt.Errorf("resolving input cell: %w", err)
+	}
+	if cell == nil || cell.Status != "live" || cell.Cell == nil || cell.Cell.Output == nil || cell.Cell.Data == nil {
+		return nil, nil, fmt.Errorf("input cell is not live or has no data")
+	}
+	if err := ptb.validateXUDTInput(cell.Cell.Output, cell.Cell.Data.Content); err != nil {
+		return nil, nil, err
 	}
 	return cell.Cell.Output, cell.Cell.Data.Content, nil
 }

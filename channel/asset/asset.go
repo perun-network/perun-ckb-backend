@@ -24,6 +24,7 @@ import (
 	pchannel "perun.network/go-perun/channel"
 	"perun.network/go-perun/channel/multi"
 	molecule2 "perun.network/perun-ckb-backend/encoding/molecule"
+	"perun.network/perun-ckb-backend/xudt"
 )
 
 var _ multi.Asset = (*NervosAsset)(nil)
@@ -334,4 +335,21 @@ func ShannonToCKByte(shannonAmount *big.Int) *big.Float {
 	shannonPerCKByteFloat := new(big.Float).SetInt(shannonPerCKByte)
 	shannonAmountFloat := new(big.Float).SetInt(shannonAmount)
 	return new(big.Float).Quo(shannonAmountFloat, shannonPerCKByteFloat)
+}
+
+// NewXUDTAsset creates a fungible channel asset using the existing UDT wire
+// representation. The full type script (including flags and extensions) is
+// committed to by channel signatures. Register its dependencies and extension
+// providers in backend.Deployment.XUDTs before opening a channel.
+func NewXUDTAsset(typeScript types.Script, maxCapacity uint64) (*Asset, error) {
+	if _, err := (xudt.Config{Script: typeScript}).Mode(); err != nil {
+		return nil, err
+	}
+	if _, err := types.SerializeHashTypeByte(typeScript.HashType); err != nil {
+		return nil, err
+	}
+	if maxCapacity == 0 {
+		return nil, fmt.Errorf("xUDT max capacity must be positive")
+	}
+	return NewSUDTAsset(NewSUDT(typeScript, maxCapacity)), nil
 }

@@ -2,8 +2,10 @@ package backend
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types"
+	"perun.network/perun-ckb-backend/xudt"
 )
 
 // Deployment contains all information about the deployed scripts necessary to
@@ -38,6 +40,12 @@ type Deployment struct {
 	VCLSCodeHash types.Hash           `json:"vcls_code_hash"`
 	VCLSHashType types.ScriptHashType `json:"vcls_hash_type"`
 
+	// FeeShannon overrides the fixed transaction fee; zero keeps the default.
+	// Configure enough capacity for the size of custom extension witnesses.
+	FeeShannon uint64 `json:"fee_shannon,omitempty"`
+
+	XUDTs map[types.Hash]xudt.Config `json:"xudts,omitempty"`
+
 	SUDTs    map[types.Hash]types.Script  `json:"sudts"`
 	SUDTDeps map[types.Hash]types.CellDep `json:"sudt_deps"`
 }
@@ -50,4 +58,32 @@ type DeploymentConfig struct {
 // deployment configuration.
 func MkDeployment(ctx context.Context, client Transactor, network types.Network, config DeploymentConfig) (*Deployment, error) {
 	panic("not implemented")
+}
+
+// TokenScripts returns the configured sUDT and xUDT scripts indexed by their
+// complete script hash. A token cannot be configured as both standards.
+func (d Deployment) TokenScripts() (map[types.Hash]types.Script, error) {
+	scripts := make(map[types.Hash]types.Script, len(d.SUDTs)+len(d.XUDTs))
+	for hash, script := range d.SUDTs {
+		if _, err := types.SerializeHashTypeByte(script.HashType); err != nil {
+			return nil, err
+		}
+		if hash != script.Hash() {
+			return nil, fmt.Errorf("sUDT map key does not match script hash")
+		}
+		scripts[hash] = script
+	}
+	for hash, config := range d.XUDTs {
+		if err := config.Validate(); err != nil {
+			return nil, fmt.Errorf("xUDT %s: %w", hash, err)
+		}
+		if hash != config.Script.Hash() {
+			return nil, fmt.Errorf("xUDT map key does not match script hash")
+		}
+		if _, exists := scripts[hash]; exists {
+			return nil, fmt.Errorf("token configured as both sUDT and xUDT")
+		}
+		scripts[hash] = config.Script
+	}
+	return scripts, nil
 }
