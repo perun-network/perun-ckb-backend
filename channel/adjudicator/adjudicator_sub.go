@@ -42,7 +42,22 @@ type PollingSubscription struct {
 // indexer/RPC inconsistencies falsely concluding a live channel.
 const ConcludeMissThreshold = 3
 
-func NewAdjudicatorSubFromChannelID(ctx context.Context, ckbClient client.CKBClient, id channel.ID) *PollingSubscription {
+// SubscriptionOption configures a PollingSubscription before its polling loop
+// starts.
+type SubscriptionOption func(*PollingSubscription)
+
+// WithSubscriptionPollingInterval sets how often the subscription polls the
+// chain for the channel's status. Non-positive values are ignored, so the
+// subscription keeps DefaultSubscriptionPollingInterval.
+func WithSubscriptionPollingInterval(interval time.Duration) SubscriptionOption {
+	return func(sub *PollingSubscription) {
+		if interval > 0 {
+			sub.PollingInterval = interval
+		}
+	}
+}
+
+func NewAdjudicatorSubFromChannelID(ctx context.Context, ckbClient client.CKBClient, id channel.ID, opts ...SubscriptionOption) *PollingSubscription {
 	sub := &PollingSubscription{
 		PollingInterval: DefaultSubscriptionPollingInterval,
 		client:          ckbClient,
@@ -50,6 +65,11 @@ func NewAdjudicatorSubFromChannelID(ctx context.Context, ckbClient client.CKBCli
 		events:          make(chan channel.AdjudicatorEvent, DefaultBufferSize),
 		concluded:       make(chan struct{}, 1),
 		fatalErrors:     make(chan error, 1),
+	}
+	// Apply options before the polling goroutine starts, so it never races
+	// with a change of PollingInterval.
+	for _, opt := range opts {
+		opt(sub)
 	}
 	ctx, sub.cancel = context.WithCancel(ctx)
 	go sub.run(ctx)

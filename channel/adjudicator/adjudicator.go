@@ -3,6 +3,7 @@ package adjudicator
 import (
 	"context"
 	"log"
+	"time"
 
 	"github.com/pkg/errors"
 	"perun.network/go-perun/channel"
@@ -10,11 +11,36 @@ import (
 )
 
 type Adjudicator struct {
-	client client.CKBClient
+	client          client.CKBClient
+	pollingInterval time.Duration
 }
 
-func NewAdjudicator(client client.CKBClient) *Adjudicator {
-	return &Adjudicator{client: client}
+// Option configures an Adjudicator.
+type Option func(*Adjudicator)
+
+// WithPollingInterval sets how often subscriptions created by Subscribe poll
+// the chain for channel updates. Non-positive values are ignored, so the
+// default DefaultSubscriptionPollingInterval is kept.
+func WithPollingInterval(interval time.Duration) Option {
+	return func(a *Adjudicator) {
+		if interval > 0 {
+			a.pollingInterval = interval
+		}
+	}
+}
+
+func NewAdjudicator(client client.CKBClient, opts ...Option) *Adjudicator {
+	a := &Adjudicator{client: client, pollingInterval: DefaultSubscriptionPollingInterval}
+	for _, opt := range opts {
+		opt(a)
+	}
+	return a
+}
+
+// PollingInterval returns the interval at which subscriptions created by this
+// Adjudicator poll the chain.
+func (a Adjudicator) PollingInterval() time.Duration {
+	return a.pollingInterval
 }
 
 func (a Adjudicator) Register(ctx context.Context, req channel.AdjudicatorReq, states []channel.SignedState) error {
@@ -64,5 +90,5 @@ func (a Adjudicator) Progress(ctx context.Context, req channel.ProgressReq) erro
 }
 
 func (a Adjudicator) Subscribe(ctx context.Context, id channel.ID) (channel.AdjudicatorSubscription, error) {
-	return NewAdjudicatorSubFromChannelID(ctx, a.client, id), nil
+	return NewAdjudicatorSubFromChannelID(ctx, a.client, id, WithSubscriptionPollingInterval(a.pollingInterval)), nil
 }
