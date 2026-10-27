@@ -47,13 +47,13 @@ const ConcludeMissThreshold = 3
 type SubscriptionOption func(*PollingSubscription)
 
 // WithSubscriptionPollingInterval sets how often the subscription polls the
-// chain for the channel's status. Non-positive values are ignored, so the
-// subscription keeps DefaultSubscriptionPollingInterval.
+// chain for the channel's status. It panics if interval is not positive.
 func WithSubscriptionPollingInterval(interval time.Duration) SubscriptionOption {
+	if interval <= 0 {
+		panic(fmt.Sprintf("adjudicator_sub: polling interval must be positive, got %v", interval))
+	}
 	return func(sub *PollingSubscription) {
-		if interval > 0 {
-			sub.PollingInterval = interval
-		}
+		sub.PollingInterval = interval
 	}
 }
 

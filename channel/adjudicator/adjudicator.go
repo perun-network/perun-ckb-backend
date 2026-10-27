@@ -2,6 +2,7 @@ package adjudicator
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"time"
 
@@ -19,13 +20,13 @@ type Adjudicator struct {
 type Option func(*Adjudicator)
 
 // WithPollingInterval sets how often subscriptions created by Subscribe poll
-// the chain for channel updates. Non-positive values are ignored, so the
-// default DefaultSubscriptionPollingInterval is kept.
+// the chain for channel updates. It panics if interval is not positive.
 func WithPollingInterval(interval time.Duration) Option {
+	if interval <= 0 {
+		panic(fmt.Sprintf("adjudicator: polling interval must be positive, got %v", interval))
+	}
 	return func(a *Adjudicator) {
-		if interval > 0 {
-			a.pollingInterval = interval
-		}
+		a.pollingInterval = interval
 	}
 }
 
@@ -35,12 +36,6 @@ func NewAdjudicator(client client.CKBClient, opts ...Option) *Adjudicator {
 		opt(a)
 	}
 	return a
-}
-
-// PollingInterval returns the interval at which subscriptions created by this
-// Adjudicator poll the chain.
-func (a Adjudicator) PollingInterval() time.Duration {
-	return a.pollingInterval
 }
 
 func (a Adjudicator) Register(ctx context.Context, req channel.AdjudicatorReq, states []channel.SignedState) error {
