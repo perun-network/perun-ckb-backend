@@ -220,7 +220,7 @@ func iteratorsForDeployment(cl rpc.Client, deployment backend.Deployment, sender
 		searchKey := &indexer.SearchKey{
 			Script:           &udt,
 			ScriptType:       types.ScriptTypeType,
-			ScriptSearchMode: types.ScriptSearchModePrefix,
+			ScriptSearchMode: types.ScriptSearchModeExact,
 			WithData:         true,
 		}
 
@@ -232,7 +232,7 @@ func iteratorsForDeployment(cl rpc.Client, deployment backend.Deployment, sender
 
 		// Filter UDT cells to only use sender's lock script
 		filteredIter := NewFilteredCellIterator(baseIter, func(cell *types.CellOutput) bool {
-			return cell.Lock.Hash() == senderLockHash
+			return cell.Lock != nil && cell.Lock.Hash() == senderLockHash && cell.Type != nil && cell.Type.Hash() == udt.Hash()
 		})
 
 		// Register filtered iterator
