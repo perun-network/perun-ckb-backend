@@ -195,3 +195,14 @@ func TestOmniLockBuilderDependencies(t *testing.T) {
 		}
 	}
 }
+
+func TestProcessInputsRejectsUnavailableCell(t *testing.T) {
+	for _, cell := range []*types.CellWithStatus{nil, {Status: "dead"}, {Status: "live", Cell: &types.CellInfo{}}} {
+		point := &types.OutPoint{}
+		cl := txtest.NewMockClient(txtest.WithMockLiveCell(point, cell))
+		b, err := transaction.NewPerunTransactionBuilderWithDeployment(cl, backend.Deployment{}, nil, address.Address{}, false)
+		require.NoError(t, err)
+		b.AddInput(&types.CellInput{PreviousOutput: point})
+		require.ErrorContains(t, b.ProcessInputs(), "input cell is not live")
+	}
+}
