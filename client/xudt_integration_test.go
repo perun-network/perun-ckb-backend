@@ -5,19 +5,14 @@ package client_test
 import (
 	"bytes"
 	"context"
-	"encoding/hex"
-	"encoding/json"
 	"math/big"
-	"os"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/collector"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/indexer"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/rpc"
-	ckbsigner "github.com/nervosnetwork/ckb-sdk-go/v2/transaction/signer"
 	"github.com/nervosnetwork/ckb-sdk-go/v2/types"
 	"github.com/stretchr/testify/require"
 	gptest "perun.network/go-perun/channel/test"
@@ -28,36 +23,13 @@ import (
 	ckbclient "perun.network/perun-ckb-backend/client"
 	molecule2 "perun.network/perun-ckb-backend/encoding/molecule"
 	"perun.network/perun-ckb-backend/transaction"
-	"perun.network/perun-ckb-backend/wallet"
 	ckbaddress "perun.network/perun-ckb-backend/wallet/address"
 	"perun.network/perun-ckb-backend/xudt"
 	ptest "polycry.pt/poly-go/test"
 )
 
-// The fixture is produced by devnet/setup-xudt.sh and contains ONLY disposable
-// devnet keys. These tests issue real transactions on a local CKB node.
-type xudtFixture struct {
-	IssuerKey       string
-	RegressionKeys  []string
-	RegressionToken xudt.Config
-	RPC             string
-	Deployment      backend.Deployment
-	Keys            []string
-	Tokens          []xudt.Config
-}
-
 func TestXUDTChannelLifecycle(t *testing.T) {
-	file := os.Getenv("PERUN_XUDT_FIXTURE")
-	require.NotEmpty(t, file, "set PERUN_XUDT_FIXTURE to a disposable devnet fixture")
-	raw, err := os.ReadFile(file)
-	require.NoError(t, err)
-	var f xudtFixture
-	require.NoError(t, json.Unmarshal(raw, &f))
-	require.Len(t, f.Keys, 2)
-	require.Len(t, f.Tokens, 3)
-	rpcClient, err := rpc.Dial(f.RPC)
-	require.NoError(t, err)
-	defer rpcClient.Close()
+	f, rpcClient := newXUDTFixture(t)
 	for _, omni := range []bool{false, true} {
 		name := "secp256k1"
 		if omni {
@@ -73,42 +45,20 @@ func testXUDTChannelLifecycle(t *testing.T, f xudtFixture, rpcClient rpc.Client,
 			mode, err := token.Mode()
 			require.NoError(t, err)
 			require.Equal(t, uint32(tokenIndex), mode, "fixture must cover modes 0, 1 and 2")
-			if mode > 0 {
-				token.WitnessData = func(*types.Transaction, []uint32, []uint32) ([][]byte, error) {
-					return [][]byte{[]byte("channel-proof")}, nil
-				}
-				token.OutputData = func(types.CellOutput, *big.Int) ([]byte, error) {
-					return xudt.EncodeData(nil, [][]byte{[]byte("channel-data")}), nil
-				}
-			}
 			d := f.Deployment
+			if mode == 2 {
+				d.FeeShannon = 50_000
+			}
 			d.XUDTs = map[types.Hash]xudt.Config{token.Script.Hash(): token}
-			accounts := make([]*wallet.Account, 2)
+			accounts, signers := f.wallets(t, omni)
 			clients := make([]*ckbclient.Client, 2)
-			signers := make([]backend.Signer, 2)
 			parts := make([]map[gpwallet.BackendID]gpwallet.Address, 2)
-			for i, keyHex := range f.Keys {
-				keyBytes, err := hex.DecodeString(keyHex)
-				require.NoError(t, err)
-				key := secp256k1.PrivKeyFromBytes(keyBytes)
-				accounts[i] = wallet.NewAccountFromPrivateKey(key, d.OmniLockScript.CodeHash, !omni)
-				p := accounts[i].Address().(*ckbaddress.Participant)
+			for i, account := range accounts {
+				p := account.Address().(*ckbaddress.Participant)
 				parts[i] = map[gpwallet.BackendID]gpwallet.Address{3: p}
 				ownerHash := p.UnlockScript.Hash()
 				require.False(t, bytes.Equal(token.Script.Args[:32], ownerHash[:]), "participants must not be the token issuer")
-				var signer backend.Signer
-				if omni {
-					_, auth, err := ckbaddress.NewEthereumParticipantFromPublicKey(key.PubKey(), d.OmniLockScript.CodeHash)
-					require.NoError(t, err)
-					evm := backend.NewEVMSignerInstance(p.ToCKBAddress(types.NetworkTest), *key, types.NetworkTest, auth)
-					txSigner := evm.Signer()
-					txSigner.RegisterLockSigner(d.OmniLockScript.CodeHash, &ckbsigner.OmnilockSigner{})
-					signer = evm
-				} else {
-					signer = backend.NewSignerInstance(p.ToCKBAddress(types.NetworkTest), *key, types.NetworkTest)
-				}
-				signers[i] = signer
-				clients[i], err = ckbclient.NewClient(rpcClient, signer, d)
+				clients[i], err = ckbclient.NewClient(rpcClient, signers[i], d)
 				require.NoError(t, err)
 			}
 			tokenAsset, err := asset.NewXUDTAsset(token.Script, 400*100_000_000)
@@ -221,17 +171,9 @@ func xudtBalance(t *testing.T, ctx context.Context, cl rpc.Client, lock, token *
 	}
 }
 
-func TestXUDTSeed(t *testing.T) {
-	raw, err := os.ReadFile(os.Getenv("PERUN_XUDT_FIXTURE"))
-	require.NoError(t, err)
-	var f xudtFixture
-	require.NoError(t, json.Unmarshal(raw, &f))
-	cl, err := rpc.Dial(f.RPC)
-	require.NoError(t, err)
-	defer cl.Close()
-	keyBytes, err := hex.DecodeString(f.IssuerKey)
-	require.NoError(t, err)
-	key := secp256k1.PrivKeyFromBytes(keyBytes)
+func seedXUDT(t *testing.T, f xudtFixture, cl rpc.Client) {
+	t.Helper()
+	key := f.IssuerKey
 	part, err := ckbaddress.NewDefaultParticipant(key.PubKey())
 	require.NoError(t, err)
 	addr := part.ToCKBAddress(types.NetworkTest)
@@ -258,16 +200,13 @@ func TestXUDTSeed(t *testing.T) {
 		}
 		amount, err := molecule2.PackUint128(new(big.Int).Lsh(big.NewInt(1), 100))
 		require.NoError(t, err)
-		for _, keyHex := range f.Keys {
-			kb, err := hex.DecodeString(keyHex)
+		for _, holderKey := range f.Keys {
+			p, err := ckbaddress.NewDefaultParticipant(holderKey.PubKey())
 			require.NoError(t, err)
-			p, err := ckbaddress.NewDefaultParticipant(secp256k1.PrivKeyFromBytes(kb).PubKey())
-			require.NoError(t, err)
-			omni, _, err := ckbaddress.NewEthereumParticipantFromPublicKey(secp256k1.PrivKeyFromBytes(kb).PubKey(), d.OmniLockScript.CodeHash)
+			omni, _, err := ckbaddress.NewEthereumParticipantFromPublicKey(holderKey.PubKey(), d.OmniLockScript.CodeHash)
 			require.NoError(t, err)
 			for _, holder := range []*ckbaddress.Participant{p, omni} {
 				b.AddOutput(&types.CellOutput{Lock: holder.PaymentScript, Type: &cfg.Script, Capacity: 400 * 100_000_000}, amount.AsSlice())
-				b.AddOutput(&types.CellOutput{Lock: holder.PaymentScript, Capacity: 100_000 * 100_000_000}, nil)
 			}
 		}
 		tx, err := b.Build()
@@ -283,68 +222,6 @@ func TestXUDTSeed(t *testing.T) {
 		require.NoError(t, err)
 		hash, err := cl.SendTransaction(ctx, signed)
 		require.NoError(t, err)
-		require.Eventually(t, func() bool {
-			tx, e := cl.GetTransaction(ctx, *hash)
-			return e == nil && tx != nil && tx.TxStatus.Status == types.TransactionStatusCommitted
-		}, 45*time.Second, 200*time.Millisecond)
+		waitForXUDTTransaction(t, ctx, cl, *hash)
 	}
-}
-
-// TestXUDTSeedRegression funds the existing suite's secp256k1 and OmniLock
-// wallets and mints the sample sUDT used by those tests.
-func TestXUDTSeedRegression(t *testing.T) {
-	raw, err := os.ReadFile(os.Getenv("PERUN_XUDT_FIXTURE"))
-	require.NoError(t, err)
-	var f xudtFixture
-	require.NoError(t, json.Unmarshal(raw, &f))
-	require.Len(t, f.RegressionKeys, 3)
-	cl, err := rpc.Dial(f.RPC)
-	require.NoError(t, err)
-	defer cl.Close()
-	kb, err := hex.DecodeString(f.Keys[0])
-	require.NoError(t, err)
-	key := secp256k1.PrivKeyFromBytes(kb)
-	p, err := ckbaddress.NewDefaultParticipant(key.PubKey())
-	require.NoError(t, err)
-	addr := p.ToCKBAddress(types.NetworkTest)
-	addrString, err := addr.Encode()
-	require.NoError(t, err)
-	signer := backend.NewSignerInstance(addr, *key, types.NetworkTest)
-	iter, err := collector.NewLiveCellIteratorFromAddress(cl, addrString)
-	require.NoError(t, err)
-	d := f.Deployment
-	d.XUDTs = nil
-	d.SUDTs = nil
-	b, err := transaction.NewPerunTransactionBuilderWithDeployment(cl, d, map[types.Hash]collector.CellIterator{types.Hash{}: ckbclient.NewCKBOnlyIterator(iter)}, addr, false)
-	require.NoError(t, err)
-	for i := range f.RegressionToken.CellDeps {
-		b.AddCellDep(&f.RegressionToken.CellDeps[i])
-	}
-	amount, err := molecule2.PackUint128(big.NewInt(1_000_000_000))
-	require.NoError(t, err)
-	for _, keyHex := range f.RegressionKeys {
-		kb, err := hex.DecodeString(keyHex)
-		require.NoError(t, err)
-		key := secp256k1.PrivKeyFromBytes(kb)
-		standard, err := ckbaddress.NewDefaultParticipant(key.PubKey())
-		require.NoError(t, err)
-		omni, _, err := ckbaddress.NewEthereumParticipantFromPublicKey(key.PubKey(), d.OmniLockScript.CodeHash)
-		require.NoError(t, err)
-		for _, p := range []*ckbaddress.Participant{standard, omni} {
-			b.AddOutput(&types.CellOutput{Lock: p.PaymentScript, Capacity: 100_000 * 100_000_000}, nil)
-			b.AddOutput(&types.CellOutput{Lock: p.PaymentScript, Type: &f.RegressionToken.Script, Capacity: 400 * 100_000_000}, amount.AsSlice())
-		}
-	}
-	tx, err := b.Build()
-	require.NoError(t, err)
-	signed, err := signer.SignTransaction(tx)
-	require.NoError(t, err)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-	defer cancel()
-	hash, err := cl.SendTransaction(ctx, signed)
-	require.NoError(t, err)
-	require.Eventually(t, func() bool {
-		tx, e := cl.GetTransaction(ctx, *hash)
-		return e == nil && tx != nil && tx.TxStatus.Status == types.TransactionStatusCommitted
-	}, 45*time.Second, 200*time.Millisecond)
 }

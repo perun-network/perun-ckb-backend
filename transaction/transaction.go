@@ -669,10 +669,9 @@ func (ptb *PerunTransactionBuilder) addOrUpdateUDTChangeCell(assetHash types.Has
 	}
 	outputCell.Type = &udtScript
 
-	var dataErr error
-	data, dataErr = ptb.xudtOutputData(outputCell, data)
-	if dataErr != nil {
-		return dataErr
+	data, err = ptb.xudtOutputData(outputCell, data)
+	if err != nil {
+		return err
 	}
 	outputCell.Capacity = outputCell.OccupiedCapacity(data)
 
@@ -880,19 +879,19 @@ func (ptb *PerunTransactionBuilder) callHandlers(group *ckbtransaction.ScriptGro
 }
 
 func (ptb *PerunTransactionBuilder) processInputLockScript(input *types.CellInput, groups []*ckbtransaction.ScriptGroup, contexts ...interface{}) error {
-	cell, err := ptb.cl.GetLiveCell(context.Background(), input.PreviousOutput, false)
+	output, _, err := ptb.resolveInputCell(input)
 	if err != nil {
-		return fmt.Errorf("resolving input cell: %w", err)
+		return err
 	}
-	return ptb.processLockScript(cell.Cell.Output, groups, contexts...)
+	return ptb.processLockScript(output, groups, contexts...)
 }
 
 func (ptb *PerunTransactionBuilder) processInputTypeScript(input *types.CellInput, groups []*ckbtransaction.ScriptGroup, contexts ...interface{}) error {
-	cell, err := ptb.cl.GetLiveCell(context.Background(), input.PreviousOutput, false)
+	output, _, err := ptb.resolveInputCell(input)
 	if err != nil {
-		return fmt.Errorf("resolving input cell: %w", err)
+		return err
 	}
-	return ptb.processOutputTypeScript(cell.Cell.Output, groups, contexts...)
+	return ptb.processOutputTypeScript(output, groups, contexts...)
 }
 
 func (ptb *PerunTransactionBuilder) groupForScript(script *types.Script) (*ckbtransaction.ScriptGroup, error) {

@@ -174,3 +174,35 @@ func TestCKBCapacityBoundaries(t *testing.T) {
 		})
 	}
 }
+
+func TestOmniLockBuilderDependencies(t *testing.T) {
+	lock := types.Script{HashType: types.HashTypeType}
+	deps := []types.CellDep{
+		{OutPoint: &types.OutPoint{Index: 0}, DepType: types.DepTypeCode},
+		{OutPoint: &types.OutPoint{Index: 1}, DepType: types.DepTypeDepGroup},
+	}
+	for n := 0; n <= len(deps); n++ {
+		d := backend.Deployment{OmniLockScript: lock, OmniLockScriptDep: deps[:n]}
+		b, err := transaction.NewPerunTransactionBuilderWithDeployment(nil, d, nil, address.Address{Script: &lock}, true)
+		if n < 2 {
+			require.Error(t, err)
+			continue
+		}
+		require.NoError(t, err)
+		require.Len(t, b.CellDeps, 2)
+		for i := range deps {
+			require.Contains(t, b.CellDeps, &deps[i])
+		}
+	}
+}
+
+func TestProcessInputsRejectsUnavailableCell(t *testing.T) {
+	for _, cell := range []*types.CellWithStatus{nil, {Status: "dead"}, {Status: "live", Cell: &types.CellInfo{}}} {
+		point := &types.OutPoint{}
+		cl := txtest.NewMockClient(txtest.WithMockLiveCell(point, cell))
+		b, err := transaction.NewPerunTransactionBuilderWithDeployment(cl, backend.Deployment{}, nil, address.Address{}, false)
+		require.NoError(t, err)
+		b.AddInput(&types.CellInput{PreviousOutput: point})
+		require.ErrorContains(t, b.ProcessInputs(), "input cell is not live")
+	}
+}

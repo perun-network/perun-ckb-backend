@@ -88,44 +88,31 @@ go test -race ./transaction ./xudt ./backend/... ./channel/asset/... ./encoding/
 go test ./xudt -run '^$' -fuzz FuzzValidateData -fuzztime 20s
 ```
 
-The integration harness builds the pinned Perun contracts, deploys them beside
-CKB's real xUDT contract, and tests secp256k1 and Ethereum OmniLock participants.
-Each participant funds `2^80` tokens and signs an off-chain transfer of `2^70`.
-Every token mode verifies exact balances after cooperative close, abort/refund,
-and dispute/force-close. The test issuer is independent of both participants,
-so owner-mode authorization cannot bypass the extension checks. A dynamically
-loaded extension checks both a witness proof and output metadata; deliberately
-invalid proofs and metadata must be rejected by CKB.
+The integration tests reuse the existing devnet deployment, system-script
+configuration and Alice/Bob accounts. The issuer is the separate genesis-2
+account, so channel participants cannot bypass extension checks using owner mode.
+The optional extension is maintained in the Rust contract submodule at
+`test-contracts/xudt-extension`; the backend contains no C fixture or assembly.
 
-On **Linux x86-64**, install Go (as required by `go.mod`), Node/npm, Python 3,
-Clang/LLD/LLVM, curl, ripgrep and Rust 1.92.0 with the
-`riscv64imac-unknown-none-elf` target, then run:
+Follow the repository's normal devnet setup. Enable the additional fixture in
+its existing deployment step, then run the integration tests:
 
 ```sh
-./devnet/setup-xudt.sh /absolute/path/to/a-fresh-run-directory
+cd devnet
+PERUN_XUDT_TESTS=1 ./deploy_contracts.sh
+make test-xudt
 ```
 
-The script pins offckb 0.4.13 and CKB 0.201.0, verifies the downloaded CKB archive,
-uses isolated caches/configuration and disposable devnet keys, and stops its node
-on exit. Ports 8114, 8115 and 28114 must be free. It also runs the original Go
-suite, the race-enabled suite, `go vet`, and a 20-second parser fuzz test. Logs
-remain in the run directory. It writes the ignored `devnet/accounts`,
-`devnet/system_scripts`, and contract migration fixtures required by the original
-suite; it refuses to replace different existing account keys. Use a fresh
-checkout if you already maintain other devnet fixtures there.
+`make test-xudt` mints disposable xUDTs into the existing wallets and runs the
+lifecycle and multi-asset tests. Run it on a local test network only. There is no
+separate node launcher, downloaded toolchain, fixture JSON or Python encoder.
+The tests cover all three modes and both secp256k1/OmniLock participants, with
+`2^80` funding, a `2^70` off-chain transfer, exact balances after close, abort
+and dispute/force-close, and on-chain rejection of invalid proofs and metadata.
+Hashed-extension lifecycle tests also exercise a 50,000-shannon fee override.
+The multi-asset test transfers all three xUDTs in a shared lock group.
 
-The original repository disables virtual-channel dispute coverage and excludes
-one cross-payment dispute test under `-race`; these existing limitations remain.
-The added xUDT integration tests cover bilateral channels, with unilateral exits
-verified for all three token modes and both supported participant locks. A separate chain test transfers
-all three xUDTs in one transaction to verify shared-lock and type-group witnesses.
-Custom extension policies still require their own settlement/liveness analysis.
-
-To rerun selected tests while the fixture's node is running:
-
-```sh
-PERUN_XUDT_FIXTURE=/absolute/path/to/run/xudt-fixture.json \
-  go test -tags xudt_integration ./client -run '^TestXUDTChannelLifecycle$' -count=1
-```
+The existing virtual-channel dispute and cross-payment race exclusions remain.
+Custom extension policies require their own settlement/liveness analysis.
 
 Reference: [CKB RFC 0052](https://github.com/nervosnetwork/rfcs/blob/master/rfcs/0052-extensible-udt/0052-extensible-udt.md).

@@ -73,24 +73,3 @@ func TestXUDTBuild(t *testing.T) {
 		})
 	}
 }
-
-func TestOmniLockBuilderDependencies(t *testing.T) {
-	lock := types.Script{HashType: types.HashTypeType}
-	deps := []types.CellDep{
-		{OutPoint: &types.OutPoint{Index: 0}, DepType: types.DepTypeCode},
-		{OutPoint: &types.OutPoint{Index: 1}, DepType: types.DepTypeDepGroup},
-	}
-	for n := 0; n <= len(deps); n++ {
-		d := backend.Deployment{OmniLockScript: lock, OmniLockScriptDep: deps[:n]}
-		b, err := transaction.NewPerunTransactionBuilderWithDeployment(nil, d, nil, address.Address{Script: &lock}, true)
-		if n < 2 {
-			require.Error(t, err)
-			continue
-		}
-		require.NoError(t, err)
-		require.Len(t, b.CellDeps, 2)
-		for i := range deps {
-			require.Contains(t, b.CellDeps, &deps[i])
-		}
-	}
-}
