@@ -286,13 +286,13 @@ func checkSudtTransactionBalance(
 		}
 		return nil
 	}
-	requireSUDTAmount := func(sudtData []byte) uint64 {
-		amount := molecule2.UnpackUint128(molecule.Uint128FromSliceUnchecked(sudtData))
-		return amount.Big().Uint64()
+	requireSUDTAmount := func(sudtData []byte) *big.Int {
+		amount := molecule2.UnpackUint128(molecule.Uint128FromSliceUnchecked(sudtData[:16]))
+		return amount.Big()
 	}
 
 	inputCKBAmount := uint64(0)
-	inputSUDTAmount := uint64(0)
+	inputSUDTAmount := new(big.Int)
 	for _, input := range tx.TxView.Inputs {
 		txInput := findInCKBInputs(input)
 		if txInput != nil {
@@ -303,18 +303,18 @@ func checkSudtTransactionBalance(
 		if txInput != nil {
 			inputCKBAmount += txInput.Output.Capacity
 			if txInput.Output.Type != nil && txInput.Output.Type.Hash() == sudtScript.Hash() {
-				inputSUDTAmount += requireSUDTAmount(txInput.OutputData)
+				inputSUDTAmount.Add(inputSUDTAmount, requireSUDTAmount(txInput.OutputData))
 			}
 		}
 	}
 
 	outputCKBAmount := uint64(0)
-	outputSUDTAmount := uint64(0)
+	outputSUDTAmount := new(big.Int)
 	for idx, output := range tx.TxView.Outputs {
 		outputCKBAmount += output.Capacity
 
 		if output.Type != nil && output.Type.Hash() == sudtScript.Hash() {
-			outputSUDTAmount += requireSUDTAmount(tx.TxView.OutputsData[idx])
+			outputSUDTAmount.Add(outputSUDTAmount, requireSUDTAmount(tx.TxView.OutputsData[idx]))
 		}
 	}
 
@@ -322,7 +322,7 @@ func checkSudtTransactionBalance(
 		return fmt.Errorf("input and output CKB amounts do not match: %d != %d", inputCKBAmount, outputCKBAmount)
 	}
 
-	if inputSUDTAmount != outputSUDTAmount {
+	if inputSUDTAmount.Cmp(outputSUDTAmount) != 0 {
 		return fmt.Errorf("input and output SUDT amounts do not match: %d != %d", inputSUDTAmount, outputSUDTAmount)
 	}
 
