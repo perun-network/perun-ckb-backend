@@ -128,6 +128,9 @@ type Client struct {
 }
 
 func NewClient(rpcClient rpc.Client, signer backend.Signer, deployment backend.Deployment) (*Client, error) {
+	if _, err := deployment.TokenScripts(); err != nil {
+		return nil, err
+	}
 	psh := transaction.NewPerunScriptHandlerWithDeployment(deployment)
 	return &Client{
 		client:     rpcClient,
@@ -216,11 +219,15 @@ func iteratorsForDeployment(cl rpc.Client, deployment backend.Deployment, sender
 	iters[zeroHash] = NewCKBOnlyIterator(iter)
 
 	// Iterator for udts:
-	for _, udt := range deployment.SUDTs {
+	scripts, err := deployment.TokenScripts()
+	if err != nil {
+		return nil, err
+	}
+	for _, udt := range scripts {
 		searchKey := &indexer.SearchKey{
 			Script:           &udt,
 			ScriptType:       types.ScriptTypeType,
-			ScriptSearchMode: types.ScriptSearchModePrefix,
+			ScriptSearchMode: types.ScriptSearchModeExact,
 			WithData:         true,
 		}
 
@@ -232,7 +239,7 @@ func iteratorsForDeployment(cl rpc.Client, deployment backend.Deployment, sender
 
 		// Filter UDT cells to only use sender's lock script
 		filteredIter := NewFilteredCellIterator(baseIter, func(cell *types.CellOutput) bool {
-			return cell.Lock.Hash() == senderLockHash
+			return cell.Lock != nil && cell.Lock.Hash() == senderLockHash && cell.Type != nil && cell.Type.Hash() == udt.Hash()
 		})
 
 		// Register filtered iterator
