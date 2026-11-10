@@ -43,7 +43,7 @@ DEVNET=$(pwd)
 cd $PERUN_CONTRACTS_DIR
 source ./setup_env.sh build && make build
 cd $DEVNET
-offckb accounts > accounts.txt
+offckb accounts --show-private-keys > accounts.txt
 
 MinerPK=$(grep -A 4 '"#": 17' accounts.txt | grep 'privkey' | awk '{print $2}')
 GenCellOnePK=$(grep -A 4 '"#": 18' accounts.txt | grep 'privkey' | awk '{print $2}')

@@ -150,6 +150,29 @@ PY
   echo "Applying transactions..."
   ckb-cli deploy apply-txs --migration-dir "$TMP_MIG_DIR" --info-file "$info_file"
 
+  # Wait for both commitment and indexer visibility before the next phase
+  # selects the change output. Otherwise the indexer can return a spent input.
+  local deployed_hash
+  deployed_hash=$(jq -r '.new_recipe.cell_recipes[0].tx_hash' "$info_file")
+  local indexed=false
+  for i in $(seq 1 60); do
+    local tx_status block_number indexer_number
+    tx_status=$(ckb-cli rpc get_transaction --hash "$deployed_hash" --output-format json)
+    block_number=$(echo "$tx_status" | jq -r '.tx_status.block_number // empty')
+    if [ "$(echo "$tx_status" | jq -r '.tx_status.status')" = "committed" ] && [ -n "$block_number" ]; then
+      indexer_number=$(ckb-cli rpc get_indexer_tip --output-format json | jq -r '.block_number // empty')
+      if [ -n "$indexer_number" ] && (( indexer_number >= block_number )); then
+        indexed=true
+        break
+      fi
+    fi
+    sleep 1
+  done
+  if [ "$indexed" != true ]; then
+    echo "Deployment $deployed_hash was not committed and indexed in time" >&2
+    return 1
+  fi
+
   echo "Installing migration artifacts into $migration_dir"
   mkdir -p "$migration_dir"
   mv "$TMP_MIG_DIR"/*.json "$migration_dir"/ || true
@@ -161,10 +184,14 @@ PY
 
 # Run phases sequentially
 run_deploy_phase "normal-0" "./deployment/dev/deployment_0.toml" "./$MIGRATION_0" "$DEVNET_DIR/$DEPLOYMENT_INFO_0.json" "$GENESIS_PRIVKEY" "$MINER_PRIVKEY" || { echo "phase normal-0 failed"; exit 1; }
-sleep 25
 run_deploy_phase "normal-1" "./deployment/dev/deployment_1.toml" "./$MIGRATION_1" "$DEVNET_DIR/$DEPLOYMENT_INFO_1.json" "$GENESIS_PRIVKEY" "$MINER_PRIVKEY" || { echo "phase normal-1 failed"; exit 1; }
-sleep 25
 run_deploy_phase "vc" "./deployment/dev/deployment_vc.toml" "./$MIGRATION_VC" "$DEVNET_DIR/$DEPLOYMENT_INFO_VC.json" "$GENESIS_PRIVKEY" "$MINER_PRIVKEY" || { echo "phase vc failed"; exit 1; }
+
+# Reuse the existing deployment pipeline for the optional Rust xUDT fixture.
+if [ "${PERUN_XUDT_TESTS:-0}" = "1" ]; then
+  make xudt-extension || { echo "xUDT fixture build failed"; exit 1; }
+  run_deploy_phase "xudt" "./deployment/dev/deployment_xudt.toml" "./migrations_xudt/dev" "$DEVNET_DIR/info_xudt.json" "$GENESIS_PRIVKEY" "$MINER_PRIVKEY" || { echo "phase xudt failed"; exit 1; }
+fi
 
 # Move info files to devnet root (they are already created there) — keep as artifacts
 mv "$DEVNET_DIR/$DEPLOYMENT_INFO_0.json" "$DEVNET_DIR/" 2>/dev/null || true

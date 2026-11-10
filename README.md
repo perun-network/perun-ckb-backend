@@ -17,7 +17,7 @@ Learn how to use go-perun backends in the documentation of the go-perun core lib
 
 This backend supports the following features on CKB:
 * Open and close payment channels on CKB.
-* Support for SUDT tokens in payment channels.
+* Support for sUDT and xUDT tokens in payment channels, including configurable xUDT extension scripts. See [xUDT configuration and compatibility](docs/xudt.md).
 * Off-chain state updates and signatures.
 * On-chain dispute resolution.
 * Automated tests using a local CKB devnet.
