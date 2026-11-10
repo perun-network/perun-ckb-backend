@@ -38,6 +38,9 @@ type Deployment struct {
 	VCLSCodeHash types.Hash           `json:"vcls_code_hash"`
 	VCLSHashType types.ScriptHashType `json:"vcls_hash_type"`
 
+	// FeeShannon overrides the fixed transaction fee; zero keeps the default.
+	FeeShannon uint64 `json:"fee_shannon,omitempty"`
+
 	SUDTs    map[types.Hash]types.Script  `json:"sudts"`
 	SUDTDeps map[types.Hash]types.CellDep `json:"sudt_deps"`
 }

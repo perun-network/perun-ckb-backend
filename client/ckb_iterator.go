@@ -9,27 +9,38 @@ import (
 // by any type script.
 type CKBOnlyIterator struct {
 	collector.CellIterator
+	nextInput *types.TransactionInput
 }
 
 // HasNext implements collector.CellIterator.
 func (i *CKBOnlyIterator) HasNext() bool {
-	return i.CellIterator.HasNext()
+	if i.nextInput != nil {
+		return true
+	}
+	// HasNext loads the next SDK page, so check it before every advance,
+	// including when skipping token cells at the end of the current page.
+	for i.CellIterator.HasNext() {
+		input := i.CellIterator.Next()
+		if input != nil && input.Output != nil && input.Output.Type == nil {
+			i.nextInput = input
+			return true
+		}
+	}
+	return false
 }
 
 // Next implements collector.CellIterator.
 func (i *CKBOnlyIterator) Next() *types.TransactionInput {
-	ti := i.CellIterator.Next()
-
-	for ti != nil && ti.Output.Type != nil {
-		// Skip all cells guarded by type script.
-		ti = i.CellIterator.Next()
+	if !i.HasNext() {
+		return nil
 	}
-
-	return ti
+	input := i.nextInput
+	i.nextInput = nil
+	return input
 }
 
 func NewCKBOnlyIterator(iter collector.CellIterator) *CKBOnlyIterator {
-	return &CKBOnlyIterator{iter}
+	return &CKBOnlyIterator{CellIterator: iter}
 }
 
 var _ collector.CellIterator = (*CKBOnlyIterator)(nil)
